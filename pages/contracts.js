@@ -11,7 +11,7 @@ export default function ContractsPage() {
 
   useEffect(() => {
     async function fetchContracts() {
-      const contractsData = getContracts();
+      const contractsData = await getContracts();
       setContracts(contractsData);
       setFilteredContracts(contractsData); // Initially show all contracts
     }

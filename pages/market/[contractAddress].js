@@ -3,7 +3,7 @@ import { useRouter } from "next/router";
 import { ethers } from "ethers";
 import predMarketArtifact from "../../predMarket.json"; // Assuming correct path to the ABI and Bytecode
 
-import CountdownTimer from "../../components/CountDownTimer";
+import CountdownTimer, { timeLeft } from "../../components/CountDownTimer";
 import Header from "../../components/Header";
 import { getContractDetails, getContracts } from "../../data/contractStore";
 
@@ -16,12 +16,33 @@ const MarketInteractionPage = () => {
   const [reduction, setReduction] = useState("");
   const [bettor, setBettor] = useState(null);
   const router = useRouter();
+  const [ABDraw, setABDraw] = useState(null);
+  const [owner, setOwner] = useState(null);
   const { contractAddress } = router.query;
 
-  useEffect(() => {
-    if (contractAddress) {
-      setContract(getContractDetails(contractAddress));
+  const fetchContractDetails = async (address) => {
+    try {
+      const response = await fetch(
+        `http://localhost:3001/api/contracts/${address}`
+      );
+      if (!response.ok) {
+        throw new Error("Network response was not ok");
+      }
+      return await response.json();
+    } catch (error) {
+      console.error("Error fetching contract details:", error);
+      return null;
     }
+  };
+
+  useEffect(() => {
+    const getDetails = async () => {
+      if (contractAddress) {
+        const contractData = await fetchContractDetails(contractAddress);
+        setContract(contractData);
+      }
+    };
+    getDetails();
   }, [contractAddress]);
 
   useEffect(() => {
@@ -72,11 +93,22 @@ const MarketInteractionPage = () => {
         }
       }
     };
+    const setIfOwner = async () => {
+      if (contractInstance) {
+        try {
+          const ownerCheck = await contractInstance.isOwner();
+          setOwner(ownerCheck);
+        } catch (error) {
+          console.log("couldnt find owner", error);
+        }
+      }
+    };
 
     // Function to handle account changes
     const handleAccountsChanged = (accounts) => {
       // You can add additional logic here if needed
       findBettor();
+      setIfOwner();
     };
 
     if (window.ethereum) {
@@ -84,13 +116,15 @@ const MarketInteractionPage = () => {
     }
 
     findBettor();
+    setIfOwner();
 
     // Clean up function
     return () => {
       if (window.ethereum) {
         window.ethereum.removeListener(
           "accountsChanged",
-          handleAccountsChanged
+          handleAccountsChanged,
+          setIfOwner()
         );
       }
     };
@@ -131,6 +165,30 @@ const MarketInteractionPage = () => {
     }
   };
 
+  const endBet = async (winnerPot) => {
+    if (contractInstance && winnerPot) {
+      try {
+        const tx = await contractInstance.endBet(winnerPot);
+        await tx.wait();
+        console.log(`Bet ended on ${winnerPot}`);
+      } catch (error) {
+        console.error(`Error reducing bet on ${winnerPot}:`, error);
+      }
+    }
+  };
+
+  const withdraw = async (withdrawBet) => {
+    if (contractInstance && withdrawBet) {
+      try {
+        const tx = await contractInstance[`withdraw${withdrawBet}`]();
+        await tx.wait();
+        console.log(`Bet withdraw on ${withdrawBet}`);
+      } catch (error) {
+        console.error(`Error withdraw bet on ${withdrawBet}:`, error);
+      }
+    }
+  };
+
   if (!contract) {
     return <div className="loading">Loading...</div>;
   }
@@ -153,9 +211,11 @@ const MarketInteractionPage = () => {
           <p>
             <strong>Contract Odds:</strong> {contract.odds1} / {contract.odds2}
           </p>
-          <p>
-            <CountdownTimer endTime={contract.endTime} />
-          </p>
+
+          <h4>
+            There is <CountdownTimer endTime={contract.endTime} /> time left to
+            place a bet
+          </h4>
         </div>
         <input
           value={bet}
@@ -165,17 +225,41 @@ const MarketInteractionPage = () => {
         <button onClick={() => betOnOption(0)}>Bet on A</button>
         <button onClick={() => betOnOption(1)}>Bet on B</button>
 
-        <input
-          value={reduction}
-          onChange={(e) => setReduction(e.target.value)}
-          placeholder="Bet Amount"
-        />
-        <button onClick={() => reduceBet("BetA")}>Reduce on A</button>
-        <button onClick={() => reduceBet("BetB")}>Reduce on B</button>
+        <div>
+          {bettor && (
+            <>
+              <input
+                value={reduction}
+                onChange={(e) => setReduction(e.target.value)}
+                placeholder="reduce Amount"
+              />
+              {bettor.betterA.amount > 0 && (
+                <button onClick={() => reduceBet("BetA")}>Reduce on A</button>
+              )}
+              {bettor.betterB.amount > 0 && (
+                <button onClick={() => reduceBet("BetB")}>Reduce on B</button>
+              )}
+            </>
+          )}
+        </div>
+
+        <div>
+          {bettor && (
+            <>
+              {bettor.betterA.amount > 0 && (
+                <button onClick={() => withdraw("A")}>withdraw All on A</button>
+              )}
+              {bettor.betterB.amount > 0 && (
+                <button onClick={() => withdraw("B")}>withdraw All on B</button>
+              )}
+            </>
+          )}
+        </div>
+
         <div>
           {bettor ? (
             <>
-              {bettor.betterA && (
+              {bettor.betterA.amount > 0 && (
                 <>
                   <div>Bettor A: {bettor.betterA.bettor.toString()}</div>
                   <div>Bet Amount A: {bettor.betterA.amount.toString()}</div>
@@ -186,7 +270,7 @@ const MarketInteractionPage = () => {
                   {/* Add more properties of betterA as needed */}
                 </>
               )}
-              {bettor.betterB && (
+              {bettor.betterB.amount > 0 && (
                 <>
                   <div>Bettor B: {bettor.betterB.bettor.toString()}</div>
                   <div>Bet Amount B: {bettor.betterB.amount.toString()}</div>
@@ -203,6 +287,14 @@ const MarketInteractionPage = () => {
             <p>No bettor information available</p>
           )}
         </div>
+        {owner && (
+          <>
+            <button onClick={() => endBet(0)}>Set Winner A</button>
+            <button onClick={() => endBet(1)}>Set Winner B</button>
+            <button onClick={() => endBet(2)}>Set Draw/Cancel</button>
+          </>
+        )}
+        <h1>Time Left : {timeLeft}</h1>
       </div>
     </>
   );
