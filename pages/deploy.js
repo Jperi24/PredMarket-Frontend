@@ -1,6 +1,7 @@
 import { ethers } from "ethers";
 import predMarketArtifact from "../predMarket.json"; // path to the ABI and Bytecode
 import React, { useState } from "react";
+import Header from "../components/Header";
 
 import { addContract } from "../data/contractStore";
 
@@ -9,6 +10,7 @@ const deployPredMarket = async (
   odds1,
   odds2,
   tags,
+  imageUrl,
   NameofMaket,
   ConditionOfMarket
 ) => {
@@ -30,6 +32,7 @@ const deployPredMarket = async (
     odds1,
     odds2,
     tags,
+    imageUrl,
     NameofMaket,
     ConditionOfMarket
   );
@@ -47,6 +50,7 @@ export default function DeployPredMarket() {
   const [category, setCategory] = useState("");
   const [NameofMarket, setNameOfMarket] = useState("");
   const [ConditionOfMarket, setConditionOfMarket] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
   const timeToEnd = timeToEndDays * 86400 + timeToEndMinutes * 60;
 
   const handleDeploy = async () => {
@@ -67,6 +71,7 @@ export default function DeployPredMarket() {
       odds1,
       odds2,
       finalTags.split(",").map((tag) => tag.trim()),
+      imageUrl,
       NameofMarket,
       ConditionOfMarket
     );
@@ -74,6 +79,7 @@ export default function DeployPredMarket() {
 
   return (
     <div className="page-container">
+      <Header />
       <header className="header">
         <h1>Deploy Prediction Market</h1>
       </header>
@@ -96,6 +102,15 @@ export default function DeployPredMarket() {
               type="number"
               value={timeToEndMinutes}
               onChange={(e) => setTimeToEndMinutes(e.target.value)}
+            />
+          </label>
+          <label className="input-label">
+            Image URL
+            <input
+              type="text"
+              value={imageUrl}
+              onChange={(e) => setImageUrl(e.target.value)}
+              placeholder="Enter image URL"
             />
           </label>
 

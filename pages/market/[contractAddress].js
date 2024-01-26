@@ -11,14 +11,30 @@ const MarketInteractionPage = () => {
   const [provider, setProvider] = useState(null);
   const [signer, setSigner] = useState(null);
   const [contract, setContract] = useState(null);
+  const [betsOnPotsAB, setBetsOnPots] = useState("");
   const [contractInstance, setContractInstance] = useState(null);
-  const [bet, setBet] = useState("");
+
   const [reduction, setReduction] = useState("");
   const [bettor, setBettor] = useState(null);
   const router = useRouter();
   const [ABDraw, setABDraw] = useState(null);
   const [owner, setOwner] = useState(null);
+  const [gasInContract, setGasIn] = useState("");
   const { contractAddress } = router.query;
+  const [betA, setBetA] = useState("");
+  const [betB, setBetB] = useState("");
+
+  const [calculatedRewardRiskA, setCalculatedRewardRiskA] = useState({
+    potentialReward: null,
+    reward: null,
+    risk: null,
+  });
+  const [calculatedRewardRiskB, setCalculatedRewardRiskB] = useState({
+    potentialReward: null,
+    reward: null,
+    risk: null,
+  });
+  const [statusOfMarket, setStatusOfMarket] = useState(null);
 
   const fetchContractDetails = async (address) => {
     try {
@@ -88,18 +104,17 @@ const MarketInteractionPage = () => {
             betterB: bettorStatus[1],
           };
           setBettor(formattedBettorStatus);
+          const betsOnPots = await contractInstance.viewPots();
+          const formattedBets = {
+            BetA: betsOnPots[0],
+            BetB: betsOnPots[1],
+          };
+          setBetsOnPots(formattedBets);
+          const sstatusOfMarket = await contractInstance.getRaffleState();
+          setStatusOfMarket(sstatusOfMarket);
+          console.log(sstatusOfMarket);
         } catch (error) {
           console.error("Error finding bettor:", error);
-        }
-      }
-    };
-    const setIfOwner = async () => {
-      if (contractInstance) {
-        try {
-          const ownerCheck = await contractInstance.isOwner();
-          setOwner(ownerCheck);
-        } catch (error) {
-          console.log("couldnt find owner", error);
         }
       }
     };
@@ -130,24 +145,122 @@ const MarketInteractionPage = () => {
     };
   }, [contractInstance]); // Effect runs on component mount and when contractInstance changes
 
-  const betOnOption = async (option) => {
-    if (contractInstance && bet) {
+  const calculateRewardRisk = async () => {
+    if (contractInstance) {
       try {
-        if (option == 0) {
+        if (bettor?.betterA?.amount != null || betA > 0) {
+          const betamountA = ethers.utils.parseEther(betA || "0");
+          const contractFunctionA = contractInstance.winLossBetA;
+          const [potentialReward, reward, risk] = await contractFunctionA(
+            betamountA
+          );
+          setCalculatedRewardRiskA({
+            potentialReward: potentialReward.toString(),
+            reward: reward.toString(),
+            risk: risk.toString(),
+          });
+        }
+        if (bettor?.betterB?.amount != null || betB > 0) {
+          const betAmountB = ethers.utils.parseEther(betB || "0");
+          const contractFunctionB = contractInstance.winLossBetB;
+          const [potentialReward, reward, risk] = await contractFunctionB(
+            betAmountB
+          );
+          setCalculatedRewardRiskB({
+            potentialReward: potentialReward.toString(),
+            reward: reward.toString(),
+            risk: risk.toString(),
+          });
+          console.log(calculatedRewardRiskB);
+        }
+      } catch (error) {
+        console.error("Error calculating reward and risk:", error);
+        setCalculatedRewardRiskA({
+          potentialReward: null,
+          reward: null,
+          risk: null,
+        });
+        setCalculatedRewardRiskB({
+          potentialReward: null,
+          reward: null,
+          risk: null,
+        });
+      }
+    } else {
+      setCalculatedRewardRiskA({
+        potentialReward: null,
+        reward: null,
+        risk: null,
+      });
+      setCalculatedRewardRiskB({
+        potentialReward: null,
+        reward: null,
+        risk: null,
+      });
+    }
+  };
+
+  useEffect(() => {
+    calculateRewardRisk();
+  }, [betA, betB, contractInstance]);
+
+  const setIfOwner = async () => {
+    if (contractInstance) {
+      try {
+        const ownerCheck = await contractInstance.isOwner();
+        setOwner(ownerCheck);
+      } catch (error) {
+        console.log("couldnt find owner", error);
+      }
+    }
+  };
+
+  const updateBetterMongoDB = async (address, signer) => {
+    try {
+      // Correctly construct the URL using template literals
+      const signerAddress = signer.getAddress
+        ? await signer.getAddress()
+        : signer;
+      const url = `http://localhost:3001/api/updateBetterMongoDB`;
+
+      // Make the POST request
+      await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contractAddress: address,
+          better: signerAddress,
+        }), // Assuming you're sending the vote time in the request body
+      });
+    } catch (error) {
+      console.error("Error updating MongoDB:", error);
+    }
+  };
+
+  const betOnOption = async () => {
+    if (contractInstance && (betA || betB)) {
+      try {
+        if (betA && !betB) {
           const tx = await contractInstance.betOnBetA({
-            value: ethers.utils.parseEther(bet),
+            value: ethers.utils.parseEther(betA),
           });
           await tx.wait();
-        } else {
+          updateBetterMongoDB(contractAddress, signer);
+        } else if (betB && !betA) {
           const tx = await contractInstance.betOnBetB({
-            value: ethers.utils.parseEther(bet),
+            value: ethers.utils.parseEther(betB),
           });
           await tx.wait();
+          updateBetterMongoDB(contractAddress, signer);
+        } else {
+          alert("invalid bet configuration");
         }
 
-        console.log(`Bet placed on ${option}`);
+        console.log(`Bet placed }`);
       } catch (error) {
-        console.error(`Error placing bet on ${option}:`, error);
+        console.error(`Error placing bet on:`, error);
       }
     }
   };
@@ -165,14 +278,38 @@ const MarketInteractionPage = () => {
     }
   };
 
+  const updateMongoDB = async (address, voteTime) => {
+    try {
+      // Correctly construct the URL using template literals
+      const url = `http://localhost:3001/api/updateMongoDB`;
+
+      // Make the POST request
+      await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ contractAddress: address, voteTime: voteTime }), // Assuming you're sending the vote time in the request body
+      });
+    } catch (error) {
+      console.error("Error updating MongoDB:", error);
+    }
+  };
+
   const endBet = async (winnerPot) => {
     if (contractInstance && winnerPot) {
       try {
         const tx = await contractInstance.endBet(winnerPot);
         await tx.wait();
         console.log(`Bet ended on ${winnerPot}`);
+
+        // Update MongoDB after the smart contract interaction
+        // Assuming you want to record the current date and time as the "vote time"
+
+        const endTime = Math.floor(Date.now() / 1000) + 86400;
+        await updateMongoDB(contractAddress, endTime);
       } catch (error) {
-        console.error(`Error reducing bet on ${winnerPot}:`, error);
+        console.error(`Error ending bet on ${winnerPot}:`, error);
       }
     }
   };
@@ -192,71 +329,203 @@ const MarketInteractionPage = () => {
   if (!contract) {
     return <div className="loading">Loading...</div>;
   }
+  const weiToEther = (weiValue) => {
+    return ethers.utils.formatEther(weiValue);
+  };
 
   return (
     <>
       <Header getContracts={getContracts} />
-      <div className="contract-container">
-        <h1 className="contract-title">{contract.name}</h1>
-        <div className="contract-details">
-          <p>
-            <strong>Address:</strong> {contractAddress}
-          </p>
-          <p>
-            <strong>Contract Name:</strong> {contract.NameOfMarket}
-          </p>
-          <p>
-            <strong>Contract Condition:</strong> {contract.ConditionOfMarket}
-          </p>
-          <p>
-            <strong>Contract Odds:</strong> {contract.odds1} / {contract.odds2}
-          </p>
-
-          <h4>
-            There is <CountdownTimer endTime={contract.endTime} /> time left to
-            place a bet
-          </h4>
+      <main className="contract-container">
+        {/* Display the profile image */}
+        <div className="profile-image-container2">
+          <img
+            src="http://localhost:3000/SMASHULT.png"
+            alt="Contract Profile"
+            className="contract-profile-image"
+          />
         </div>
-        <input
-          value={bet}
-          onChange={(e) => setBet(e.target.value)}
-          placeholder="Bet Amount"
-        />
-        <button onClick={() => betOnOption(0)}>Bet on A</button>
-        <button onClick={() => betOnOption(1)}>Bet on B</button>
-
-        <div>
-          {bettor && (
-            <>
-              <input
-                value={reduction}
-                onChange={(e) => setReduction(e.target.value)}
-                placeholder="reduce Amount"
+        <section className="contract-section">
+          <h1 className="contract-title">{contract.name}</h1>
+          <div className="contract-grid">
+            <div className="contract-detail-item">
+              <strong>Address of Contract:</strong> {contractAddress}
+            </div>
+            <div className="contract-detail-item">
+              <strong>Contract Name:</strong> {contract.NameOfMarket}
+            </div>
+            <div className="contract-detail-item">
+              <strong>Contract Condition:</strong> {contract.ConditionOfMarket}
+            </div>
+            <div className="contract-detail-item">
+              <strong>Contract Odds:</strong> {contract.odds1} /{" "}
+              {contract.odds2}
+            </div>
+            <div className="contract-timer">
+              <h4>Time left to bet:</h4>
+              <CountdownTimer
+                endTime={contract.endTime}
+                className="countdown-timer"
               />
-              {bettor.betterA.amount > 0 && (
-                <button onClick={() => reduceBet("BetA")}>Reduce on A</button>
+            </div>
+            {contract &&
+              contract.voteTime &&
+              Date.now() < contract.voteTime * 1000 && (
+                <div className="contract-vote-time">
+                  <h4>Vote time:</h4>
+                  <CountdownTimer
+                    endTime={contract.voteTime}
+                    className="countdown-timer"
+                  />
+                </div>
               )}
-              {bettor.betterB.amount > 0 && (
-                <button onClick={() => reduceBet("BetB")}>Reduce on B</button>
-              )}
-            </>
-          )}
+          </div>
+        </section>
+
+        {/* Display the profile image */}
+        <div className="profile-image-container">
+          <img
+            src={
+              contract.imageUrl
+                ? contract.imageUrl
+                : "http://localhost:3000/SSBUltimate.jpg"
+            }
+            alt="Contract Profile"
+            className="contract-profile-image"
+          />
         </div>
 
-        <div>
-          {bettor && (
-            <>
-              {bettor.betterA.amount > 0 && (
-                <button onClick={() => withdraw("A")}>withdraw All on A</button>
+        {statusOfMarket === 0 && (
+          <section
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              gap: "20px",
+              maxWidth: "600px",
+              margin: "auto",
+            }}
+          >
+            <div style={{ width: "50%" }}>
+              <input
+                style={{
+                  width: "100%",
+                  padding: "6px 10px",
+                  border: "1px solid #ccc",
+                  borderRadius: "4px",
+                  textAlign: "center",
+                  fontSize: "14px",
+                }}
+                value={betA}
+                onChange={(e) => setBetA(e.target.value)}
+                placeholder="Bet Amount A"
+              />
+              {(bettor?.betterA || betA) && (
+                <div
+                  style={{
+                    textAlign: "center",
+                    marginTop: "10px",
+                    fontSize: "14px",
+                  }}
+                >
+                  <p>
+                    Potential Reward A:{" "}
+                    {calculatedRewardRiskA.potentialReward
+                      ? weiToEther(calculatedRewardRiskA.potentialReward)
+                      : "N/A"}
+                  </p>
+                  <p>
+                    Current Reward A:{" "}
+                    {calculatedRewardRiskA.reward
+                      ? weiToEther(calculatedRewardRiskA.reward)
+                      : "N/A"}
+                  </p>
+                  <p>
+                    Calculated Risk A:{" "}
+                    {calculatedRewardRiskA.risk
+                      ? weiToEther(calculatedRewardRiskA.risk)
+                      : "N/A"}
+                  </p>
+                </div>
               )}
-              {bettor.betterB.amount > 0 && (
-                <button onClick={() => withdraw("B")}>withdraw All on B</button>
+            </div>
+            <div style={{ width: "50%" }}>
+              <input
+                style={{
+                  width: "100%",
+                  padding: "6px 10px",
+                  border: "1px solid #ccc",
+                  borderRadius: "4px",
+                  textAlign: "center",
+                  fontSize: "14px",
+                }}
+                value={betB}
+                onChange={(e) => setBetB(e.target.value)}
+                placeholder="Bet Amount B"
+              />
+              {(bettor?.betterB || betB) && (
+                <div
+                  style={{
+                    textAlign: "center",
+                    marginTop: "10px",
+                    fontSize: "14px",
+                  }}
+                >
+                  <p>
+                    Potential Reward B:{" "}
+                    {calculatedRewardRiskB.potentialReward
+                      ? weiToEther(calculatedRewardRiskB.potentialReward)
+                      : "N/A"}
+                  </p>
+                  <p>
+                    Current Reward B:{" "}
+                    {calculatedRewardRiskB.reward
+                      ? weiToEther(calculatedRewardRiskB.reward)
+                      : "N/A"}
+                  </p>
+                  <p>
+                    Calculated Risk B:{" "}
+                    {calculatedRewardRiskB.risk
+                      ? weiToEther(calculatedRewardRiskB.risk)
+                      : "N/A"}
+                  </p>
+                </div>
               )}
-            </>
-          )}
-        </div>
+            </div>
+          </section>
+        )}
 
-        <div>
+        <button onClick={() => betOnOption()}>Place Bet</button>
+
+        {/* Bet Reduction Section */}
+        {bettor && (bettor.betterA.amount > 0 || bettor.betterB.amount > 0) && (
+          <section>
+            <h3>Reduce Your Bet</h3>
+            <input
+              value={reduction}
+              onChange={(e) => setReduction(e.target.value)}
+              placeholder="Reduce Amount"
+            />
+            {bettor.betterA.amount > 0 && (
+              <button onClick={() => reduceBet("BetA")}>Reduce on A</button>
+            )}
+            {bettor.betterB.amount > 0 && (
+              <button onClick={() => reduceBet("BetB")}>Reduce on B</button>
+            )}
+          </section>
+        )}
+
+        {bettor && statusOfMarket === 3 && (
+          <section>
+            {bettor.betterA.amount > 0 && (
+              <button onClick={() => withdraw("A")}>Withdraw All on A</button>
+            )}
+            {bettor.betterB.amount > 0 && (
+              <button onClick={() => withdraw("B")}>Withdraw All on B</button>
+            )}
+          </section>
+        )}
+
+        <section>
           {bettor ? (
             <>
               {bettor.betterA.amount > 0 && (
@@ -267,7 +536,6 @@ const MarketInteractionPage = () => {
                     Odds A: {bettor.betterA.odds[0].toString()} /{" "}
                     {bettor.betterA.odds[1].toString()}
                   </div>
-                  {/* Add more properties of betterA as needed */}
                 </>
               )}
               {bettor.betterB.amount > 0 && (
@@ -278,7 +546,6 @@ const MarketInteractionPage = () => {
                     Odds B: {bettor.betterB.odds[0].toString()} /{" "}
                     {bettor.betterB.odds[1].toString()}
                   </div>
-                  {/* Add more properties of betterB as needed */}
                 </>
               )}
               {!bettor.betterA && !bettor.betterB && <p>No information</p>}
@@ -286,16 +553,28 @@ const MarketInteractionPage = () => {
           ) : (
             <p>No bettor information available</p>
           )}
-        </div>
-        {owner && (
-          <>
+        </section>
+
+        {owner && statusOfMarket === 0 && (
+          <section>
+            <div>After Betting Period Has Ended Select</div>
             <button onClick={() => endBet(0)}>Set Winner A</button>
             <button onClick={() => endBet(1)}>Set Winner B</button>
             <button onClick={() => endBet(2)}>Set Draw/Cancel</button>
-          </>
+          </section>
         )}
-        <h1>Time Left : {timeLeft}</h1>
-      </div>
+
+        <aside>
+          <div>Gas: {gasInContract.toString()}</div>
+        </aside>
+
+        {betsOnPotsAB && (
+          <aside>
+            <h1>Pots A : {weiToEther(betsOnPotsAB.BetA)}</h1>
+            <h1>Pots B : {weiToEther(betsOnPotsAB.BetB)}</h1>
+          </aside>
+        )}
+      </main>
     </>
   );
 };

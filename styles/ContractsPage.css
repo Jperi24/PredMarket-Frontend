@@ -1,86 +1,315 @@
-/* ContractsPage.css */
+/* Use a modern Google font */
+@import url("https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600&display=swap");
 
-/* General page styling */
-.page-container {
-  font-family: Arial, sans-serif;
-  max-width: 800px;
-  margin: auto;
-  padding: 20px;
-  text-align: center;
+/* Global Styles */
+* {
+  box-sizing: border-box;
 }
 
-/* Header styling */
+body,
+html {
+  margin: 0;
+  padding: 0;
+  font-family: "Open Sans", sans-serif;
+  background-color: #f4f4f4; /* Light background for better contrast */
+}
+
+.page-container {
+  max-width: 960px;
+  margin: 20px auto;
+  padding: 20px;
+  background-color: #fff;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
 .header {
-  font-size: 2em;
+  font-size: 1.2em;
   color: #333;
   margin-bottom: 20px;
 }
 
-/* Search input and button styling */
-.search-container {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 20px;
-}
-
-.search-input {
-  padding: 10px;
-  font-size: 1em;
-  border: 1px solid #ddd;
-  border-radius: 4px;
+.navigation-buttons a {
   margin-right: 10px;
 }
 
-.search-button {
-  padding: 10px 20px;
+/* Button Styling */
+.button,
+.search-button,
+.tag-filter-button,
+.contract-container button {
+  padding: 8px 15px;
   background-color: #007bff;
   color: white;
   border: none;
   border-radius: 4px;
   cursor: pointer;
+  font-size: 0.9em;
+  text-align: center;
+  text-decoration: none;
+  transition: background-color 0.3s ease;
 }
 
-.search-button:hover {
+.button:hover,
+.search-button:hover,
+.tag-filter-button:hover,
+.contract-container button:hover {
   background-color: #0056b3;
 }
 
-/* Contracts list styling */
-.contracts-list {
-  list-style: none;
-  padding: 0;
+/* Form Elements */
+.input-label {
+  display: block;
+  margin-bottom: 10px;
+  color: #333;
+  font-weight: 600;
 }
 
-.contract-item {
+.search-input,
+.contract-container input,
+.time-input,
+.contract-container .odds-input {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 15px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 1em;
+}
+
+/* Contract Item & List */
+.contract-item,
+.contracts-list li {
   background-color: #f9f9f9;
   border: 1px solid #eee;
   padding: 15px;
   margin-bottom: 10px;
   border-radius: 4px;
+  cursor: pointer;
 }
 
-.market-interaction-container {
-  background-color: #f9f9f9;
-  border: 1px solid #eee;
-  padding: 20px;
-  margin-top: 20px;
-  border-radius: 8px;
+.contracts-list {
+  list-style-type: none;
+  padding: 0;
 }
 
-.market-interaction-title {
-  font-size: 1.5em;
-  color: #333;
+.contracts-list li:hover {
+  background-color: #e6e6e6;
+}
+
+/* Search Container */
+.search-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: center;
   margin-bottom: 20px;
 }
 
-.market-interaction-details {
-  text-align: left;
-  font-size: 1em;
-  line-height: 1.6;
-  margin-top: 20px;
+.tag-filter-button {
+  background-color: #f0f0f0;
+  border: 1px solid #ccc;
 }
 
-.market-loading {
+.tag-filter-button:hover {
+  background-color: #ddd;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .header {
+    font-size: 1em;
+  }
+
+  .navigation-buttons a,
+  .button,
+  .input {
+    display: block;
+    width: 100%;
+    margin-right: 0;
+    margin-bottom: 10px;
+  }
+}
+
+/* Tooltip */
+.tooltip {
+  position: relative;
+  display: inline-block;
+}
+
+.tooltip .tooltiptext {
+  visibility: hidden;
+  width: 120px;
+  background-color: #555;
+  color: #fff;
   text-align: center;
+  border-radius: 6px;
+  padding: 5px;
+  position: absolute;
+  z-index: 1;
+  bottom: 125%;
+  left: 50%;
+  margin-left: -60px;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.tooltip:hover .tooltiptext {
+  visibility: visible;
+  opacity: 1;
+}
+
+/* Help Icon */
+.help-icon {
+  cursor: pointer;
+  display: inline-block;
+  margin-left: 5px;
+  font-size: 14px;
+  color: #007bff;
+}
+
+/* Time Inputs Container */
+.time-inputs-container {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+/* iFrame Container */
+.iframe-container {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+}
+
+.responsive-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+/* Grid Container */
+.grid-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 20px;
   padding: 20px;
+}
+
+/* Grid Item */
+.grid-item {
+  background-color: #f9f9f9;
+  border: 1px solid #eee;
+  padding: 15px;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: center;
+}
+
+.grid-item:hover {
+  background-color: #e6e6e6;
+}
+
+/* Contract Image */
+.contract-image {
+  width: 100px;
+  height: 100px;
+  margin-bottom: 10px;
+}
+
+/* Contract Address and Deployer Address */
+.contract-address,
+.deployer-address {
+  font-size: 0.9em;
+  word-break: break-word;
+  margin-bottom: 5px;
+}
+
+.contract-section {
+  width: 60%; /* Smaller width */
+  margin: 20px auto; /* Centered on page */
+  padding: 15px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+.profile-image-container {
+  position: absolute;
+  top: 20px; /* Adjust as needed */
+  right: 20px; /* Adjust as needed */
+}
+
+.profile-image-container2 {
+  position: absolute;
+  top: 20px; /* Adjust as needed */
+  left: 20px; /* Adjust as needed */
+}
+
+.contract-profile-image {
+  width: 180px; /* Increase the width as needed */
+  height: 180px; /* Increase the height as needed */
+  object-fit: cover; /* Keeps the aspect ratio */
+  border-radius: 50%; /* Circular image */
+  position: relative; /* Allows you to position it relative to its normal position */
+  top: 80px; /* Adjust this value to move the image down */
+}
+
+.contract-title {
+  color: #007bff;
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.contract-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr; /* Two columns */
+  gap: 10px;
+}
+
+.contract-detail-item {
+  background-color: white;
+  padding: 10px;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  font-size: 0.9em;
+}
+
+.contract-timer,
+.contract-vote-time {
+  grid-column: 1 / -1; /* Span across all columns */
+  background-color: #e9ecef;
+  padding: 10px;
+  border-radius: 4px;
+  text-align: center;
+}
+
+.countdown-timer {
   font-size: 1.2em;
+  color: #dc3545; /* Red color for urgency */
+  font-weight: bold;
+  margin-top: 5px;
+}
+
+.info-icon {
+  cursor: pointer;
+  border-radius: 50%;
+  padding: 5px;
+  margin-left: 10px;
+  background-color: #007bff; /* Blue background */
+  color: white;
+  font-size: 16px;
+  text-align: center;
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  line-height: 24px; /* Center the '?' vertically */
+}
+
+.info-icon:hover {
+  background-color: #0056b3; /* Darker blue on hover */
+  transform: scale(1.1); /* Slightly enlarge on hover */
 }

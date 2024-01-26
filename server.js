@@ -76,3 +76,45 @@ process.on("SIGINT", () => {
     process.exit(0);
   });
 });
+
+app.post("/api/updateMongoDB", async (req, res) => {
+  const { contractAddress, voteTime } = req.body;
+
+  try {
+    // Use the existing MongoDB client and database connection
+    const collection = db.collection("Contracts");
+
+    // Update the document where the contract address matches
+    // Ensure the field name matches your MongoDB document structure
+    await collection.updateOne(
+      { address: contractAddress }, // filter by the correct field name
+      { $set: { voteTime: voteTime } } // set the new vote time
+    );
+
+    res.status(200).send("Update successful");
+  } catch (error) {
+    console.error("Error updating MongoDB:", error);
+    res.status(500).send("Error updating MongoDB");
+  }
+});
+
+app.post("/api/updateBetterMongoDB", async (req, res) => {
+  const { contractAddress, better } = req.body;
+
+  try {
+    // Use the existing MongoDB client and database connection
+    const collection = db.collection("Contracts");
+
+    // Update the document where the contract address matches
+    // Ensure the field name matches your MongoDB document structure
+    await collection.updateOne(
+      { address: contractAddress }, // filter by the correct field name
+      { $addToSet: { betters: better } }
+    );
+
+    res.status(200).send("Update successful");
+  } catch (error) {
+    console.error("Error updating MongoDB:", error);
+    res.status(500).send("Error updating MongoDB");
+  }
+});

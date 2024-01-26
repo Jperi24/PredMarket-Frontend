@@ -1,33 +1,13 @@
-let contracts = [
-  {
-    address: "0x5fbdb2315678afecb367f032d93f642f64180aa3",
-    endTime: "1703354367",
-    odds1: "2",
-    odds2: "1",
-    tags: ["Jmook", "Moky", "Melee", "TBH11"],
-    NameofMaket: "Jmook beats Moky TBH11",
-    ConditionOfMarket: "Jmook Wins",
-    voteTime: "",
-  },
-  {
-    address: "0x0Cd1Bf9A1b36cE34237eEaFef220932846BCD82",
-    endTime: "1703120497",
-    odds1: "2",
-    odds2: "1",
-    tags: ["Jmook", "Moky", "Melee", "TBH11", "black"],
-    NameofMaket: "Jmook beats Moky TBH11",
-    ConditionOfMarket: "Jmook Wins",
-  },
-];
-
 export const addContract = async (
   address,
   endTime,
   odds1,
   odds2,
   tags,
+  imageUrl,
   NameofMaket,
-  ConditionOfMarket
+  ConditionOfMarket,
+  deployerAddress
 ) => {
   try {
     const response = await fetch("http://localhost:3001/addContract", {
@@ -41,8 +21,11 @@ export const addContract = async (
         odds1,
         odds2,
         tags,
+        imageUrl,
         NameofMaket,
         ConditionOfMarket,
+        deployerAddress,
+        betters: [],
       }),
     });
 
@@ -71,12 +54,12 @@ export const getContracts = async () => {
   }
 };
 
-export const getContractDetails = (contractAddress) => {
-  // Find the contract with the given address
-  const contract = contracts.find(
-    (contract) => contract.address === contractAddress
-  );
+// export const getContractDetails = (contractAddress) => {
+//   // Find the contract with the given address
+//   const contract = contracts.find(
+//     (contract) => contract.address === contractAddress
+//   );
 
-  // Return the contract if found, otherwise return null or an appropriate default object
-  return contract || null;
-};
+//   // Return the contract if found, otherwise return null or an appropriate default object
+//   return contract || null;
+// };

@@ -1,8 +1,13 @@
-// This is a simple example. In a real app, you'd fetch this data from a database or other data store.
+// pages/api/contracts.js
 import { getContracts } from "../../data/contractStore";
 
 export default function handler(req, res) {
-  const contracts = getContracts();
-  console.log(contracts);
+  const { tag } = req.query;
+  let contracts = getContracts();
+
+  if (tag) {
+    contracts = contracts.filter((contract) => contract.tags.includes(tag));
+  }
+
   res.status(200).json(contracts);
 }
