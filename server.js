@@ -118,3 +118,25 @@ app.post("/api/updateBetterMongoDB", async (req, res) => {
     res.status(500).send("Error updating MongoDB");
   }
 });
+
+app.post("/removeBetter", async (req, res) => {
+  try {
+    const collection = db.collection("Contracts");
+    const { address } = req.body;
+
+    // Update the document to remove the bettor's address from the 'betters' array
+    const updateResult = await collection.updateMany(
+      {},
+      { $pull: { betters: address } }
+    );
+
+    if (updateResult.modifiedCount === 0) {
+      return res.status(404).send("Bettor not found or already removed");
+    }
+
+    res.status(200).send("Bettor removed successfully");
+  } catch (error) {
+    console.error("Error removing bettor from MongoDB:", error);
+    res.status(500).send("Error removing bettor");
+  }
+});

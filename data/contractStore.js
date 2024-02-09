@@ -4,7 +4,6 @@ export const addContract = async (
   odds1,
   odds2,
   tags,
-  imageUrl,
   NameofMaket,
   ConditionOfMarket,
   deployerAddress
@@ -21,7 +20,6 @@ export const addContract = async (
         odds1,
         odds2,
         tags,
-        imageUrl,
         NameofMaket,
         ConditionOfMarket,
         deployerAddress,

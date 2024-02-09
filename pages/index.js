@@ -4,13 +4,16 @@ import CountdownTimer from "../components/CountDownTimer";
 import Header from "../components/Header";
 import { useRouter } from "next/router";
 import { ethers } from "ethers";
+import { useAddress } from "@thirdweb-dev/react";
 
 export default function ContractsPage() {
   const [contracts, setContracts] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [filteredContracts, setFilteredContracts] = useState([]);
   const router = useRouter();
-  const [signer, setSigner] = useState("");
+  // const [signer, setSigner] = useState("");
+
+  const signer = useAddress();
 
   const handleUserBetsFilter = () => {
     const userAddress = signer;
@@ -26,22 +29,22 @@ export default function ContractsPage() {
   useEffect(() => {
     async function fetchContracts() {
       //USED TO GET ADDRESS //////////////////////////////////////////////////////////////////////////////
-      if (typeof window.ethereum !== "undefined") {
-        // await window.ethereum.request({ method: "eth_requestAccounts" });
-        const tempProvider = new ethers.providers.JsonRpcProvider(
-          "http://localhost:8545"
-        );
-        await window.ethereum.request({ method: "eth_requestAccounts" });
+      // if (typeof window.ethereum !== "undefined") {
+      //   // await window.ethereum.request({ method: "eth_requestAccounts" });
+      //   const tempProvider = new ethers.providers.JsonRpcProvider(
+      //     "http://localhost:8545"
+      //   );
+      //   await window.ethereum.request({ method: "eth_requestAccounts" });
 
-        // Create a provider that wraps around MetaMask's provider
-        const provider = new ethers.providers.Web3Provider(window.ethereum);
+      //   // Create a provider that wraps around MetaMask's provider
+      //   const provider = new ethers.providers.Web3Provider(window.ethereum);
 
-        // Get the signer corresponding to the currently selected account in MetaMask
-        const signer2 = provider.getSigner();
-        // const tempSigner = tempProvider.getSigner();
-        const signer3 = await signer2.getAddress();
-        setSigner(signer3);
-      }
+      //   // Get the signer corresponding to the currently selected account in MetaMask
+      //   const signer2 = provider.getSigner();
+      //   // const tempSigner = tempProvider.getSigner();
+      //   const signer3 = await signer2.getAddress();
+      //   setSigner(signer3);
+      // }
       //End Used to get address////////////////////////////////////////////////////////////////////////////////
 
       const contractsData = await getContracts();
@@ -123,19 +126,23 @@ export default function ContractsPage() {
             className="grid-item"
             onClick={() => navigateToMarket(contract.address)}
           >
-            {contract.imageUrl ? (
-              <img
-                src={contract.imageUrl}
-                alt="Contract Image"
-                className="contract-image"
-              />
-            ) : (
-              <img
-                src="../data/noPhotoAvail.jpg"
-                alt="Default Image"
-                className="contract-image"
-              />
-            )}
+            <img
+              src={
+                contract.tags[0] === "SSBMelee"
+                  ? "http://localhost:3000/MeleeBubble.png"
+                  : contract.tags[0] === "SSBUltimate"
+                  ? "http://localhost:3000/SMASHULT.png"
+                  : contract.tags[0] === "LeagueOfLegends"
+                  ? "http://localhost:3000/LeagueBubble.png"
+                  : contract.tags[0] === "CSGO"
+                  ? "http://localhost:3000/CSGOBubble.png"
+                  : contract.tags[0] === "Fortnite"
+                  ? "http://localhost:3000/FortniteBubble.png"
+                  : "http://localhost:3000/noPhotoAvail.jpg" // default image if none of the tags match
+              }
+              alt="Contract Image"
+              className="contract-image"
+            />
 
             <p>
               <strong>Time left to Bet:</strong>

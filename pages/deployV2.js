@@ -2,6 +2,7 @@ import { ethers } from "ethers";
 import predMarketArtifact from "../predMarket.json"; // path to the ABI and Bytecode
 import React, { useState, useEffect } from "react";
 import Header from "../components/Header";
+import { useSigner } from "@thirdweb-dev/react";
 
 import { addContract } from "../data/contractStore";
 
@@ -10,14 +11,15 @@ const deployPredMarket = async (
   odds1,
   odds2,
   tags,
-  imageUrl,
   NameofMaket,
-  ConditionOfMarket
+  ConditionOfMarket,
+  signer
 ) => {
-  const localNetworkURL = "http://localhost:8545";
-  await window.ethereum.request({ method: "eth_requestAccounts" });
-  const provider = new ethers.providers.Web3Provider(window.ethereum);
-  const signer = provider.getSigner();
+  // const localNetworkURL = "http://localhost:8545";
+  // await window.ethereum.request({ method: "eth_requestAccounts" });
+  // const provider = new ethers.providers.Web3Provider(window.ethereum);
+  // const signer = provider.getSigner();
+
   const PredMarket = new ethers.ContractFactory(
     predMarketArtifact.abi,
     predMarketArtifact.bytecode,
@@ -33,7 +35,6 @@ const deployPredMarket = async (
     odds1,
     odds2,
     tags,
-    imageUrl,
     NameofMaket,
     ConditionOfMarket,
     deployerAddress
@@ -52,11 +53,11 @@ export default function DeployPredMarket() {
   const [category, setCategory] = useState("");
   const [NameofMarket, setNameOfMarket] = useState("");
   const [ConditionOfMarket, setConditionOfMarket] = useState("");
-  const [imageUrl, setImageUrl] = useState("");
   const [timeToEndHours, setTimeToEndHours] = useState("");
   const timeToEnd =
     timeToEndDays * 86400 + timeToEndHours * 3600 + timeToEndMinutes * 60;
   const [endTimeDisplay, setEndTimeDisplay] = useState("");
+  const signer = useSigner();
 
   useEffect(() => {
     const totalTimeInSeconds =
@@ -85,15 +86,20 @@ export default function DeployPredMarket() {
       alert("You can only add up to 20 tags.");
       return;
     }
-    await deployPredMarket(
-      timeToEnd,
-      odds1,
-      odds2,
-      finalTags.split(",").map((tag) => tag.trim()),
-      imageUrl,
-      NameofMarket,
-      ConditionOfMarket
-    );
+    try {
+      await deployPredMarket(
+        timeToEnd,
+        odds1,
+        odds2,
+        finalTags.split(",").map((tag) => tag.trim()),
+        NameofMarket,
+        ConditionOfMarket,
+        signer
+      );
+      console.log("deployed successfully");
+    } catch (error) {
+      alert("deployment failed " + error.message);
+    }
   };
 
   return (
@@ -136,25 +142,7 @@ export default function DeployPredMarket() {
             </label>
           </div>
           {/* Display Calculated End Time */}
-          <p>Market will end on: {endTimeDisplay}</p>
-
-          {/* Image URL */}
-          <label className="input-label">
-            Image URL
-            <span className="tooltip">
-              <span className="help-icon">?</span>
-              <span className="tooltiptext">
-                Provide a URL for an image representing the market. This will be
-                displayed alongside market details.
-              </span>
-            </span>
-            <input
-              type="text"
-              value={imageUrl}
-              onChange={(e) => setImageUrl(e.target.value)}
-              placeholder="Enter image URL"
-            />
-          </label>
+          <p>People May Place And Edit Bets Up Until: {endTimeDisplay}</p>
 
           {/* Combined Odds Input */}
           <label className="input-label">

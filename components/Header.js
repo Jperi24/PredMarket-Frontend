@@ -1,12 +1,12 @@
 import React, { useState } from "react";
 import { useRouter } from "next/router";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { ConnectWallet } from "@thirdweb-dev/react";
 import Link from "next/link"; // Importing Link from Next.js
 
 const Header = ({}) => {
   return (
     <div className="header">
-      <ConnectButton />
+      <ConnectWallet />
 
       {/* Navigation Buttons */}
       <div className="navigation-buttons">
@@ -15,7 +15,7 @@ const Header = ({}) => {
           FAQ
         </Link>{" "}
         {/* Link to FAQ Page */}
-        <Link href="/deploy">Deploy A Pred Market</Link>{" "}
+        <Link href="/deployV2">Deploy A Pred Market</Link>{" "}
         {/* Link to Deployed Contracts Page */}
       </div>
     </div>

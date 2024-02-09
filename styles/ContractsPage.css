@@ -32,28 +32,31 @@ html {
   margin-right: 10px;
 }
 
-/* Button Styling */
+/* Button Styling for a Professional Look */
 .button,
 .search-button,
 .tag-filter-button,
 .contract-container button {
-  padding: 8px 15px;
-  background-color: #007bff;
-  color: white;
-  border: none;
-  border-radius: 4px;
+  padding: 10px 20px; /* More padding for a larger, easier-to-click area */
+  background-color: #3498db; /* A softer blue, more modern and less harsh */
+  color: #ffffff; /* Keep text color white for contrast */
+  border: 1px solid transparent; /* Subtle border, can adjust color for more contrast if needed */
+  border-radius: 5px; /* Slightly rounded corners for a modern look */
   cursor: pointer;
-  font-size: 0.9em;
+  font-size: 16px; /* Larger font size for readability */
+  font-weight: 600; /* Bolder font for emphasis */
   text-align: center;
   text-decoration: none;
-  transition: background-color 0.3s ease;
+  transition: all 0.2s ease-in-out; /* Smooth transition for hover effects */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); /* Subtle shadow for depth */
 }
 
 .button:hover,
 .search-button:hover,
 .tag-filter-button:hover,
 .contract-container button:hover {
-  background-color: #0056b3;
+  background-color: #2980b9; /* Darker shade of blue for hover effect */
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15); /* Slightly larger shadow for a "lifted" effect */
 }
 
 /* Form Elements */
