@@ -23,13 +23,31 @@ html {
 }
 
 .header {
-  font-size: 1.2em;
-  color: #333;
-  margin-bottom: 20px;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; /* Maintains a refined font choice */
+  font-size: 1rem; /* Adjusted for a more standard scale */
+  color: #333; /* Retains the professional color scheme */
+  background-color: #ffffff; /* Opt for a clean, white background for sharp contrast */
+  padding: 1rem 2rem; /* Slightly increased padding for better spacing */
+  margin-bottom: 20px; /* Keeps the bottom margin for layout spacing */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); /* Softened and refined shadow for subtle depth */
 }
 
 .navigation-buttons a {
-  margin-right: 10px;
+  color: #0056b3; /* Adds color to links for visual interest and consistency with the border */
+  text-decoration: none; /* Removes the underline from links */
+  padding: 0.5rem 0.75rem; /* Adds padding for a larger clickable area */
+  margin-right: 10px; /* Retains the margin but consider using gap with flex container for spacing */
+  border-radius: 4px; /* Softens the edges for a more modern look */
+  transition: background-color 0.3s ease; /* Smooth transition for hover effect */
+}
+
+.navigation-buttons a:hover,
+.navigation-buttons a:focus {
+  background-color: #e7f1ff; /* Light background on hover/focus for visual feedback */
+  color: #004495; /* Darkens the text color slightly for contrast */
 }
 
 /* Button Styling for a Professional Look */
@@ -37,7 +55,7 @@ html {
 .search-button,
 .tag-filter-button,
 .contract-container button {
-  padding: 10px 20px; /* More padding for a larger, easier-to-click area */
+  padding: 2px 10px; /* More padding for a larger, easier-to-click area */
   background-color: #3498db; /* A softer blue, more modern and less harsh */
   color: #ffffff; /* Keep text color white for contrast */
   border: 1px solid transparent; /* Subtle border, can adjust color for more contrast if needed */
@@ -70,13 +88,30 @@ html {
 .search-input,
 .contract-container input,
 .time-input,
-.contract-container .odds-input {
+.contract-container {
   width: 100%;
   padding: 10px;
   margin-bottom: 15px;
   border: 1px solid #ccc;
   border-radius: 4px;
   font-size: 1em;
+}
+.odds-input {
+  width: 50px; /* Adjusted width for smaller input boxes */
+  padding: 5px; /* Reduced padding for a more compact look */
+  margin-bottom: 15px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.8em; /* Smaller font size for the input content */
+}
+
+.odds-input-label .odds-input {
+  width: 10%; /* Adjusted width for smaller input boxes */
+  padding: 5px; /* Reduced padding for a more compact look */
+  margin-bottom: 15px; /* Ensures spacing between this and the next element */
+  border: 1px solid #ccc; /* Standard border styling */
+  border-radius: 4px; /* Rounds the corners of the input boxes */
+  font-size: 0.8em; /* Reduces the font size inside the input */
 }
 
 /* Contract Item & List */
@@ -141,19 +176,20 @@ html {
 
 .tooltip .tooltiptext {
   visibility: hidden;
-  width: 120px;
+  width: 800px;
   background-color: #555;
   color: #fff;
   text-align: center;
   border-radius: 6px;
-  padding: 5px;
-  position: absolute;
+  padding: 5px 0; /* Adjusted padding for better spacing */
+  position: absolute; /* Changed from relative to absolute for better positioning */
   z-index: 1;
   bottom: 125%;
   left: 50%;
-  margin-left: -60px;
+  margin-left: 120px; /* Adjusted to half of the width to center the tooltip */
   opacity: 0;
   transition: opacity 0.3s;
+  transform: translateX(-50%);
 }
 
 .tooltip:hover .tooltiptext {
@@ -230,6 +266,32 @@ html {
   word-break: break-word;
   margin-bottom: 5px;
 }
+.horizontal-list {
+  display: flex;
+  list-style: none; /* Optionally remove the list markers */
+  padding: 10; /* Remove default padding */
+  gap: 20px; /* Increase the gap between list items */
+  margin-left: -95%;
+}
+
+/* Container for the pots to align them side by side */
+.pots-container {
+  display: flex;
+  justify-content: center; /* Center the pots horizontally */
+  gap: 20px; /* Adjust the gap between the pots */
+}
+
+/* Style for each pot */
+.pot {
+  flex: 1; /* Each pot takes equal width */
+  text-align: center; /* Ensure text is centered within each pot */
+}
+
+/* Further adjustments to reduce the size of headings in the pots for compactness */
+.pot h1 {
+  font-size: 1em; /* Smaller font size for headings */
+  margin: 10px 0; /* Reduced margin for a compact look */
+}
 
 .contract-section {
   width: 60%; /* Smaller width */
@@ -242,13 +304,13 @@ html {
 
 .profile-image-container {
   position: absolute;
-  top: 20px; /* Adjust as needed */
+  top: 40px; /* Adjust as needed */
   right: 20px; /* Adjust as needed */
 }
 
 .profile-image-container2 {
   position: absolute;
-  top: 20px; /* Adjust as needed */
+  top: 40px; /* Adjust as needed */
   left: 20px; /* Adjust as needed */
 }
 
@@ -271,14 +333,6 @@ html {
   display: grid;
   grid-template-columns: 1fr 1fr; /* Two columns */
   gap: 10px;
-}
-
-.contract-detail-item {
-  background-color: white;
-  padding: 10px;
-  border-radius: 4px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  font-size: 0.9em;
 }
 
 .contract-timer,
@@ -315,4 +369,46 @@ html {
 .info-icon:hover {
   background-color: #0056b3; /* Darker blue on hover */
   transform: scale(1.1); /* Slightly enlarge on hover */
+}
+.contract-detail-item {
+  position: relative; /* Keep this to position the tooltip relative to the item */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 300px;
+  margin-bottom: 20px;
+  padding-right: 10px;
+  border: 1px solid #d2d2d2;
+  border-radius: 4px;
+  background-color: #f9f9f9;
+  cursor: pointer; /* Optional: indicates that the item is interactive */
+}
+
+.custom-tooltip {
+  display: none;
+  position: relative;
+  left: 50%; /* Center horizontally */
+  transform: translateX(-50%); /* Center horizontally */
+  padding: 10px 16px; /* Increased padding for better appearance */
+  color: #333;
+  font-size: 14px;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  background: linear-gradient(
+    145deg,
+    #ffffff,
+    #f0f0f0
+  ); /* Subtle gradient background */
+  border: 1px solid #ccc; /* Refined border */
+  border-radius: 8px; /* Slightly rounded corners */
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15); /* Soft shadow for depth */
+  white-space: normal;
+  z-index: 1000;
+  width: auto;
+  top: 20%; /* Move the tooltip up on the screen */
+  max-width: auto; /* Limit the width for readability */
+  text-align: center; /* Center text */
+}
+
+.contract-detail-item:hover .custom-tooltip {
+  display: block;
 }

@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const { MongoClient } = require("mongodb");
+const cron = require("node-cron"); // Import node-cron
 
 const app = express();
 app.use(cors({ origin: "http://localhost:3000" }));
@@ -13,6 +14,7 @@ const uri =
 const client = new MongoClient(uri);
 
 let db;
+const PORT = process.env.PORT || 3001;
 
 client
   .connect()
@@ -20,11 +22,35 @@ client
     db = client.db("PredMarket");
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
+      scheduleTasks();
     });
   })
   .catch((err) => {
     console.error("Failed to connect to MongoDB", err);
   });
+async function moveExpiredContracts() {
+  try {
+    const sourceCollection = db.collection("Contracts");
+    const targetCollection = db.collection("ExpiredContracts ");
+    const now = Math.floor(new Date().getTime() / 1000);
+    const expiredContracts = await sourceCollection
+      .find({ endTime: { $lt: now } })
+      .toArray();
+
+    if (expiredContracts.length > 0) {
+      await targetCollection.insertMany(expiredContracts);
+      const idsToRemove = expiredContracts.map((contract) => contract._id);
+      await sourceCollection.deleteMany({ _id: { $in: idsToRemove } });
+    }
+    console.log("Expired contracts moved successfully");
+  } catch (err) {
+    console.error("Error moving expired contracts:", err);
+  }
+}
+
+function scheduleTasks() {
+  cron.schedule("29 20 * * *", moveExpiredContracts);
+}
 
 app.post("/addContract", async (req, res) => {
   try {
@@ -49,17 +75,48 @@ app.get("/getContracts", async (req, res) => {
   }
 });
 
+app.get("/getContracts2", async (req, res) => {
+  try {
+    const contractsCollection = db.collection("Contracts");
+    const expiredContractsCollection = db.collection("ExpiredContracts ");
+
+    const contractsPromise = contractsCollection.find({}).toArray();
+    const expiredContractsPromise = expiredContractsCollection
+      .find({})
+      .toArray();
+
+    const [contracts, expiredContracts] = await Promise.all([
+      contractsPromise,
+      expiredContractsPromise,
+    ]);
+
+    const allContracts = contracts.concat(expiredContracts);
+
+    res.status(200).json(allContracts);
+  } catch (error) {
+    console.error("Error fetching contracts from MongoDB:", error);
+    res.status(500).send("Error fetching contracts");
+  }
+});
+
 app.get("/api/contracts/:address", async (req, res) => {
   try {
     const address = req.params.address;
-    const collection = db.collection("Contracts");
+    const contractsCollection = db.collection("Contracts");
+    const expiredContractsCollection = db.collection("ExpiredContracts ");
 
-    // Find the contract with the given address
-    const contract = await collection.findOne({ address: address });
+    // First try to find the contract in the Contracts collection
+    let contract = await contractsCollection.findOne({ address: address });
+
+    // If not found in Contracts, try the ExpiredContracts collection
+    if (!contract) {
+      contract = await expiredContractsCollection.findOne({ address: address });
+    }
 
     if (contract) {
       res.status(200).json(contract);
     } else {
+      // If the contract is not found in both collections
       res.status(404).send("Contract not found");
     }
   } catch (error) {
@@ -67,8 +124,6 @@ app.get("/api/contracts/:address", async (req, res) => {
     res.status(500).send("Error fetching contract");
   }
 });
-
-const PORT = process.env.PORT || 3001;
 
 process.on("SIGINT", () => {
   client.close().then(() => {
@@ -119,22 +174,35 @@ app.post("/api/updateBetterMongoDB", async (req, res) => {
   }
 });
 
-app.post("/removeBetter", async (req, res) => {
+app.post("/removeBettor", async (req, res) => {
   try {
-    const collection = db.collection("Contracts");
+    const contractsCollection = db.collection("Contracts");
+    const expiredContractsCollection = db.collection("ExpiredContracts ");
     const { address } = req.body;
 
-    // Update the document to remove the bettor's address from the 'betters' array
-    const updateResult = await collection.updateMany(
-      {},
+    // First try to remove the bettor from the 'Contracts' collection
+    let updateResult = await contractsCollection.updateMany(
+      { betters: address },
       { $pull: { betters: address } }
     );
 
+    // If the bettor was not found in 'Contracts', try 'ExpiredContracts'
     if (updateResult.modifiedCount === 0) {
-      return res.status(404).send("Bettor not found or already removed");
+      updateResult = await expiredContractsCollection.updateMany(
+        { betters: address },
+        { $pull: { betters: address } }
+      );
+
+      if (updateResult.modifiedCount === 0) {
+        return res
+          .status(404)
+          .send("Bettor not found or already removed in both collections");
+      }
     }
 
-    res.status(200).send("Bettor removed successfully");
+    res
+      .status(200)
+      .send("Bettor removed successfully from one of the collections");
   } catch (error) {
     console.error("Error removing bettor from MongoDB:", error);
     res.status(500).send("Error removing bettor");

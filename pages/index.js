@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { getContracts } from "../data/contractStore";
+import { getContracts, getContracts2 } from "../data/contractStore";
 import CountdownTimer from "../components/CountDownTimer";
 import Header from "../components/Header";
 import { useRouter } from "next/router";
@@ -8,6 +8,7 @@ import { useAddress } from "@thirdweb-dev/react";
 
 export default function ContractsPage() {
   const [contracts, setContracts] = useState([]);
+  const [contracts2, setContracts2] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [filteredContracts, setFilteredContracts] = useState([]);
   const router = useRouter();
@@ -18,12 +19,13 @@ export default function ContractsPage() {
   const handleUserBetsFilter = () => {
     const userAddress = signer;
     console.log(signer);
-    const filtered = contracts.filter(
+    const filtered = contracts2.filter(
       (contract) =>
         Array.isArray(contract.betters) &&
         contract.betters.includes(userAddress)
     );
     setFilteredContracts(filtered);
+    console.log(filtered);
   };
 
   useEffect(() => {
@@ -50,6 +52,9 @@ export default function ContractsPage() {
       const contractsData = await getContracts();
       setContracts(contractsData);
       setFilteredContracts(contractsData); // Initially show all contracts
+      const contractsData2 = await getContracts2();
+      setContracts2(contractsData2);
+      console.log(contractsData2, "expired contracts too");
     }
 
     fetchContracts();
@@ -63,14 +68,18 @@ export default function ContractsPage() {
     const queryLower = searchQuery.toLowerCase().split(/\s+/);
 
     const filtered = contracts.filter((contract) => {
+      // Optimize tag matching by only converting searchQuery to lower case once
       const tagMatch = contract.tags.some((tag) =>
-        tag.toLowerCase().includes(searchQuery.toLowerCase())
+        queryLower.some((q) => tag.toLowerCase().includes(q))
       );
-      const addressMatch = contract.address
-        .toLowerCase()
-        .includes(searchQuery.toLowerCase());
 
-      const nameWords = contract.NameofMaket.toLowerCase().split(/\s+/);
+      // Check if any part of the address matches any part of the search query
+      const addressMatch = queryLower.some((q) =>
+        contract.address.toLowerCase().includes(q)
+      );
+
+      // Assuming the correct property name is `NameOfMarket`
+      const nameWords = contract.NameOfMarket.toLowerCase().split(/\s+/);
       const nameMatch =
         queryLower.filter((word) => nameWords.includes(word)).length >=
         queryLower.length * 0.5;
@@ -95,7 +104,7 @@ export default function ContractsPage() {
   return (
     <div className="page-container">
       <Header />
-      <h1 className="header">Deployed Contracts</h1>
+      <h2>Deployed Contracts</h2>
       <div className="search-container">
         <input
           className="search-input"
@@ -157,9 +166,9 @@ export default function ContractsPage() {
             <p>
               <strong>Name of Market:</strong> {contract.NameofMaket}
             </p>
-            <p>
+            {/* <p>
               <strong>Condition of Market:</strong> {contract.ConditionOfMarket}
-            </p>
+            </p> */}
 
             <p className="contract-address">
               <strong>Address:</strong> {contract.address}

@@ -3,6 +3,7 @@ export const addContract = async (
   endTime,
   odds1,
   odds2,
+  buyIn,
   tags,
   NameofMaket,
   ConditionOfMarket,
@@ -19,6 +20,7 @@ export const addContract = async (
         endTime,
         odds1,
         odds2,
+        buyIn,
         tags,
         NameofMaket,
         ConditionOfMarket,
@@ -39,6 +41,22 @@ export const addContract = async (
 export const getContracts = async () => {
   try {
     const response = await fetch("http://localhost:3001/getContracts");
+
+    if (!response.ok) {
+      throw new Error("Network response was not ok");
+    }
+
+    const contracts = await response.json();
+    return contracts;
+  } catch (error) {
+    console.error("Error fetching contracts from MongoDB:", error);
+    return []; // Return an empty array as a fallback
+  }
+};
+
+export const getContracts2 = async () => {
+  try {
+    const response = await fetch("http://localhost:3001/getContracts2");
 
     if (!response.ok) {
       throw new Error("Network response was not ok");

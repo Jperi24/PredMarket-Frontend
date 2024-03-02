@@ -3,6 +3,7 @@ import predMarketArtifact from "../predMarket.json"; // path to the ABI and Byte
 import React, { useState, useEffect } from "react";
 import Header from "../components/Header";
 import { useSigner } from "@thirdweb-dev/react";
+import { convertUsdToWei } from "../components/currencyConversionUtils";
 
 import { addContract } from "../data/contractStore";
 
@@ -10,6 +11,7 @@ const deployPredMarket = async (
   timeToEnd,
   odds1,
   odds2,
+  buyIn,
   tags,
   NameofMaket,
   ConditionOfMarket,
@@ -27,13 +29,14 @@ const deployPredMarket = async (
   );
   const deployerAddress = await signer.getAddress();
 
-  const predMarket = await PredMarket.deploy(timeToEnd, odds1, odds2);
+  const predMarket = await PredMarket.deploy(timeToEnd, odds1, odds2, buyIn);
   const endTime = Math.floor(Date.now() / 1000) + parseInt(timeToEnd);
   addContract(
     predMarket.address,
     endTime,
     odds1,
     odds2,
+    buyIn,
     tags,
     NameofMaket,
     ConditionOfMarket,
@@ -49,6 +52,7 @@ export default function DeployPredMarket() {
   const [timeToEndMinutes, setTimeToEndMinutes] = useState("");
   const [odds1, setOdds1] = useState("");
   const [odds2, setOdds2] = useState("");
+  const [buyIn, setBuyIn] = useState("");
   const [tags, setTags] = useState("");
   const [category, setCategory] = useState("");
   const [NameofMarket, setNameOfMarket] = useState("");
@@ -74,6 +78,7 @@ export default function DeployPredMarket() {
       !timeToEnd ||
       !odds1 ||
       !odds2 ||
+      !buyIn ||
       !NameofMarket ||
       !ConditionOfMarket ||
       !category
@@ -87,10 +92,13 @@ export default function DeployPredMarket() {
       return;
     }
     try {
+      const buyInWei = await convertUsdToWei(buyIn);
+
       await deployPredMarket(
         timeToEnd,
         odds1,
         odds2,
+        buyInWei,
         finalTags.split(",").map((tag) => tag.trim()),
         NameofMarket,
         ConditionOfMarket,
@@ -105,12 +113,10 @@ export default function DeployPredMarket() {
   return (
     <div className="page-container">
       <Header />
-      <header className="header">
-        <h1>Deploy Prediction Market</h1>
-      </header>
 
       <div className="market-interaction-container">
         <div className="contract-container">
+          <h3>Deploy Prediction Market</h3>
           <div className="time-inputs-container">
             {/* Time input fields */}
             <label className="input-label">
@@ -145,18 +151,14 @@ export default function DeployPredMarket() {
           <p>People May Place And Edit Bets Up Until: {endTimeDisplay}</p>
 
           {/* Combined Odds Input */}
-          <label className="input-label">
+          <label className="odds-input-label">
             Odds (e.g., 5/2)
-            <span className="tooltip">
-              <span className="help-icon">?</span>
-              <span className="tooltiptext">
-                Enter the odds for the market. For example, '5/2' odds: '5' in
-                the first box and '2' in the second box.
-              </span>
-            </span>
-            <div style={{ display: "flex", alignItems: "center" }}>
+            <div
+              className="odds-input-group"
+              style={{ display: "flex", alignItems: "center" }}
+            >
               <input
-                className="search-input odds-input"
+                className="odds-input"
                 type="number"
                 value={odds1}
                 onChange={(e) => setOdds1(e.target.value)}
@@ -164,7 +166,7 @@ export default function DeployPredMarket() {
               />
               <span>/</span>
               <input
-                className="search-input odds-input"
+                className="odds-input"
                 type="number"
                 value={odds2}
                 onChange={(e) => setOdds2(e.target.value)}
@@ -174,25 +176,43 @@ export default function DeployPredMarket() {
             {odds1 && odds2 && (
               <span className="tooltip">
                 <span className="info-icon">i</span>
-                <span className="tooltiptext">
+                <span className="tooltiptext" style={{ marginLeft: "355px" }}>
                   Event A: This assumes event A is {odds2}/{odds1} as likely to
                   occur as event B and therefore a player who bets on event A
                   will leave with ((players initial bet*{odds1})/{odds2}) in
-                  addition to their original bet.
+                  addition to their original bet. Example, if Player Bets $2 on
+                  pot A with 2/1 odds they will recieve $4 and be eligible to
+                  withdraw their initial bet of $2.
                 </span>
               </span>
             )}
             {odds1 && odds2 && (
               <span className="tooltip">
                 <span className="info-icon">i</span>
-                <span className="tooltiptext">
+                <span className="tooltiptext" style={{ marginLeft: "355px" }}>
                   Event B: This assumes event B is {odds1}/{odds2} as likely to
                   occur as event A and therefore a player who bets on event B
                   will leave with ((players initial bet*{odds2})/{odds1}) in
-                  addition to their original bet.
+                  addition to their original bet.Example, if Player Bets $2 on
+                  pot B with 1/2 odds they will recieve $1 and be eligible to
+                  withdraw their initial bet of $2.
                 </span>
               </span>
             )}
+          </label>
+
+          <label className="input-label">
+            Set User Buy In Price in $
+            <span className="tooltip">
+              <span className="help-icon">?</span>
+              <span className="tooltiptext">Buy In Gayyyyyyyyyyyyy</span>
+            </span>
+            <input
+              className="search-input"
+              type="number"
+              value={buyIn}
+              onChange={(e) => setBuyIn(e.target.value)}
+            />
           </label>
 
           {/* Title of Market */}
@@ -201,8 +221,10 @@ export default function DeployPredMarket() {
             <span className="tooltip">
               <span className="help-icon">?</span>
               <span className="tooltiptext">
-                Provide a name or title for the market. This helps users
-                identify the market easily.
+                Choose a descriptive title for your prediction market. This
+                title should be concise yet informative, helping users
+                understand the nature of the market at a glance. Example:
+                'Champions League Final Winner'.
               </span>
             </span>
             <input
@@ -213,32 +235,14 @@ export default function DeployPredMarket() {
             />
           </label>
 
-          {/* Conditions of Win/Loss */}
-          <label className="input-label">
-            Conditions of Win/Loss and Where Documented
-            <span className="tooltip">
-              <span className="help-icon">?</span>
-              <span className="tooltiptext">
-                Describe the conditions for winning or losing in this market.
-                Also, mention where these conditions are documented.
-              </span>
-            </span>
-            <input
-              className="search-input"
-              type="text"
-              value={ConditionOfMarket}
-              onChange={(e) => setConditionOfMarket(e.target.value)}
-            />
-          </label>
-
           {/* Select Category */}
           <label className="input-label">
             Select Category
             <span className="tooltip">
               <span className="help-icon">?</span>
               <span className="tooltiptext">
-                Choose a category for the market from the dropdown. This helps
-                in classifying and filtering markets.
+                Assign your market to a category to facilitate easier browsing
+                and discovery for users.
               </span>
             </span>
             <select
@@ -261,8 +265,10 @@ export default function DeployPredMarket() {
             <span className="tooltip">
               <span className="help-icon">?</span>
               <span className="tooltiptext">
-                Enter any relevant tags for the market, separated by commas.
-                Tags help in searchability and organization of markets.
+                EInput relevant keywords as tags to enhance the market's
+                discoverability. Separate tags with commas. Use tags like
+                'sports', 'politics', or specific names relevant to the market
+                for better classification. Example: 'WorldCup, SKT1, Faker
               </span>
             </span>
             <input
@@ -272,6 +278,120 @@ export default function DeployPredMarket() {
               onChange={(e) => setTags(e.target.value)}
             />
           </label>
+
+          <div className="contract-conditions-form">
+            {/* Definition of Bet A */}
+            <div className="input-group">
+              <label className="input-label">
+                Bet A Details:
+                <span className="tooltip">
+                  <span className="help-icon">?</span>
+                  <span className="tooltiptext">
+                    Define Bet A by explaining the scenario in which betting on
+                    A wins, including the criteria for victory and the payout
+                    mechanism. Example: "Bet A wins if Team X scores first in
+                    the game. Payout for Bet A is 2:1, meaning for every $1 bet,
+                    $2 is won if Team X scores first."
+                  </span>
+                </span>
+              </label>
+              <textarea
+                className="search-input"
+                placeholder="Describe Bet A, its winning conditions, and payout details."
+                onChange={(e) =>
+                  setConditionOfMarket({
+                    ...ConditionOfMarket,
+                    betADetails: e.target.value,
+                  })
+                }
+                rows="2"
+              ></textarea>
+            </div>
+
+            {/* Definition of Bet B */}
+            <div className="input-group">
+              <label className="input-label">
+                Bet B Details:
+                <span className="tooltip">
+                  <span className="help-icon">?</span>
+                  <span className="tooltiptext">
+                    Describe Bet B by detailing the conditions under which Bet B
+                    wins, and explain how the payout is calculated. Example:
+                    "Bet B wins if Team Y leads at halftime. The payout ratio
+                    for Bet B is 3:1, awarding $3 for every $1 bet if Team Y is
+                    ahead at halftime."
+                  </span>
+                </span>
+              </label>
+              <textarea
+                className="search-input"
+                placeholder="Explain Bet B, its conditions for winning, and the payout formula."
+                onChange={(e) =>
+                  setConditionOfMarket({
+                    ...ConditionOfMarket,
+                    betBDetails: e.target.value,
+                  })
+                }
+                rows="2"
+              ></textarea>
+            </div>
+
+            {/* Event Timing */}
+            <div className="input-group">
+              <label className="input-label">
+                Event Timing:
+                <span className="tooltip">
+                  <span className="help-icon">?</span>
+                  <span className="tooltiptext">
+                    Specify the start and end dates/times for when bets can be
+                    placed and when the event determining the outcome occurs.
+                    Example: "Bets can be placed from January 1, 2023, 00:00 UTC
+                    until January 7, 2023, 10:00 UTC. The outcome will be
+                    determined during the game on January 7, 2023, starting at
+                    12:00 UTC."
+                  </span>
+                </span>
+              </label>
+              <input
+                className="search-input"
+                type="text"
+                placeholder="Enter the event's timing details."
+                onChange={(e) =>
+                  setConditionOfMarket({
+                    ...ConditionOfMarket,
+                    eventTiming: e.target.value,
+                  })
+                }
+              />
+            </div>
+
+            {/* Sources of Information */}
+            <div className="input-group">
+              <label className="input-label">
+                Sources of Information:
+                <span className="tooltip">
+                  <span className="help-icon">?</span>
+                  <span className="tooltiptext">
+                    Indicate where the event's outcome will be verified.
+                    Example: "The outcome will be confirmed based on official
+                    results posted on the Sports League Official Website and
+                    corroborated by major news outlets such as ESPN."
+                  </span>
+                </span>
+              </label>
+              <input
+                className="search-input"
+                type="text"
+                placeholder="List sources for outcome verification."
+                onChange={(e) =>
+                  setConditionOfMarket({
+                    ...ConditionOfMarket,
+                    informationSources: e.target.value,
+                  })
+                }
+              />
+            </div>
+          </div>
 
           <button className="search-button" onClick={handleDeploy}>
             Deploy Market
