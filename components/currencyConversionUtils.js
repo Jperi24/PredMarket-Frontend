@@ -3,17 +3,25 @@ import { ethers } from "ethers";
 
 // Placeholder for a function to fetch the current ETH to USD exchange rate
 export async function fetchEthToUsdRate() {
-  // Here, you'd make an API call to a service like CoinGecko, CryptoCompare, etc.
-  // This is a simplified example. Replace the URL with the actual endpoint you're using.
-  const response = await fetch(
-    "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd"
-  );
-  const data = await response.json();
+  try {
+    const response = await fetch("http://localhost:3001/ethToUsdRate");
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch from local server: ${response.status} ${response.statusText}`
+      );
+    }
+    const data = await response.json();
+    // Correctly check for data.rate existence and type
+    if (typeof data.rate !== "number") {
+      throw new Error("Invalid or missing rate in the response");
+    }
+    const rate = data.rate; // Use the directly provided rate
 
-  // Assuming the API returns a JSON object where 'ethereum' is a key and 'usd' is a subkey
-  const rate = data.ethereum.usd;
-
-  return rate; // This would be the ETH to USD exchange rate
+    return rate;
+  } catch (error) {
+    console.error(`fetchEthToUsdRate error: ${error.message}`);
+    throw error; // Re-throwing to allow for external handling
+  }
 }
 
 // Function to convert USD to wei

@@ -28,6 +28,19 @@ export default function ContractsPage() {
     console.log(filtered);
   };
 
+  const handleOwnerDeployedContractsFilter = () => {
+    const userAddress = signer; // Assuming 'signer' holds the user's address as a string
+    console.log(userAddress);
+
+    // Filter contracts where the user's address matches the deployerAddress
+    const filtered = contracts2.filter(
+      (contract) => contract.deployerAddress === userAddress
+    );
+
+    setFilteredContracts(filtered); // Assuming this sets the state with the filtered contracts
+    console.log(filtered);
+  };
+
   useEffect(() => {
     async function fetchContracts() {
       //USED TO GET ADDRESS //////////////////////////////////////////////////////////////////////////////
@@ -126,7 +139,14 @@ export default function ContractsPage() {
         <button onClick={() => setFilteredContracts(contracts)}>
           All Contracts
         </button>
-        <button onClick={() => handleUserBetsFilter()}> My Bets</button>
+        <button onClick={() => handleUserBetsFilter()}>
+          {" "}
+          All Bets I Bet On
+        </button>
+
+        <button onClick={() => handleOwnerDeployedContractsFilter()}>
+          All Bets That I Deployed
+        </button>
       </div>
       <div className="grid-container">
         {filteredContracts.map((contract) => (

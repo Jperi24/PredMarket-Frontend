@@ -1,8 +1,9 @@
 const express = require("express");
 const cors = require("cors");
+const rateLimit = require("express-rate-limit");
 const { MongoClient } = require("mongodb");
 const cron = require("node-cron"); // Import node-cron
-
+const NodeCache = require("node-cache");
 const app = express();
 app.use(cors({ origin: "http://localhost:3000" }));
 app.use(express.json());
@@ -31,7 +32,7 @@ client
 async function moveExpiredContracts() {
   try {
     const sourceCollection = db.collection("Contracts");
-    const targetCollection = db.collection("ExpiredContracts ");
+    const targetCollection = db.collection("ExpiredContracts");
     const now = Math.floor(new Date().getTime() / 1000);
     const expiredContracts = await sourceCollection
       .find({ endTime: { $lt: now } })
@@ -47,9 +48,50 @@ async function moveExpiredContracts() {
     console.error("Error moving expired contracts:", err);
   }
 }
+const rateCache = new NodeCache();
+const RATE_KEY = "ethToUsdRate";
+const FETCH_INTERVAL = 60000; // 6 seconds in milliseconds
+
+// Function to fetch the rate from CoinGecko and update the cache
+async function updateRate() {
+  try {
+    const response = await fetch(
+      "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd"
+    );
+    if (!response.ok) {
+      console.error(
+        `Failed to fetch from CoinGecko: ${response.status} ${response.statusText}`
+      );
+      return;
+    }
+    const data = await response.json();
+    const rate = data.ethereum.usd;
+    rateCache.set(RATE_KEY, rate);
+    console.log(`Updated rate to ${rate}`);
+  } catch (error) {
+    console.error("Error updating rate:", error);
+  }
+}
+
+// Initial fetch and setup periodic update
+updateRate();
+setInterval(updateRate, FETCH_INTERVAL);
+
+// Endpoint to get ETH to USD rate from the cache
+app.get("/ethToUsdRate", (req, res) => {
+  const rate = rateCache.get(RATE_KEY);
+  if (rate) {
+    res.json({ rate });
+  } else {
+    res.status(503).json({
+      error: "Rate is currently unavailable, please try again later.",
+    });
+  }
+});
 
 function scheduleTasks() {
-  cron.schedule("29 20 * * *", moveExpiredContracts);
+  // cron.schedule("0 */2 * * *", moveExpiredContracts); every 2 hours
+  cron.schedule("*/5 * * * *", moveExpiredContracts); // every 5 mins
 }
 
 app.post("/addContract", async (req, res) => {
@@ -61,6 +103,49 @@ app.post("/addContract", async (req, res) => {
   } catch (error) {
     console.error("Error adding contract to MongoDB:", error);
     res.status(500).send("Error adding contract");
+  }
+});
+
+app.post("/moveToDisagreements", async (req, res) => {
+  try {
+    const { contractAddress, disagreementText } = req.body;
+    let sourceCollection = db.collection("ExpiredContracts");
+    const targetCollection = db.collection("Disagreements");
+
+    // Find the contract in the source collection
+    let contract = await sourceCollection.findOne({ address: contractAddress });
+
+    // If not found in ExpiredContracts, search in Contracts collection
+    if (!contract) {
+      sourceCollection = db.collection("Contracts");
+      contract = await sourceCollection.findOne({ address: contractAddress });
+
+      // If still not found, respond with an error
+      if (!contract) {
+        return res.status(404).send("Contract not found in collections");
+      }
+    }
+
+    // Prepare the document to be inserted into the Disagreements collection
+    // Include the disagreementText and update the lastModified field
+    const updatedContract = {
+      ...contract,
+      disagreementText: disagreementText,
+      lastModified: new Date(),
+    };
+
+    // Insert the updated document into the Disagreements collection
+    await targetCollection.insertOne(updatedContract);
+
+    // Remove the original document from its source collection
+    await sourceCollection.deleteOne({ address: contractAddress });
+
+    res
+      .status(200)
+      .send("Contract moved to Disagreements collection successfully");
+  } catch (error) {
+    console.error("Error moving contract to Disagreements:", error);
+    res.status(500).send("Error moving contract");
   }
 });
 
@@ -78,7 +163,7 @@ app.get("/getContracts", async (req, res) => {
 app.get("/getContracts2", async (req, res) => {
   try {
     const contractsCollection = db.collection("Contracts");
-    const expiredContractsCollection = db.collection("ExpiredContracts ");
+    const expiredContractsCollection = db.collection("ExpiredContracts");
 
     const contractsPromise = contractsCollection.find({}).toArray();
     const expiredContractsPromise = expiredContractsCollection
@@ -103,7 +188,7 @@ app.get("/api/contracts/:address", async (req, res) => {
   try {
     const address = req.params.address;
     const contractsCollection = db.collection("Contracts");
-    const expiredContractsCollection = db.collection("ExpiredContracts ");
+    const expiredContractsCollection = db.collection("ExpiredContracts");
 
     // First try to find the contract in the Contracts collection
     let contract = await contractsCollection.findOne({ address: address });
@@ -177,7 +262,7 @@ app.post("/api/updateBetterMongoDB", async (req, res) => {
 app.post("/removeBettor", async (req, res) => {
   try {
     const contractsCollection = db.collection("Contracts");
-    const expiredContractsCollection = db.collection("ExpiredContracts ");
+    const expiredContractsCollection = db.collection("ExpiredContracts");
     const { address } = req.body;
 
     // First try to remove the bettor from the 'Contracts' collection

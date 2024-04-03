@@ -1,6 +1,8 @@
 export const addContract = async (
   address,
   endTime,
+  eventA,
+  eventB,
   odds1,
   odds2,
   buyIn,
@@ -18,6 +20,8 @@ export const addContract = async (
       body: JSON.stringify({
         address,
         endTime,
+        eventA,
+        eventB,
         odds1,
         odds2,
         buyIn,

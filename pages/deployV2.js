@@ -9,6 +9,8 @@ import { addContract } from "../data/contractStore";
 
 const deployPredMarket = async (
   timeToEnd,
+  eventA,
+  eventB,
   odds1,
   odds2,
   buyIn,
@@ -29,11 +31,15 @@ const deployPredMarket = async (
   );
   const deployerAddress = await signer.getAddress();
 
-  const predMarket = await PredMarket.deploy(timeToEnd, odds1, odds2, buyIn);
+  const predMarket = await PredMarket.deploy(timeToEnd, odds1, odds2, buyIn, {
+    value: ethers.utils.parseEther("0.05"), // Example value, adjust accordingly
+  });
   const endTime = Math.floor(Date.now() / 1000) + parseInt(timeToEnd);
   addContract(
     predMarket.address,
     endTime,
+    eventA,
+    eventB,
     odds1,
     odds2,
     buyIn,
@@ -50,6 +56,8 @@ const deployPredMarket = async (
 export default function DeployPredMarket() {
   const [timeToEndDays, setTimeToEndDays] = useState("");
   const [timeToEndMinutes, setTimeToEndMinutes] = useState("");
+  const [eventA, seteventA] = useState("");
+  const [eventB, seteventB] = useState("");
   const [odds1, setOdds1] = useState("");
   const [odds2, setOdds2] = useState("");
   const [buyIn, setBuyIn] = useState("");
@@ -76,6 +84,8 @@ export default function DeployPredMarket() {
   const handleDeploy = async () => {
     if (
       !timeToEnd ||
+      !eventA ||
+      !eventB ||
       !odds1 ||
       !odds2 ||
       !buyIn ||
@@ -96,6 +106,8 @@ export default function DeployPredMarket() {
 
       await deployPredMarket(
         timeToEnd,
+        eventA,
+        eventB,
         odds1,
         odds2,
         buyInWei,
@@ -148,11 +160,44 @@ export default function DeployPredMarket() {
             </label>
           </div>
           {/* Display Calculated End Time */}
-          <p>People May Place And Edit Bets Up Until: {endTimeDisplay}</p>
+          <p style={{ fontSize: "20px", fontWeight: "bold" }}>
+            People May Place And Edit Bets Up Until: {endTimeDisplay}
+          </p>
+
+          <div style={{ display: "flex", gap: "10px" }}>
+            {" "}
+            {/* Adjust the gap value as needed */}
+            <label className="input-label">
+              Set Event A
+              <span className="tooltip">
+                <span className="help-icon">?</span>
+                <span className="tooltiptext"></span>
+              </span>
+              <input
+                className="search-input"
+                type="text"
+                value={eventA}
+                onChange={(e) => seteventA(e.target.value)}
+              />
+            </label>
+            <label className="input-label">
+              Set Event B
+              <span className="tooltip">
+                <span className="help-icon">?</span>
+                <span className="tooltiptext"></span>
+              </span>
+              <input
+                className="search-input"
+                type="text"
+                value={eventB}
+                onChange={(e) => seteventB(e.target.value)}
+              />
+            </label>
+          </div>
 
           {/* Combined Odds Input */}
           <label className="odds-input-label">
-            Odds (e.g., 5/2)
+            Odds ({eventA}/{eventB})
             <div
               className="odds-input-group"
               style={{ display: "flex", alignItems: "center" }}
@@ -177,12 +222,12 @@ export default function DeployPredMarket() {
               <span className="tooltip">
                 <span className="info-icon">i</span>
                 <span className="tooltiptext" style={{ marginLeft: "355px" }}>
-                  Event A: This assumes event A is {odds2}/{odds1} as likely to
-                  occur as event B and therefore a player who bets on event A
-                  will leave with ((players initial bet*{odds1})/{odds2}) in
-                  addition to their original bet. Example, if Player Bets $2 on
-                  pot A with 2/1 odds they will recieve $4 and be eligible to
-                  withdraw their initial bet of $2.
+                  Event A - {eventA}: This assumes {eventA} is {odds2}/{odds1}{" "}
+                  as likely to occur as {eventB} and therefore a player who bets
+                  on {eventA} will leave with ((players initial bet*{odds1})/
+                  {odds2}) in addition to their original bet. Example, if Player
+                  Bets $2 on {eventA} with 2/1 odds they will recieve $4 and be
+                  eligible to withdraw their initial bet of $2.
                 </span>
               </span>
             )}
@@ -190,22 +235,25 @@ export default function DeployPredMarket() {
               <span className="tooltip">
                 <span className="info-icon">i</span>
                 <span className="tooltiptext" style={{ marginLeft: "355px" }}>
-                  Event B: This assumes event B is {odds1}/{odds2} as likely to
-                  occur as event A and therefore a player who bets on event B
-                  will leave with ((players initial bet*{odds2})/{odds1}) in
-                  addition to their original bet.Example, if Player Bets $2 on
-                  pot B with 1/2 odds they will recieve $1 and be eligible to
-                  withdraw their initial bet of $2.
+                  Event B - {eventB}: This assumes {eventB} is {odds1}/{odds2}{" "}
+                  as likely to occur as {eventA} and therefore a player who bets
+                  on {eventB} will leave with ((players initial bet*{odds2})/
+                  {odds1}) in addition to their original bet.Example, if Player
+                  Bets $2 on {eventB} with 1/2 odds they will recieve $1 and be
+                  eligible to withdraw their initial bet of $2.
                 </span>
               </span>
             )}
           </label>
 
           <label className="input-label">
-            Set User Buy In Price in $
+            Set User Buy In Price in $ - Cost To Participate
             <span className="tooltip">
               <span className="help-icon">?</span>
-              <span className="tooltiptext">Buy In Gayyyyyyyyyyyyy</span>
+              <span className="tooltiptext">
+                This is the amount a user has to pay one time to bet on either
+                events, you keep this amount
+              </span>
             </span>
             <input
               className="search-input"
@@ -382,7 +430,7 @@ export default function DeployPredMarket() {
               <input
                 className="search-input"
                 type="text"
-                placeholder="List sources for outcome verification."
+                placeholder="List sources for outcome verification. -  Need A URL"
                 onChange={(e) =>
                   setConditionOfMarket({
                     ...ConditionOfMarket,

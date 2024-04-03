@@ -6,6 +6,16 @@
   box-sizing: border-box;
 }
 
+button {
+  background: linear-gradient(to right, #6a11cb 0%, #2575fc 100%);
+  padding: 10px;
+  border-radius: 10px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  color: white;
+  border: none; /* Assuming you want no border */
+  cursor: pointer; /* Change cursor on hover */
+}
+
 body,
 html {
   margin: 0;
@@ -97,21 +107,21 @@ html {
   font-size: 1em;
 }
 .odds-input {
-  width: 50px; /* Adjusted width for smaller input boxes */
+  width: 100%; /* Adjusted width for smaller input boxes */
   padding: 5px; /* Reduced padding for a more compact look */
   margin-bottom: 15px;
   border: 1px solid #ccc;
   border-radius: 4px;
-  font-size: 0.8em; /* Smaller font size for the input content */
+  font-size: 1em; /* Smaller font size for the input content */
 }
 
 .odds-input-label .odds-input {
   width: 10%; /* Adjusted width for smaller input boxes */
-  padding: 5px; /* Reduced padding for a more compact look */
+  padding: 10px; /* Reduced padding for a more compact look */
   margin-bottom: 15px; /* Ensures spacing between this and the next element */
   border: 1px solid #ccc; /* Standard border styling */
   border-radius: 4px; /* Rounds the corners of the input boxes */
-  font-size: 0.8em; /* Reduces the font size inside the input */
+  font-size: 1em; /* Reduces the font size inside the input */
 }
 
 /* Contract Item & List */
@@ -134,13 +144,28 @@ html {
   background-color: #e6e6e6;
 }
 
-/* Search Container */
+/* Button styling */
+.my-button {
+  width: 150px; /* Fixed width */
+  height: 40px; /* Fixed height */
+  margin: 10px; /* Even spacing around buttons */
+  background: linear-gradient(to right, #6a11cb 0%, #2575fc 100%);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  text-align: center;
+  line-height: 40px; /* Vertically center text */
+  display: inline-block; /* Align buttons inline */
+}
+
+/* Optionally, style the container for additional control */
 .search-container {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  justify-content: center;
-  margin-bottom: 20px;
+  flex-wrap: wrap;
+  justify-content: center; /* Center buttons horizontally */
+  gap: 10px; /* Space between buttons */
 }
 
 .tag-filter-button {
@@ -301,16 +326,42 @@ html {
   border-radius: 8px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
 }
+.contract-section .detail {
+  border-bottom: 1px solid #ddd;
+  padding: 10px;
+  position: relative;
+}
+
+.detail-label {
+  display: block;
+  cursor: pointer;
+  font-weight: bold;
+  margin-bottom: 5px; /* Adjust spacing */
+}
+
+.toggle-checkbox {
+  display: none; /* Hide the actual checkbox */
+}
+
+.toggle-checkbox:checked + .detail-label + .content {
+  display: block; /* Show content when checkbox is checked */
+}
+
+.content {
+  display: none;
+  padding-top: 10px;
+  font-size: 14px;
+}
 
 .profile-image-container {
   position: absolute;
-  top: 40px; /* Adjust as needed */
+  top: 50px; /* Adjust as needed */
   right: 20px; /* Adjust as needed */
 }
 
 .profile-image-container2 {
   position: absolute;
-  top: 40px; /* Adjust as needed */
+  top: 50px; /* Adjust as needed */
   left: 20px; /* Adjust as needed */
 }
 
@@ -411,4 +462,87 @@ html {
 
 .contract-detail-item:hover .custom-tooltip {
   display: block;
+}
+.events-container {
+  max-width: 1200px;
+  margin: auto;
+  overflow-y: auto; /* Enables vertical scrolling */
+  max-height: 500px; /* Control vertical space */
+  border: 1px solid #e1e1e1; /* Subtle border for the container */
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* Soft shadow for depth */
+}
+
+.events-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(250px, 1fr)
+  ); /* Smaller card width */
+  gap: 16px; /* Reduced gap */
+  padding: 16px; /* Reduced padding */
+}
+
+.event-card {
+  background-color: #fff;
+  border: 1px solid #e1e1e1; /* Subtle border for each card */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05); /* Lighter shadow for cards */
+  border-radius: 8px;
+  padding: 16px; /* Reduced padding */
+  overflow: hidden; /* Ensures no overflow outside the card */
+}
+
+.event-card:hover {
+  transform: scale(1.03); /* Slight scale to maintain interactive feedback */
+}
+
+.event-name {
+  color: #007bff; /* Primary color for the event name */
+  margin-top: 0;
+  font-size: 18px; /* Reduced font size for titles */
+  white-space: nowrap; /* Prevents the text from wrapping */
+  overflow: hidden; /* Hides overflow */
+  text-overflow: ellipsis; /* Adds ellipsis for overflow text */
+}
+
+.event-details p {
+  margin: 8px 0; /* Reduced margin */
+  line-height: 1.4; /* More compact line height */
+  font-size: 14px; /* Smaller font size for details */
+  overflow: hidden; /* Hide overflow */
+  text-overflow: ellipsis; /* Ellipsis for overflow */
+  display: -webkit-box;
+  -webkit-line-clamp: 2; /* Limits to two lines */
+  -webkit-box-orient: vertical;
+}
+
+.bets-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 20px;
+  padding: 20px;
+}
+
+.bet {
+  border: 1px solid #ccc;
+  padding: 10px;
+  border-radius: 5px;
+  background-color: #f9f9f9;
+}
+
+.bet h3 {
+  margin-top: 0;
+  color: #333;
+}
+
+.bet-info {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #666;
+}
+
+/* Optional: Add some hover effects for interactivity */
+.bet:hover {
+  box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+  transform: scale(1.01);
 }

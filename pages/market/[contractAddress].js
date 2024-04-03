@@ -9,7 +9,10 @@ import { getContractDetails, getContracts } from "../../data/contractStore";
 import { useSigner } from "@thirdweb-dev/react";
 import styles from "../../styles/[contractAddress].module.css";
 
-import { convertWeiToUsd } from "../../components/currencyConversionUtils";
+import {
+  convertWeiToUsd,
+  convertUsdToWei,
+} from "../../components/currencyConversionUtils";
 
 const MarketInteractionPage = () => {
   // const [provider, setProvider] = useState(null);
@@ -30,7 +33,9 @@ const MarketInteractionPage = () => {
   const [betB, setBetB] = useState("");
   const [boughtIn, setBoughtIn] = useState("");
   const [buyInUSD, setBuyIn] = useState("");
+  const [events, setEvents] = useState([]);
   const signer = useSigner();
+  const [amountWon, setAmountWon] = useState("");
 
   const [calculatedRewardRiskA, setCalculatedRewardRiskA] = useState({
     potentialReward: null,
@@ -38,6 +43,7 @@ const MarketInteractionPage = () => {
     risk: null,
     totalBet: null,
     potB: null,
+    bettersOnA: null,
   });
   const [calculatedRewardRiskB, setCalculatedRewardRiskB] = useState({
     potentialReward: null,
@@ -45,6 +51,7 @@ const MarketInteractionPage = () => {
     risk: null,
     totalBet: null,
     potA: null,
+    bettersOnB: null,
   });
   const [statusOfMarket, setStatusOfMarket] = useState(null);
 
@@ -118,7 +125,9 @@ const MarketInteractionPage = () => {
 
         const sstatusOfMarket = await contractInstance.getRaffleState();
         setStatusOfMarket(sstatusOfMarket);
-        console.log(sstatusOfMarket);
+        const amountWon = await contractInstance.getUserAmount();
+        const amountWonUSD = await convertWeiToUsd(amountWon);
+        setAmountWon(amountWonUSD);
       } catch (error) {
         console.error("Error finding bettor:", error);
       }
@@ -150,14 +159,49 @@ const MarketInteractionPage = () => {
     }
   };
 
+  const getEvents = async () => {
+    if (contractInstance) {
+      try {
+        const fetchedEvents = await contractInstance.queryFilter({});
+        // Assuming each event object has an `event` property indicating the event's name
+        const specificEvents = fetchedEvents.filter((evt) =>
+          [
+            "contractDeployed",
+            "winnerDeclaredVoting" /* other event names here */,
+            "underReview",
+            "winnerFinalized",
+          ].includes(evt.event)
+        );
+        setEvents(specificEvents); // Update state with filtered events
+      } catch (error) {
+        console.log(error, "event error");
+      }
+    }
+  };
+
+  const getLength = async () => {
+    if (contractInstance) {
+      try {
+        const lengthA = await contractInstance.arrayOfBettersA();
+        const lengthB = await contractInstance.arrayOfBettersB();
+        setLengthOfArrays({ lengthA: lengthA.length, lengthB: lengthB.length });
+        console.log(lengthA, "array log");
+      } catch (error) {
+        console.log("Error setting Array Lengths");
+      }
+    }
+  };
+
   useEffect(() => {
     // Function to initialize or update component state based on the current account
     const initializeOrRefreshState = async () => {
       try {
         await findBettor();
+        await getLength();
         await setIfOwner();
         await ifBoughtIn();
         await setBuyInUSD();
+        await getEvents();
       } catch (error) {
         console.error("Error initializing or refreshing state:", error);
       }
@@ -181,6 +225,7 @@ const MarketInteractionPage = () => {
       const userBoughtInListener = () => {
         console.log("userBoughtIn event detected");
         initializeOrRefreshState();
+        getEvents();
       };
 
       // Attach the event listener for "userBoughtIn"
@@ -205,91 +250,191 @@ const MarketInteractionPage = () => {
     };
   }, [contractInstance]); // Depend on contractInstance to re-run effect if it changes
 
-  // useEffect(() => {
-  //   findBettor();
-  //   ifBoughtIn();
-  //   // Function to handle account changes
-  //   const handleAccountsChanged = (accounts) => {
-  //     // You can add additional logic here if needed
-  //     findBettor();
-  //     setIfOwner();
-  //     ifBoughtIn();
-  //   };
+  useEffect(() => {
+    findBettor();
+    ifBoughtIn();
+    // Function to handle account changes
+    const handleAccountsChanged = (accounts) => {
+      // You can add additional logic here if needed
+      findBettor();
+      setIfOwner();
+      ifBoughtIn();
+    };
 
-  //   if (window.ethereum) {
-  //     window.ethereum.on("accountsChanged", handleAccountsChanged);
-  //   }
+    if (window.ethereum) {
+      window.ethereum.on("accountsChanged", handleAccountsChanged);
+    }
 
-  //   findBettor();
-  //   setIfOwner();
+    findBettor();
+    setIfOwner();
 
-  //   // Clean up function
-  //   return () => {
-  //     if (window.ethereum) {
-  //       window.ethereum.removeListener(
-  //         "accountsChanged",
-  //         handleAccountsChanged,
-  //         setIfOwner()
-  //       );
+    // Clean up function
+    return () => {
+      if (window.ethereum) {
+        window.ethereum.removeListener(
+          "accountsChanged",
+          handleAccountsChanged,
+          setIfOwner()
+        );
+      }
+    };
+  }, [contractInstance]); // Effect runs on component mount and when contractInstance changes
+
+  // const calculateRewardRisk = async () => {
+  //   if (contractInstance) {
+  //     try {
+  //       if (bettor?.betterA?.amount != null || betA > 0 || reductionA > 0) {
+  //         const betamountA = ethers.utils.parseEther(betA || "0");
+  //         const contractFunctionA = contractInstance.winLossBetA;
+  //         let potentialReward, reward, risk, totalBet, potB;
+
+  //         if (reductionA > 0) {
+  //           [potentialReward, reward, risk, totalBet, potB] =
+  //             await contractFunctionA(
+  //               ethers.utils.parseEther(reductionA),
+  //               false
+  //             );
+  //         } else {
+  //           [potentialReward, reward, risk, totalBet, potB] =
+  //             await contractFunctionA(betamountA, true);
+  //         }
+  //         console.log("potentialReward", potentialReward);
+  //         console.log("reward", reward);
+  //         console.log("risk", risk);
+  //         console.log("totalBet ", totalBet.toString());
+  //         setCalculatedRewardRiskA({
+  //           potentialReward: potentialReward.toString(),
+  //           reward: reward.toString(),
+  //           risk: risk.toString(),
+  //           totalBet: totalBet.toString(),
+  //           potB: potB.toString(),
+  //         });
+  //       }
+  //       if (bettor?.betterB?.amount != null || betB > 0 || reductionB > 0) {
+  //         const betAmountB = ethers.utils.parseEther(betB || "0");
+  //         const contractFunctionB = contractInstance.winLossBetB;
+  //         let potentialReward, reward, risk, totalBet, potA;
+
+  //         if (reductionB > 0) {
+  //           [potentialReward, reward, risk, totalBet, potA] =
+  //             await contractFunctionB(
+  //               ethers.utils.parseEther(reductionB),
+  //               false
+  //             );
+  //         } else {
+  //           [potentialReward, reward, risk, totalBet, potA] =
+  //             await contractFunctionB(betAmountB, true);
+  //         }
+  //         console.log("potentialReward", potentialReward);
+  //         console.log("reward", reward);
+  //         console.log("risk", risk);
+
+  //         setCalculatedRewardRiskB({
+  //           potentialReward: potentialReward.toString(),
+  //           reward: reward.toString(),
+  //           risk: risk.toString(),
+  //           totalBet: totalBet.toString(),
+  //           potA: potA.toString(),
+  //         });
+  //       }
+  //     } catch (error) {
+  //       console.error("Error calculating reward and risk:", error);
+  //       setCalculatedRewardRiskA({
+  //         potentialReward: null,
+  //         reward: null,
+  //         risk: null,
+  //         totalBet: null,
+  //         potB: null,
+  //       });
+  //       setCalculatedRewardRiskB({
+  //         potentialReward: null,
+  //         reward: null,
+  //         risk: null,
+  //         totalBet: null,
+  //         potA: null,
+  //       });
   //     }
-  //   };
-  // }, [contractInstance]); // Effect runs on component mount and when contractInstance changes
-
+  //   } else {
+  //     setCalculatedRewardRiskA({
+  //       potentialReward: null,
+  //       reward: null,
+  //       risk: null,
+  //       totalBet: null,
+  //       potB: null,
+  //     });
+  //     setCalculatedRewardRiskB({
+  //       potentialReward: null,
+  //       reward: null,
+  //       risk: null,
+  //       totalBet: null,
+  //       potA: null,
+  //     });
+  //   }
+  // };
   const calculateRewardRisk = async () => {
     if (contractInstance) {
       try {
         if (bettor?.betterA?.amount != null || betA > 0 || reductionA > 0) {
-          const betamountA = ethers.utils.parseEther(betA || "0");
+          const betamountA = await convertUsdToWei(betA || "0");
+          const reductionAA = await convertUsdToWei(reductionA || "0");
           const contractFunctionA = contractInstance.winLossBetA;
-          let potentialReward, reward, risk, totalBet, potB;
+          let potentialReward, reward, risk, totalBet, potB, bettersOnA;
 
           if (reductionA > 0) {
-            [potentialReward, reward, risk, totalBet, potB] =
-              await contractFunctionA(
-                ethers.utils.parseEther(reductionA),
-                false
-              );
+            [potentialReward, reward, risk, totalBet, potB, bettersOnA] =
+              await contractFunctionA(reductionAA, false);
           } else {
-            [potentialReward, reward, risk, totalBet, potB] =
+            [potentialReward, reward, risk, totalBet, potB, bettersOnA] =
               await contractFunctionA(betamountA, true);
           }
           console.log("potentialReward", potentialReward);
           console.log("reward", reward);
           console.log("risk", risk);
           console.log("totalBet ", totalBet.toString());
+          const potentialRewardUSD = await convertWeiToUsd(potentialReward);
+          const rewardUSD = await convertWeiToUsd(reward);
+          const riskUSD = await convertWeiToUsd(risk);
+          const totalBetUSD = await convertWeiToUsd(totalBet);
+          const potBUSD = await convertWeiToUsd(potB);
+
           setCalculatedRewardRiskA({
-            potentialReward: potentialReward.toString(),
-            reward: reward.toString(),
-            risk: risk.toString(),
-            totalBet: totalBet.toString(),
-            potB: potB.toString(),
+            potentialReward: potentialRewardUSD.toFixed(2).toString(),
+            reward: rewardUSD.toFixed(2).toString(),
+            risk: riskUSD.toFixed(2).toString(),
+            totalBet: totalBetUSD.toFixed(2).toString(),
+            potB: potBUSD.toFixed(2).toString(),
+            bettersOnA: bettersOnA.toString(),
           });
         }
         if (bettor?.betterB?.amount != null || betB > 0 || reductionB > 0) {
-          const betAmountB = ethers.utils.parseEther(betB || "0");
+          const betAmountB = await convertUsdToWei(betB || "0");
+          const reductionBB = await convertUsdToWei(reductionB || "0");
           const contractFunctionB = contractInstance.winLossBetB;
-          let potentialReward, reward, risk, totalBet, potA;
+          let potentialReward, reward, risk, totalBet, potA, bettersOnB;
 
           if (reductionB > 0) {
-            [potentialReward, reward, risk, totalBet, potA] =
-              await contractFunctionB(
-                ethers.utils.parseEther(reductionB),
-                false
-              );
+            [potentialReward, reward, risk, totalBet, potA, bettersOnB] =
+              await contractFunctionB(reductionBB, false);
           } else {
-            [potentialReward, reward, risk, totalBet, potA] =
+            [potentialReward, reward, risk, totalBet, potA, bettersOnB] =
               await contractFunctionB(betAmountB, true);
           }
           console.log("potentialReward", potentialReward);
           console.log("reward", reward);
           console.log("risk", risk);
+          const potentialRewardUSD = await convertWeiToUsd(potentialReward);
+          const rewardUSD = await convertWeiToUsd(reward);
+          const riskUSD = await convertWeiToUsd(risk);
+          const totalBetUSD = await convertWeiToUsd(totalBet);
+          const potAUSD = await convertWeiToUsd(potA);
 
           setCalculatedRewardRiskB({
-            potentialReward: potentialReward.toString(),
-            reward: reward.toString(),
-            risk: risk.toString(),
-            totalBet: totalBet.toString(),
-            potA: potA.toString(),
+            potentialReward: potentialRewardUSD.toFixed(2).toString(),
+            reward: rewardUSD.toFixed(2).toString(),
+            risk: riskUSD.toFixed(2).toString(),
+            totalBet: totalBetUSD.toFixed(2).toString(),
+            potA: potAUSD.toFixed(2).toString(),
+            bettersOnB: bettersOnB.toString(),
           });
         }
       } catch (error) {
@@ -300,6 +445,7 @@ const MarketInteractionPage = () => {
           risk: null,
           totalBet: null,
           potB: null,
+          bettersOnA: null,
         });
         setCalculatedRewardRiskB({
           potentialReward: null,
@@ -307,6 +453,7 @@ const MarketInteractionPage = () => {
           risk: null,
           totalBet: null,
           potA: null,
+          bettersOnB: null,
         });
       }
     } else {
@@ -316,6 +463,7 @@ const MarketInteractionPage = () => {
         risk: null,
         totalBet: null,
         potB: null,
+        bettersOnA: null,
       });
       setCalculatedRewardRiskB({
         potentialReward: null,
@@ -323,9 +471,12 @@ const MarketInteractionPage = () => {
         risk: null,
         totalBet: null,
         potA: null,
+        bettersOnB: null,
       });
     }
   };
+
+  // Assuming import of the conversion utility functions
 
   useEffect(() => {
     calculateRewardRisk();
@@ -333,20 +484,29 @@ const MarketInteractionPage = () => {
       const userPlacedBetListener = () => {
         console.log("userPlacedBet event detected");
         calculateRewardRisk();
+        getEvents();
       };
       const userReducedBetListener = () => {
         console.log("userPlacedBet event detected");
         calculateRewardRisk();
+        getEvents();
+      };
+
+      const userWithdrewBetListener = () => {
+        console.log("userPlacedBet event detected");
+        getEvents();
       };
 
       // Attach the event listener for "userBoughtIn"
       contractInstance.on("userPlacedBet", userPlacedBetListener);
       contractInstance.on("userReducedBet", userReducedBetListener);
+      contractInstance.on("userWithdrewBet", userWithdrewBetListener);
 
       // Cleanup function to remove the event listener
       return () => {
         contractInstance.off("userPlacedBet", userPlacedBetListener);
         contractInstance.off("userReducedBet", userReducedBetListener);
+        contractInstance.off("userWithdrewBet", userWithdrewBetListener);
       };
     } else {
       console.log("Signer not available, skipping event listener setup.");
@@ -387,7 +547,6 @@ const MarketInteractionPage = () => {
       console.error("Error updating MongoDB:", error);
     }
   };
-
   const betOnOption = async () => {
     if (!boughtIn) {
       alert("Please Buy Into Bet First");
@@ -407,28 +566,72 @@ const MarketInteractionPage = () => {
     }
     if (contractInstance && (betA || betB)) {
       try {
+        // Convert USD input to wei for the contract
+        const betAmountInWei = await convertUsdToWei(betA ? betA : betB);
+
         if (betA && !betB) {
           const tx = await contractInstance.betOnBetA({
-            value: ethers.utils.parseEther(betA),
+            value: betAmountInWei,
           });
-          updateBetterMongoDB(contractAddress, signer);
+
           await tx.wait();
         } else if (betB && !betA) {
           const tx = await contractInstance.betOnBetB({
-            value: ethers.utils.parseEther(betB),
+            value: betAmountInWei,
           });
-          updateBetterMongoDB(contractAddress, signer);
+
           await tx.wait();
         } else {
-          alert("invalid bet configuration");
+          alert("Invalid bet configuration");
         }
 
-        console.log(`Bet placed }`);
+        console.log("Bet placed");
       } catch (error) {
-        console.error(`Error placing bet on:`, error);
+        console.error("Error placing bet on:", error);
       }
     }
   };
+  // const betOnOption = async () => {
+  //   if (!boughtIn) {
+  //     alert("Please Buy Into Bet First");
+  //     return;
+  //   }
+  //   if (reductionA > 0 || reductionB > 0) {
+  //     alert("Please clear the reduction amount before placing a bet.");
+  //     return;
+  //   }
+  //   if (betA > 0 && betB > 0) {
+  //     alert("Please Only Place 1 Bet At A Time");
+  //     return;
+  //   }
+  //   if (betA <= 0 && betB <= 0) {
+  //     alert("Please Enter A Bet");
+  //     return;
+  //   }
+  //   if (contractInstance && (betA || betB)) {
+  //     try {
+  //       if (betA && !betB) {
+  //         const tx = await contractInstance.betOnBetA({
+  //           value: ethers.utils.parseEther(betA),
+  //         });
+  //         updateBetterMongoDB(contractAddress, signer);
+  //         await tx.wait();
+  //       } else if (betB && !betA) {
+  //         const tx = await contractInstance.betOnBetB({
+  //           value: ethers.utils.parseEther(betB),
+  //         });
+  //         updateBetterMongoDB(contractAddress, signer);
+  //         await tx.wait();
+  //       } else {
+  //         alert("invalid bet configuration");
+  //       }
+
+  //       console.log(`Bet placed }`);
+  //     } catch (error) {
+  //       console.error(`Error placing bet on:`, error);
+  //     }
+  //   }
+  // };
   const buyInBet = async () => {
     if (contractInstance) {
       try {
@@ -437,69 +640,37 @@ const MarketInteractionPage = () => {
         });
 
         await tx.wait();
-        // updateBetterMongoDB(contractAddress, signer);
+        updateBetterMongoDB(contractAddress, signer);
       } catch (error) {
         console.error(`Error buyingIn:`, error);
       }
     }
   };
-  // const reduceBet = async (reductionBet) => {
-  //   if (betA > 0 || betB > 0) {
-  //     alert("Please clear bet amounts before reducing a bet.");
-  //     return;
-  //   }
-
-  //   if (contractInstance ) {
-  //     try {
-  //       if (reductionA > 0 && reductionB <= 0) {
-  //         reduceBet("BetA");
-  //       } else if (reductionA <= 0 && reductionB > 0) {
-  //         reduceBet("BetB"); // Assuming you meant to reduce BetB here, adjust as necessary
-  //       } else {
-  //         // Assuming you want to show a popup or handle the "cannot reduce" case differently
-  //         // For a popup, you might need to set state that triggers a modal or use alert for simplicity
-  //         alert("Cannot reduce 2 or no bets"); // Or handle this case in a more sophisticated way
-  //       }
-  //     }
-  //       const tx = await contractInstance[`reduce${reductionBet}`](
-  //         ethers.utils.parseEther(reduction)
-  //       );
-  //       await tx.wait();
-  //       console.log(`Bet reduced on ${reductionBet}`);
-  //     } catch (error) {
-  //       console.error(`Error reducing bet on ${reductionBet}:`, error);
-  //     }
-  //   }
-  // };
-
   const reduceBet = async () => {
-    // This checks seem unnecessary based on the task description and have been removed:
-    // if (betA > 0 || betB > 0) { ... }
-
     if (!contractInstance) {
       console.error("Contract instance not available.");
       return;
     }
 
     let betType;
-    let reduction;
+    let reductionUsd; // Assume this is the amount the user wants to reduce, in USD
     if (reductionA > 0 && reductionB <= 0) {
       betType = "BetA";
-      reduction = reductionA;
+      reductionUsd = reductionA; // Assuming reductionA is in USD
     } else if (reductionA <= 0 && reductionB > 0) {
       betType = "BetB";
-      reduction = reductionB;
+      reductionUsd = reductionB; // Assuming reductionB is in USD
     } else {
       alert("Cannot reduce 2 or no bets");
       return; // Exit the function if neither condition is met
     }
 
     try {
-      // Assuming `reduction` is a predefined value that you want to reduce the bet by.
-      // You'll need to adjust this part to match the parameters expected by your contract method.
-      const tx = await contractInstance[`reduce${betType}`](
-        ethers.utils.parseEther(reduction)
-      );
+      // Convert the USD reduction amount to wei
+      const reductionWei = await convertUsdToWei(reductionUsd);
+
+      // Adjust this part to match the parameters expected by your contract method for reduction
+      const tx = await contractInstance[`reduce${betType}`](reductionWei);
 
       await tx.wait();
       console.log(`Bet reduced on ${betType}`);
@@ -507,6 +678,42 @@ const MarketInteractionPage = () => {
       console.error(`Error reducing bet on ${betType}:`, error);
     }
   };
+
+  // const reduceBet = async () => {
+  //   // This checks seem unnecessary based on the task description and have been removed:
+  //   // if (betA > 0 || betB > 0) { ... }
+
+  //   if (!contractInstance) {
+  //     console.error("Contract instance not available.");
+  //     return;
+  //   }
+
+  //   let betType;
+  //   let reduction;
+  //   if (reductionA > 0 && reductionB <= 0) {
+  //     betType = "BetA";
+  //     reduction = reductionA;
+  //   } else if (reductionA <= 0 && reductionB > 0) {
+  //     betType = "BetB";
+  //     reduction = reductionB;
+  //   } else {
+  //     alert("Cannot reduce 2 or no bets");
+  //     return; // Exit the function if neither condition is met
+  //   }
+
+  //   try {
+  //     // Assuming `reduction` is a predefined value that you want to reduce the bet by.
+  //     // You'll need to adjust this part to match the parameters expected by your contract method.
+  //     const tx = await contractInstance[`reduce${betType}`](
+  //       ethers.utils.parseEther(reduction)
+  //     );
+
+  //     await tx.wait();
+  //     console.log(`Bet reduced on ${betType}`);
+  //   } catch (error) {
+  //     console.error(`Error reducing bet on ${betType}:`, error);
+  //   }
+  // };
 
   const updateMongoDB = async (address, voteTime) => {
     try {
@@ -527,9 +734,10 @@ const MarketInteractionPage = () => {
   };
 
   const endBet = async (winnerPot) => {
-    if (contractInstance && winnerPot) {
+    if (contractInstance) {
+      console.log(winnerPot, "winner pot is");
       try {
-        const tx = await contractInstance.endBet(winnerPot);
+        const tx = await contractInstance.endBetOwner(winnerPot);
         await tx.wait();
         console.log(`Bet ended on ${winnerPot}`);
 
@@ -540,6 +748,76 @@ const MarketInteractionPage = () => {
         await updateMongoDB(contractAddress, endTime);
       } catch (error) {
         console.error(`Error ending bet on ${winnerPot}:`, error);
+      }
+    }
+  };
+  const endBetStaff = async (
+    winnerPot,
+    disagreedUserCorrect,
+    isOwnerCorrect
+  ) => {
+    if (contractInstance) {
+      try {
+        const tx = await contractInstance.endBetStaff(
+          winnerPot,
+          disagreedUserCorrect,
+          isOwnerCorrect
+        );
+        await tx.wait();
+        console.log(`Bet ended on ${winnerPot}`);
+
+        // Update MongoDB after the smart contract interaction
+        // Assuming you want to record the current date and time as the "vote time"
+
+        const endTime = Math.floor(Date.now() / 1000) + 86400;
+        await updateMongoDB(contractAddress, endTime);
+      } catch (error) {
+        console.error(`Error ending bet on ${winnerPot}:`, error);
+      }
+    }
+  };
+  const sendMoney = async () => {
+    if (contractInstance) {
+      try {
+        const tx = await contractInstance.assignEveryoneAmount();
+        await tx.wait();
+        console.log("Can Withdraw");
+      } catch (error) {
+        console.log("error assigning amounts");
+      }
+    }
+  };
+  const disagreeVote = async (disagreementText) => {
+    if (contractAddress) {
+      try {
+        const tx = await contractInstance.voteDisagree({
+          value: ethers.utils.parseEther("0.05"),
+        });
+        await tx.wait();
+        console.log("voted disagree");
+
+        const address = contractAddress;
+
+        // Now, include the disagreementText in the request to the server
+        const response = await fetch(
+          "http://localhost:3001/moveToDisagreements",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ address, disagreementText }), // Include disagreement text here
+          }
+        );
+
+        if (!response.ok) {
+          const errorMessage = await response.text();
+          throw new Error(`Server responded with error: ${errorMessage}`);
+        }
+
+        console.log("Contract moved to Disagreements collection successfully");
+      } catch (error) {
+        console.log(error, "Couldn't vote or move contract");
       }
     }
   };
@@ -554,24 +832,28 @@ const MarketInteractionPage = () => {
         findBettor();
 
         const signerAddress = await signer.getAddress();
+        await setIfOwner();
+
         console.log("signer Address is : " + signerAddress);
 
         // Check if the bettor has a non-zero amount in only one of the bets
 
         // Make API call to remove bettor from MongoDB
-        const response = await fetch("http://localhost:3001/removeBettor", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ address: signerAddress }),
-        });
+        if (owner != true) {
+          const response = await fetch("http://localhost:3001/removeBettor", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ address: signerAddress }),
+          });
 
-        if (!response.ok) {
-          throw new Error("Failed to remove bettor from database");
+          if (!response.ok) {
+            throw new Error("Failed to remove bettor from database");
+          }
+
+          console.log("Bettor removed from database");
         }
-
-        console.log("Bettor removed from database");
       } catch (error) {
         console.error(`Error withdrawing bet}:`, error);
       }
@@ -581,6 +863,7 @@ const MarketInteractionPage = () => {
   if (!contract) {
     return <div className="loading">Loading...</div>;
   }
+
   const weiToEther = (weiValue) => {
     if (weiValue === undefined || weiValue === null) {
       console.error("Invalid weiValue:", weiValue);
@@ -599,7 +882,6 @@ const MarketInteractionPage = () => {
       <main className="contract-container">
         <Header />
         {/* Display the profile image */}
-
         <div className="profile-image-container2">
           <img
             src={
@@ -638,27 +920,65 @@ const MarketInteractionPage = () => {
               >
                 <div className="pots-container">
                   <div className="pot">
-                    <h1>Pots A : {weiToEther(calculatedRewardRiskB.potA)}</h1>
+                    <h1>
+                      {contract.eventA} : {calculatedRewardRiskB.potA}
+                    </h1>
+                    <h5>Betters: {calculatedRewardRiskA.bettersOnA}</h5>
                   </div>
                   <div className="pot">
-                    <h1>Pots B : {weiToEther(calculatedRewardRiskA.potB)}</h1>
+                    <h1>
+                      {contract.eventB} : {calculatedRewardRiskA.potB}
+                      <h5>Betters: {calculatedRewardRiskB.bettersOnB}</h5>
+                    </h1>
                   </div>
                 </div>
                 {statusOfMarket === 0 ? (
-                  <div className="contract-timer">
-                    <h4>Time left to bet:</h4>
+                  <div
+                    style={{
+                      background:
+                        "linear-gradient(to right, #6a11cb 0%, #2575fc 100%)", // Lively gradient background
+                      padding: "10px",
+                      borderRadius: "10px",
+                      boxShadow: "0 4px 8px rgba(0, 0, 0, 0.2)", // Soft shadow for depth
+                      color: "white", // White text color for better contrast
+                    }}
+                  >
+                    <h4 style={{ fontWeight: "bold", textAlign: "center" }}>
+                      Time left to bet:
+                    </h4>
                     <CountdownTimer
                       endTime={contract.endTime}
-                      className="countdown-timer"
+                      style={{
+                        fontSize: "20px", // Larger font size for the countdown
+                        fontWeight: "bold",
+                        textAlign: "center", // Center align text
+                        color: "#ffeb3b", // Make the countdown numbers stand out
+                      }}
                     />
                   </div>
                 ) : statusOfMarket === 1 ? (
                   Date.now() < contract.voteTime * 1000 && (
-                    <div className="contract-vote-time">
-                      <h4>Vote time:</h4>
+                    <div
+                      style={{
+                        background:
+                          "linear-gradient(to right, #ff512f 0%, #dd2476 100%)", // Another gradient background
+                        padding: "10px",
+                        borderRadius: "10px",
+                        boxShadow: "0 4px 8px rgba(0, 0, 0, 0.2)", // Soft shadow for depth
+                        color: "white", // White text color for better contrast
+                      }}
+                    >
+                      <h4 style={{ fontWeight: "bold", textAlign: "center" }}>
+                        Vote time:
+                      </h4>
                       <CountdownTimer
                         endTime={contract.voteTime}
-                        className="countdown-timer"
+                        style={{
+                          fontSize: "20px", // Larger font size for the countdown
+                          fontWeight: "bold",
+                          textAlign: "center", // Center align text
+                          color: "#ffeb3b", // Make the countdown numbers stand out
+                        }}
                       />
                     </div>
                   )
@@ -667,38 +987,6 @@ const MarketInteractionPage = () => {
                 )}
               </aside>
             )}
-
-            {/* <div className="contract-detail-item">
-              <strong>Contract Odds:</strong> {contract.odds1} /{" "}
-              {contract.odds2}
-            </div> */}
-            {/* {betsOnPotsAB && (
-              <aside
-                className="contract-section"
-                style={{ textAlign: "center" }}
-              >
-                <h1>Pots A : {weiToEther(betsOnPotsAB.BetA)}</h1>
-                <h1>Pots B : {weiToEther(betsOnPotsAB.BetB)}</h1>
-                <div className="contract-timer">
-                  <h4>Time left to bet:</h4>
-                  <CountdownTimer
-                    endTime={contract.endTime}
-                    className="countdown-timer"
-                  />
-                </div>
-                {contract &&
-                  contract.voteTime &&
-                  Date.now() < contract.voteTime * 1000 && (
-                    <div className="contract-vote-time">
-                      <h4>Vote time:</h4>
-                      <CountdownTimer
-                        endTime={contract.voteTime}
-                        className="countdown-timer"
-                      />
-                    </div>
-                  )}
-              </aside>
-            )} */}
 
             <div class="betting-container">
               {statusOfMarket === 0 && (
@@ -750,7 +1038,7 @@ const MarketInteractionPage = () => {
                         <p>
                           Potential Reward A:{" "}
                           {calculatedRewardRiskA.potentialReward
-                            ? weiToEther(calculatedRewardRiskA.potentialReward)
+                            ? calculatedRewardRiskA.potentialReward
                             : "N/A"}
                         </p>
                         <p>
@@ -758,7 +1046,7 @@ const MarketInteractionPage = () => {
                             <span className="help-icon">
                               Current Reward A:{" "}
                               {calculatedRewardRiskA.reward
-                                ? weiToEther(calculatedRewardRiskA.reward)
+                                ? calculatedRewardRiskA.reward
                                 : "N/A"}
                             </span>
                             <span
@@ -767,7 +1055,7 @@ const MarketInteractionPage = () => {
                             >
                               Thhis means if the bet ended now, based on the
                               bets on Event A and B, you would Win:{" "}
-                              {weiToEther(calculatedRewardRiskA.reward)}{" "}
+                              {calculatedRewardRiskA.reward}{" "}
                             </span>
                           </span>
                         </p>
@@ -776,7 +1064,7 @@ const MarketInteractionPage = () => {
                             <span className="help-icon">
                               Current Risk A:{" "}
                               {calculatedRewardRiskA.risk
-                                ? weiToEther(calculatedRewardRiskA.risk)
+                                ? calculatedRewardRiskA.risk
                                 : "N/A"}
                             </span>
                             <span
@@ -785,14 +1073,14 @@ const MarketInteractionPage = () => {
                             >
                               This means if the bet ended now, based on the bets
                               on Event A and B, you would lose:{" "}
-                              {weiToEther(calculatedRewardRiskA.risk)}{" "}
+                              {calculatedRewardRiskA.risk}{" "}
                             </span>
                           </span>
                         </p>
                         <p>
                           Total Amount Bet:{" "}
                           {calculatedRewardRiskA.totalBet
-                            ? weiToEther(calculatedRewardRiskA.totalBet)
+                            ? calculatedRewardRiskA.totalBet
                             : 0}
                         </p>
                       </div>
@@ -836,7 +1124,7 @@ const MarketInteractionPage = () => {
                         <p>
                           Potential Reward B:{" "}
                           {calculatedRewardRiskB.potentialReward
-                            ? weiToEther(calculatedRewardRiskB.potentialReward)
+                            ? calculatedRewardRiskB.potentialReward
                             : "N/A"}
                         </p>
                         <p>
@@ -844,7 +1132,7 @@ const MarketInteractionPage = () => {
                             <span className="help-icon">
                               Current Reward B:{" "}
                               {calculatedRewardRiskB.reward
-                                ? weiToEther(calculatedRewardRiskB.reward)
+                                ? calculatedRewardRiskB.reward
                                 : "N/A"}
                             </span>
                             <span
@@ -853,7 +1141,7 @@ const MarketInteractionPage = () => {
                             >
                               This means if the bet ended now, based on the bets
                               on Event A and B, you would Win:{" "}
-                              {weiToEther(calculatedRewardRiskB.reward)}{" "}
+                              {calculatedRewardRiskB.reward}{" "}
                             </span>
                           </span>
                         </p>
@@ -862,7 +1150,7 @@ const MarketInteractionPage = () => {
                             <span className="help-icon">
                               Current Risk B:{" "}
                               {calculatedRewardRiskB.risk
-                                ? weiToEther(calculatedRewardRiskB.risk)
+                                ? calculatedRewardRiskB.risk
                                 : "N/A"}
                             </span>
                             <span
@@ -871,7 +1159,7 @@ const MarketInteractionPage = () => {
                             >
                               This means if the bet ended now, based on the bets
                               on Event A and B, you would lose{" "}
-                              {weiToEther(calculatedRewardRiskB.risk)}{" "}
+                              {calculatedRewardRiskB.risk}{" "}
                             </span>
                           </span>
                         </p>
@@ -879,69 +1167,32 @@ const MarketInteractionPage = () => {
                         <p>
                           Total Amount Bet:{" "}
                           {calculatedRewardRiskB.totalBet
-                            ? weiToEther(calculatedRewardRiskB.totalBet)
+                            ? calculatedRewardRiskB.totalBet
                             : 0}
                         </p>
                       </div>
                     )}
                     <ul class="horizontal-list">
-                      <span className="tooltip">
-                        <span className="help-icon">All Details</span>
-                        <span
-                          className="tooltiptext"
-                          style={{ marginLeft: "15px" }}
-                        >
-                          <ul>
-                            <li>
-                              Bet A Details:{" "}
-                              {contract.ConditionOfMarket.betADetails}
-                            </li>
-                            <li>
-                              Bet B Details:{" "}
-                              {contract.ConditionOfMarket.betBDetails}
-                            </li>
-                            <li>
-                              Event Timing:{" "}
-                              {contract.ConditionOfMarket.eventTiming}
-                            </li>
-                            <li>
-                              Information Sources/ Irrufutable Source Of Truth:{" "}
-                              {contract.ConditionOfMarket.informationSources}
-                            </li>
-                            <li>
-                              {" "}
-                              The total amount that you will withdraw if you win
-                              is what you are Rewarded + Total Amount Bet (
-                              {weiToEther(calculatedRewardRiskA.reward)} +{" "}
-                              {weiToEther(calculatedRewardRiskA.totalBet)} ={" "}
-                              {weiToEther(
-                                calculatedRewardRiskA.reward +
-                                  calculatedRewardRiskA.totalBet
-                              )}
-                              )
-                            </li>
-                          </ul>
+                      {boughtIn && (
+                        <span className="tooltip">
+                          <span className="help-icon">
+                            <button onClick={() => betOnOption()}>
+                              Place Bet
+                            </button>
+                          </span>
+                          <span className="tooltiptext">
+                            {" "}
+                            The total amount that you will withdraw if you win
+                            is what you are Rewarded + Total Amount Bet (
+                            {calculatedRewardRiskA.reward} +{" "}
+                            {calculatedRewardRiskA.totalBet} ={" "}
+                            {calculatedRewardRiskA.reward +
+                              calculatedRewardRiskA.totalBet}
+                            )
+                          </span>
                         </span>
-                      </span>
-                      <span className="tooltip">
-                        <span className="help-icon">
-                          <button onClick={() => betOnOption()}>
-                            Place Bet
-                          </button>
-                        </span>
-                        <span className="tooltiptext">
-                          {" "}
-                          The total amount that you will withdraw if you win is
-                          what you are Rewarded + Total Amount Bet (
-                          {weiToEther(calculatedRewardRiskA.reward)} +{" "}
-                          {weiToEther(calculatedRewardRiskA.totalBet)} ={" "}
-                          {weiToEther(
-                            calculatedRewardRiskA.reward +
-                              calculatedRewardRiskA.totalBet
-                          )}
-                          )
-                        </span>
-                      </span>
+                      )}
+
                       <div className="button-container">
                         {boughtIn && (
                           <button
@@ -953,7 +1204,17 @@ const MarketInteractionPage = () => {
                         )}
                       </div>
                       {!boughtIn && (
-                        <button onClick={() => buyInBet()}>
+                        <button
+                          onClick={() => buyInBet()}
+                          style={{
+                            background:
+                              "linear-gradient(to right, #6a11cb 0%, #2575fc 100%)", // Lively gradient background
+                            padding: "10px",
+                            borderRadius: "10px",
+                            boxShadow: "0 4px 8px rgba(0, 0, 0, 0.2)", // Soft shadow for depth
+                            color: "white", // White text color for better contrast
+                          }}
+                        >
                           Buy In, {buyInUSD}
                         </button>
                       )}
@@ -962,8 +1223,7 @@ const MarketInteractionPage = () => {
                 </section>
               )}
 
-              <section className="contract-section">
-                {/* /* Check if bettor has placed a bet and market status is either for reducing bet (0) or withdrawing (3)
+              {/* /* Check if bettor has placed a bet and market status is either for reducing bet (0) or withdrawing (3)
                 {bettor &&
                   (bettor.betterA.amount > 0 || bettor.betterB.amount > 0) &&
                   (statusOfMarket === 0 || statusOfMarket === 3) && (
@@ -997,8 +1257,39 @@ const MarketInteractionPage = () => {
                           </div>
                         </>
                       )} */}
+
+              {statusOfMarket === 1 && (
                 <>
-                  {statusOfMarket === 0 && (
+                  <input
+                    type="text"
+                    id="disagreementText"
+                    placeholder="Enter your disagreement reason here"
+                  />
+
+                  <button
+                    onClick={() => {
+                      const disagreementText =
+                        document.getElementById("disagreementText").value;
+                      disagreeVote(disagreementText);
+                    }}
+                  >
+                    Disagree Button
+                  </button>
+                </>
+              )}
+              {statusOfMarket === 2 && (
+                <section className="contract-section">
+                  <>
+                    <div>
+                      A Disagreement Has Been Submitted, please wait for review.
+                    </div>
+                  </>
+                </section>
+              )}
+
+              {statusOfMarket === 4 && (
+                <section className="contract-section">
+                  <>
                     <div className="button-container">
                       <h3 className="contract-title">Withdraw Your Bet</h3>
                       {(bettor.betterA.amount > 0 ||
@@ -1007,14 +1298,14 @@ const MarketInteractionPage = () => {
                           Withdraw All
                         </button>
                       )}
+                      <h3> Amount available to Withdraw {amountWon} </h3>
                     </div>
-                  )}
-                </>
-              </section>
+                  </>
+                </section>
+              )}
             </div>
           </div>
         </section>
-
         {/* Display the profile image */}
         <div className="profile-image-container">
           <img
@@ -1036,21 +1327,441 @@ const MarketInteractionPage = () => {
           />
         </div>
 
-        {/* Exclusive Owner Actions */}
-        {owner && statusOfMarket === 0 && (
-          <div className="button-container">
-            <p>After Betting Period Has Ended Select</p>
-            <button className="button" onClick={() => endBet(0)}>
-              Set Winner A
-            </button>
-            <button className="button" onClick={() => endBet(1)}>
-              Set Winner B
-            </button>
-            <button className="button" onClick={() => endBet(2)}>
-              Set Draw/Cancel
-            </button>
+        {/* <section
+          className="contract-section"
+          style={{
+            backgroundColor: "#f0f2f5", // Light grey background for the section
+            padding: "20px", // Padding around the entire section
+            borderRadius: "8px", // Rounded corners for the section
+            boxShadow: "0 4px 8px rgba(0, 0, 0, 0.1)", // Subtle shadow for depth
+            margin: "20px 0", // Margin for spacing from other elements
+          }}
+        >
+          <h2
+            style={{
+              color: "#333", // Dark grey color for headings
+              borderBottom: "2px solid #007bff", // Blue bottom border for the h2
+              paddingBottom: "10px", // Padding bottom to space out the text from the border
+            }}
+          >
+            All Events
+          </h2>
+          <div style={{ marginTop: "15px" }}>
+            {events.length > 0 ? (
+              <div>
+                {events.map((evt, index) => (
+                  <div
+                    key={index}
+                    style={{
+                      padding: "10px",
+                      margin: "10px 0",
+                      backgroundColor: "#ffffff", // White background for each event item
+                      borderRadius: "5px", // Rounded corners for event items
+                      boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)", // Shadow for each event item
+                    }}
+                  >
+                    {evt.event === "contractDeployed" && (
+                      <p style={{ color: "#4CAF50" }}>
+                        Contract Deployed Event:{" "}
+                        {new Date(
+                          evt.args.timeStamp.toNumber() * 1000
+                        ).toLocaleString()}
+                      </p>
+                    )}
+                    {evt.event === "winnerDeclaredVoting" && (
+                      <p style={{ color: "#007bff" }}>
+                        {evt.args.winnerIs === 0 && (
+                          <span>Winner is: {contract.eventA}</span>
+                        )}
+                        {evt.args.winnerIs === 1 && (
+                          <span>Winner is: {contract.eventB}</span>
+                        )}
+                        {evt.args.winnerIs === 2 && (
+                          <span>Event cancelled or draw</span>
+                        )}
+                        {" You May Vote and Disagree Until: " +
+                          new Date(
+                            evt.args.votingTime.toNumber() * 1000
+                          ).toLocaleString()}
+                      </p>
+                    )}
+                    {evt.event === "underReview" && (
+                      <p style={{ color: "orange" }}>
+                        Disagrement Submitted: Under Review
+                      </p>
+                    )}
+                    {evt.event === "winnerFinalized" && (
+                      <p style={{ color: "green" }}>
+                        {evt.args.winnerIs === 0 && (
+                          <span>
+                            Winner Finalized is: {contract.eventA} You May
+                            Withdraw
+                          </span>
+                        )}
+                        {evt.args.winnerIs === 1 && (
+                          <span>
+                            Winner Finalized is: {contract.eventB} You May
+                            Withdraw
+                          </span>
+                        )}
+                        {evt.args.winnerIs === 2 && (
+                          <span>Event cancelled or draw You May Withdraw</span>
+                        )}
+                      </p>
+                    )}
+                    {/* Add additional event types here as needed */}
+        {/* </div>
+                ))}
+              </div>
+            ) : (
+              <p>No specific events found.</p>
+            )}
           </div>
-        )}
+
+          <h2
+            style={{
+              color: "#333",
+              borderBottom: "2px solid #007bff",
+              paddingBottom: "10px",
+              marginTop: "20px", // Added spacing from the events to the details section
+            }}
+          >
+            All Details
+          </h2>
+          <div className="detail" style={{ marginTop: "10px" }}>
+            <input
+              type="checkbox"
+              id="betADetails"
+              className="toggle-checkbox"
+              style={{ marginRight: "5px" }} // Space between checkbox and label
+            />
+            <label
+              htmlFor="betADetails"
+              className="detail-label"
+              style={{ fontWeight: "bold", cursor: "pointer" }}
+            >
+              Bet A Details
+            </label>
+            <div
+              className="content"
+              style={{
+                marginTop: "5px",
+                backgroundColor: "#fff",
+                padding: "10px",
+                borderRadius: "5px",
+                boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
+              }}
+            >
+              {contract.ConditionOfMarket.betADetails}
+            </div>
+          </div>
+
+          <div className="detail">
+            <input
+              type="checkbox"
+              id="betBDetails"
+              className="toggle-checkbox"
+            />
+            <label htmlFor="betBDetails" className="detail-label">
+              Bet B Details
+            </label>
+            <div className="content">
+              {contract.ConditionOfMarket.betBDetails}
+            </div>
+          </div>
+
+          <div className="detail">
+            <input
+              type="checkbox"
+              id="eventTiming"
+              className="toggle-checkbox"
+            />
+            <label htmlFor="eventTiming" className="detail-label">
+              Event Timing
+            </label>
+            <div className="content">
+              {contract.ConditionOfMarket.eventTiming}
+            </div>
+          </div>
+
+          <div className="detail">
+            <input
+              type="checkbox"
+              id="informationSources"
+              className="toggle-checkbox"
+            />
+            <label htmlFor="informationSources" className="detail-label">
+              Information Sources/ Irrefutable Source Of Truth
+            </label>
+            <div className="content">
+              {contract.ConditionOfMarket.informationSources}
+            </div>
+          </div>
+
+          <div className="detail">
+            <input
+              type="checkbox"
+              id="totalReward"
+              className="toggle-checkbox"
+            />
+            <label htmlFor="totalReward" className="detail-label">
+              Total Reward Calculation
+            </label>
+            <div className="content">
+              {`The total amount that you will withdraw if you win is what you are Rewarded + Total Amount Bet (${
+                calculatedRewardRiskA.reward
+              } + ${calculatedRewardRiskA.totalBet} = ${
+                calculatedRewardRiskA.reward + calculatedRewardRiskA.totalBet
+              })`}
+            </div>
+          </div>
+        </section> */}
+
+        <section
+          className="contract-section"
+          style={{
+            backgroundColor: "#f0f2f5", // Light grey background for the section
+            padding: "20px", // Padding around the entire section
+            borderRadius: "8px", // Rounded corners for the section
+            boxShadow: "0 4px 8px rgba(0, 0, 0, 0.1)", // Subtle shadow for depth
+            margin: "20px auto", // Center the section with auto margins on the sides
+            maxWidth: "800px", // Max width for the content
+            display: "block", // Use block display to utilize margin auto for centering
+          }}
+        >
+          <h2
+            style={{
+              color: "#333", // Dark grey color for headings
+              borderBottom: "2px solid #007bff", // Blue bottom border for the h2
+              paddingBottom: "10px", // Padding bottom to space out the text from the border
+            }}
+          >
+            All Events
+          </h2>
+          <div style={{ marginTop: "15px" }}>
+            {events.length > 0 ? (
+              events.map((evt, index) => (
+                <div
+                  key={index}
+                  style={{
+                    padding: "8px 10px", // Matching padding to detail sections for consistency
+                    margin: "8px 0", // Reduced margin to match detail sections
+                    backgroundColor: "#ffffff", // White background for each event item
+                    borderRadius: "5px", // Rounded corners for a softer look
+                    boxShadow: "0 2px 4px rgba(0, 0, 0, 0.05)", // Lighter shadow for subtlety
+                    transition: "all 0.3s ease", // Smooth transition for a consistent feel
+                  }}
+                >
+                  {evt.event === "contractDeployed" && (
+                    <p style={{ color: "#007bff" }}>
+                      {" "}
+                      {/* Light blue for consistency */}
+                      Contract Deployed Event:{" "}
+                      {new Date(
+                        evt.args.timeStamp.toNumber() * 1000
+                      ).toLocaleString()}
+                    </p>
+                  )}
+                  {evt.event === "winnerDeclaredVoting" && (
+                    <p style={{ color: "#007bff" }}>
+                      {" "}
+                      {/* Adjusted to light blue */}
+                      {evt.args.winnerIs === 0 && (
+                        <span>Winner is: {contract.eventA}</span>
+                      )}
+                      {evt.args.winnerIs === 1 && (
+                        <span>Winner is: {contract.eventB}</span>
+                      )}
+                      {evt.args.winnerIs === 2 && (
+                        <span>Event cancelled or draw</span>
+                      )}
+                      {" You May Vote and Disagree Until: " +
+                        new Date(
+                          evt.args.votingTime.toNumber() * 1000
+                        ).toLocaleString()}
+                    </p>
+                  )}
+                  {evt.event === "underReview" && (
+                    <p style={{ color: "orange" }}>
+                      Disagreement Submitted: Under Review
+                    </p>
+                  )}
+                  {evt.event === "winnerFinalized" && (
+                    <p style={{ color: "green" }}>
+                      {evt.args.winnerIs === 0 && (
+                        <span>
+                          Winner Finalized is: {contract.eventA} You May
+                          Withdraw
+                        </span>
+                      )}
+                      {evt.args.winnerIs === 1 && (
+                        <span>
+                          Winner Finalized is: {contract.eventB} You May
+                          Withdraw
+                        </span>
+                      )}
+                      {evt.args.winnerIs === 2 && (
+                        <span>Event cancelled or draw You May Withdraw</span>
+                      )}
+                    </p>
+                  )}
+                  {/* Additional event types here as needed */}
+                </div>
+              ))
+            ) : (
+              <p>No specific events found.</p>
+            )}
+          </div>
+
+          <h2
+            style={{
+              color: "#333",
+              borderBottom: "2px solid #007bff",
+              paddingBottom: "10px",
+              marginTop: "20px", // Added spacing from the events to the details section
+            }}
+          >
+            All Details
+          </h2>
+          {/* Detail sections with updated labels */}
+          {[
+            "Bet A Details",
+            "Bet B Details",
+            "Event Timing Details",
+            "Irrefutable Source Of Truth",
+            "Payout Calculations",
+          ].map((detailLabel, i) => (
+            <div
+              className="detail"
+              key={i}
+              style={{
+                marginTop: "8px", // Reduced space between each detail for compactness
+                marginBottom: "8px", // Consistent margin at the bottom
+                backgroundColor: "#fff", // Background color for the detail section
+                padding: "8px 10px", // Slightly reduced padding for content focus
+                borderRadius: "5px", // Rounded corners for a softer look
+                boxShadow: "0 2px 4px rgba(0, 0, 0, 0.05)", // Lighter shadow for subtlety
+                transition: "all 0.3s ease", // Smooth transition for hover effects
+              }}
+            >
+              <input
+                type="checkbox"
+                id={`detail-${i}`}
+                className="toggle-checkbox"
+                style={{ marginRight: "5px" }}
+              />
+              <label
+                htmlFor={`detail-${i}`}
+                className="detail-label"
+                style={{
+                  fontWeight: "bold",
+                  cursor: "pointer",
+                  transition: "color 0.3s ease", // Smooth color transition on hover
+                }}
+              >
+                {detailLabel}
+              </label>
+              <div
+                className="content"
+                style={{
+                  marginTop: "5px",
+                  transition: "opacity 0.3s ease", // Smooth transition for content appearance
+                }}
+              >
+                {/* Dynamically rendering the content based on the index */}
+                {i === 0 && contract.ConditionOfMarket.betADetails}
+                {i === 1 && contract.ConditionOfMarket.betBDetails}
+                {i === 2 && contract.ConditionOfMarket.eventTiming}
+                {i === 3 && contract.ConditionOfMarket.informationSources}
+                {i === 4 &&
+                  `The total amount that you will withdraw if you win is what you are Rewarded + Total Amount Bet (${
+                    calculatedRewardRiskA.reward
+                  } + ${calculatedRewardRiskA.totalBet} = ${
+                    calculatedRewardRiskA.reward +
+                    calculatedRewardRiskA.totalBet
+                  })`}
+              </div>
+            </div>
+          ))}
+        </section>
+
+        {/* Exclusive Owner Actions */}
+        {owner &&
+          (statusOfMarket === 2 ? (
+            <div className="button-container">
+              <p>After the Betting Period Has Ended, Select the Outcome:</p>
+              {/* Dropdown for selecting the outcome */}
+              <select id="outcomeSelect" className="dropdown">
+                <option value="0">Set Winner A</option>
+                <option value="1">Set Winner B</option>
+                <option value="2">Set Draw/Cancel</option>
+              </select>
+
+              <div>
+                {/* Checkbox section for status */}
+                <div>
+                  <label>
+                    <input type="checkbox" id="disagreementCheckbox" />
+                    User Disagreement Correct
+                  </label>
+                </div>
+
+                <div>
+                  <label>
+                    <input type="checkbox" id="ownerCheckbox" />
+                    Owner Originally Correct
+                  </label>
+                </div>
+
+                {/* Button to submit the user's choice */}
+                <button
+                  className="button"
+                  onClick={() => {
+                    // Retrieve the selected outcome from the dropdown
+                    const selectedOutcome =
+                      document.getElementById("outcomeSelect").value;
+
+                    // Check the status of the disagreement checkbox
+                    const disagreementStatus = document.getElementById(
+                      "disagreementCheckbox"
+                    ).checked;
+
+                    // Check if the owner was originally correct
+                    const ownerIsCorrect =
+                      document.getElementById("ownerCheckbox").checked;
+
+                    // Call the function to end the bet with the staff's decision
+                    endBetStaff(
+                      parseInt(selectedOutcome, 10),
+                      disagreementStatus,
+                      ownerIsCorrect
+                    );
+                  }}
+                >
+                  Submit Choice
+                </button>
+              </div>
+              <button className="button" onClick={() => sendMoney()}>
+                Send Amounts Back
+              </button>
+            </div>
+          ) : (
+            <div className="button-container">
+              <p>After Betting Period Has Ended Select</p>
+              <button className="button" onClick={() => endBet(0)}>
+                Set Winner A
+              </button>
+              <button className="button" onClick={() => endBet(1)}>
+                Set Winner B
+              </button>
+              <button className="button" onClick={() => endBet(2)}>
+                Set Draw/Cancel
+              </button>
+              <button className="button" onClick={() => sendMoney()}>
+                Send Amounts Back
+              </button>
+            </div>
+          ))}
       </main>
     </>
   );
