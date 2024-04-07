@@ -8,6 +8,44 @@ export const GET_TOURNAMENT_QUERY = gql`
       events {
         id
         name
+        phases {
+          id
+        }
+      }
+    }
+  }
+`;
+
+export const GET_PHASE_QUERY = gql`
+  query EventSets($eventId: ID!) {
+    event(id: $eventId) {
+      id
+      name
+      phases {
+        id
+      }
+    }
+  }
+`;
+export const GET_SETS_BY_PHASE_QUERY = gql`
+  query PhaseSets($phaseId: ID!) {
+    phase(id: $phaseId) {
+      id
+      name
+      sets {
+        nodes {
+          id
+          slots {
+            id
+            entrant {
+              id
+              name
+            }
+            standing {
+              placement
+            }
+          }
+        }
       }
     }
   }
