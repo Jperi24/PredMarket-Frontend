@@ -546,3 +546,27 @@ html {
   box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
   transform: scale(1.01);
 }
+
+.search-input {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 20px;
+  box-sizing: border-box;
+}
+
+.sets-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 20px;
+}
+
+.set-box {
+  border: 1px solid #ddd;
+  padding: 20px;
+  border-radius: 8px;
+  background-color: #f5f5f5;
+}
+
+.entrant-details > div {
+  margin-top: 10px;
+}

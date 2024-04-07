@@ -1,23 +1,14 @@
 import "../styles/ContractsPage.css";
-
-import {
-  WagmiConfig,
-  RainbowKitProvider,
-  wagmiConfig,
-  chains,
-} from "/components/rainbowkit.jsx";
-
+import { ApolloProvider } from "@apollo/client";
+import apolloClient from "../apollo-client"; // Adjust the import path to where your Apollo client instance is defined
 import { ThirdwebProvider } from "@thirdweb-dev/react";
 
 export default function App({ Component, pageProps }) {
   return (
-    // <WagmiConfig config={wagmiConfig}>
-    //   <RainbowKitProvider chains={chains}>
-
-    //   </RainbowKitProvider>
-    // </WagmiConfig>
-    <ThirdwebProvider activeChain="localhost">
-      <Component {...pageProps} />
-    </ThirdwebProvider>
+    <ApolloProvider client={apolloClient}>
+      <ThirdwebProvider activeChain="localhost">
+        <Component {...pageProps} />
+      </ThirdwebProvider>
+    </ApolloProvider>
   );
 }
