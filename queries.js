@@ -23,16 +23,17 @@ export const GET_PHASE_QUERY = gql`
       name
       phases {
         id
+        name
       }
     }
   }
 `;
 export const GET_SETS_BY_PHASE_QUERY = gql`
-  query PhaseSets($phaseId: ID!) {
+  query PhaseSets($phaseId: ID!, $page: Int!, $perPage: Int!) {
     phase(id: $phaseId) {
       id
       name
-      sets {
+      sets(page: $page, perPage: $perPage, sortType: STANDARD) {
         nodes {
           id
           slots {

@@ -1,8 +1,8 @@
 import React from "react";
-import TournamentInfo from "../components/tournamentInfo2"; // Adjust the import path as necessary
+import TournamentInfo from "../components/tournamentInfo"; // Adjust the import path as necessary
 
 function App() {
-  const tournamentSlug = "battle-of-bc-6-7"; // Replace this with your actual tournament slug
+  const tournamentSlug = "trial-of-baldr-north-america-moose-wars"; // Replace this with your actual tournament slug
 
   return (
     <div>

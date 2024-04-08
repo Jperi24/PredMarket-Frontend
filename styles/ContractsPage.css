@@ -554,19 +554,58 @@ html {
   box-sizing: border-box;
 }
 
+.entrant-details > div {
+  margin-top: 10px;
+}
+
 .sets-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(4, 1fr); /* Creates four columns */
+  gap: 20px; /* Space between items */
+  margin-top: 20px; /* Add some space above the grid */
 }
 
 .set-box {
-  border: 1px solid #ddd;
-  padding: 20px;
-  border-radius: 8px;
-  background-color: #f5f5f5;
+  border: 1px solid #ddd; /* Subtle border */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); /* Soft shadow for depth */
+  border-radius: 8px; /* Rounded corners */
+  padding: 20px; /* Spacing inside each box */
+  background-color: #fff; /* White background */
+  transition: transform 0.2s; /* Smooth transform effect */
 }
 
-.entrant-details > div {
-  margin-top: 10px;
+.set-box:hover {
+  transform: translateY(-5px); /* Slight lift effect on hover */
+}
+
+.set-box h4 {
+  color: #333; /* Darker color for headings */
+  margin-bottom: 10px; /* Space below the heading */
+}
+
+.set-box p {
+  color: #666; /* Lighter text color for less emphasis */
+  line-height: 1.5; /* Improve readability */
+}
+
+/* Add some responsiveness */
+@media (max-width: 1200px) {
+  .sets-grid {
+    grid-template-columns: repeat(3, 1fr); /* 3 columns on smaller screens */
+  }
+}
+
+@media (max-width: 900px) {
+  .sets-grid {
+    grid-template-columns: repeat(
+      2,
+      1fr
+    ); /* 2 columns on even smaller screens */
+  }
+}
+
+@media (max-width: 600px) {
+  .sets-grid {
+    grid-template-columns: 1fr; /* 1 column on mobile */
+  }
 }

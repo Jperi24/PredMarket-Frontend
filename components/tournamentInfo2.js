@@ -8,7 +8,10 @@ import {
 
 const TournamentInfo = ({ slug }) => {
   const [selectedEventId, setSelectedEventId] = useState(null);
+  const [selectedPhaseId, setSelectedPhaseId] = useState(null);
+  const [searchInput, setSearchInput] = useState("");
   const [phaseSets, setPhaseSets] = useState([]);
+  const [phases, setPhases] = useState([]);
   const {
     loading: tournamentLoading,
     error: tournamentError,
@@ -18,44 +21,82 @@ const TournamentInfo = ({ slug }) => {
   });
   const client = useApolloClient();
 
-  // Load phases and sets for a selected event
   useEffect(() => {
     if (!selectedEventId) return;
 
-    const fetchPhasesAndSets = async () => {
+    const fetchPhases = async () => {
       try {
-        // Fetch phases of the event excluding the first phase
         const { data: eventData } = await client.query({
           query: GET_PHASE_QUERY,
           variables: { eventId: selectedEventId },
         });
-        const phases = eventData.event.phases.slice(1); // Exclude the first phase
-
-        for (const phase of phases) {
-          const { data: phaseData } = await client.query({
-            query: GET_SETS_BY_PHASE_QUERY,
-            variables: { phaseId: phase.id },
-          });
-
-          // Append sets data with phase information
-          const setsWithPhaseInfo = phaseData.phase.sets.nodes.map((set) => ({
-            ...set,
-            phaseName: phaseData.phase.name, // Example of incorporating phase info
-          }));
-
-          setPhaseSets((prev) => [...prev, ...setsWithPhaseInfo]);
-        }
+        console.log("Fetched Phases:", eventData.event.phases); // Debug: Verify fetched data
+        setPhases(eventData.event.phases); // Assume these include id and name based on your query structure
       } catch (error) {
-        console.error("Failed to fetch phases and sets:", error);
+        console.error("Failed to fetch phases:", error);
       }
     };
 
-    fetchPhasesAndSets();
+    fetchPhases();
   }, [selectedEventId, client]);
+
+  useEffect(() => {
+    const fetchSetsForSelectedPhase = async () => {
+      if (!selectedPhaseId) {
+        setPhaseSets([]);
+        return;
+      }
+
+      try {
+        const sets = await fetchAllSetsForPhase(selectedPhaseId);
+        setPhaseSets([
+          {
+            phaseName: phases.find((phase) => phase.id === selectedPhaseId)
+              ?.name,
+            sets,
+          },
+        ]);
+      } catch (error) {
+        console.error("Failed to fetch sets for phase:", error);
+      }
+    };
+
+    fetchSetsForSelectedPhase();
+  }, [selectedPhaseId, client, phases]);
+
+  const fetchAllSetsForPhase = async (phaseId) => {
+    let allSets = [];
+    let page = 1;
+    const perPage = 100;
+    let hasMore = true;
+
+    while (hasMore) {
+      const { data: phaseData } = await client.query({
+        query: GET_SETS_BY_PHASE_QUERY,
+        variables: { phaseId, page, perPage },
+      });
+      console.log("Fetched Sets Data:", phaseData);
+
+      const fetchedSets = phaseData.phase.sets.nodes;
+      allSets = [...allSets, ...fetchedSets];
+      hasMore = fetchedSets.length === perPage;
+      page += 1;
+    }
+
+    return allSets;
+  };
 
   const handleEventSelection = (eventId) => {
     setSelectedEventId(eventId);
-    setPhaseSets([]); // Clear previous sets
+    setSelectedPhaseId(null); // Reset phase selection when event changes
+  };
+
+  const handlePhaseSelection = (phaseId) => {
+    setSelectedPhaseId(phaseId);
+  };
+
+  const handleSearchInputChange = (event) => {
+    setSearchInput(event.target.value.toLowerCase());
   };
 
   if (tournamentLoading) return <p>Loading...</p>;
@@ -75,24 +116,78 @@ const TournamentInfo = ({ slug }) => {
           </option>
         ))}
       </select>
-      <div className="sets-grid">
-        {phaseSets.map((set, index) => (
-          <div key={set.id} className="set-box">
-            <h4>
-              Set {index + 1} - Phase: {set.phaseName}
-            </h4>
-            <p>
-              Entrants and Placement:{" "}
-              {set.slots.map((slot, slotIndex) => (
-                <React.Fragment key={slotIndex}>
-                  {slotIndex > 0 ? " vs " : ""}
-                  {slot.entrant ? slot.entrant.name : "Unknown"}
-                  {slot.standing && slot.standing.placement
-                    ? ` (Placement: ${slot.standing.placement})`
-                    : ""}
-                </React.Fragment>
-              ))}
-            </p>
+
+      {selectedEventId && (
+        <select
+          onChange={(e) => handlePhaseSelection(e.target.value)}
+          value={selectedPhaseId || ""}
+        >
+          <option value="">Select a phase</option>
+          {phases &&
+            phases.map((phase) => (
+              <option key={phase.id} value={phase.id}>
+                {phase.name}
+              </option>
+            ))}
+        </select>
+      )}
+
+      <input
+        type="text"
+        value={searchInput}
+        onChange={handleSearchInputChange}
+        placeholder="Search by player name"
+      />
+
+      <div className="grid-container">
+        {phaseSets.map((phase, phaseIndex) => (
+          <div key={phaseIndex}>
+            <h3>{phase.phaseName}</h3>
+            {phase.sets
+              .filter((set) =>
+                set.slots.some(
+                  (slot) =>
+                    slot.entrant &&
+                    slot.entrant.name.toLowerCase().includes(searchInput)
+                )
+              )
+              .map((set, setIndex) => {
+                const inGame = set.slots.every(
+                  (slot) => slot.standing && slot.standing.placement === 2
+                );
+                const hasWinner = set.slots.some(
+                  (slot) => slot.standing && slot.standing.placement === 1
+                );
+                const winningSlot = set.slots.find(
+                  (slot) => slot.standing && slot.standing.placement === 1
+                );
+                const winnerName = winningSlot
+                  ? winningSlot.entrant.name
+                  : "Unknown";
+                const hasUnknownEntrant = set.slots.some(
+                  (slot) => !slot.entrant || slot.entrant.name === "Unknown"
+                );
+
+                return (
+                  <div key={set.id} className="set-box">
+                    <h4>Set {setIndex + 1}</h4>
+                    <p>
+                      Entrants:{" "}
+                      {set.slots.map((slot, slotIndex) => (
+                        <React.Fragment key={slotIndex}>
+                          {slotIndex > 0 ? " vs " : ""}
+                          {slot.entrant ? slot.entrant.name : "Unknown"}
+                        </React.Fragment>
+                      ))}
+                    </p>
+                    {inGame && !hasWinner && <p>Status: In game</p>}
+                    {!inGame && hasWinner && <p>Status: {winnerName} Won</p>}
+                    {!inGame && !hasWinner && hasUnknownEntrant && (
+                      <p>Status: Waiting For Opponent</p>
+                    )}
+                  </div>
+                );
+              })}
           </div>
         ))}
       </div>
