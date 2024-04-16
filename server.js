@@ -89,6 +89,30 @@ app.get("/ethToUsdRate", (req, res) => {
   }
 });
 
+// Endpoint to check if a set has already been deployed
+app.get(`/check-set-deployment/:tags`, async (req, res) => {
+  const tags = req.params.tags;
+
+  try {
+    const collection = db.collection("Contracts");
+
+    // Using a regular expression to match the tags exactly
+    const regex = new RegExp(`^${tags}$`, "i");
+
+    // Searching in MongoDB using a regex to ensure exact matching
+    const contract = await collection.findOne({ tags: regex });
+
+    if (contract) {
+      res.status(200).json({ isDeployed: true, contractDetails: contract });
+    } else {
+      res.status(200).json({ isDeployed: false });
+    }
+  } catch (error) {
+    console.error("Failed to check if set is deployed:", error);
+    res.status(500).send("Error checking set deployment");
+  }
+});
+
 function scheduleTasks() {
   // cron.schedule("0 */2 * * *", moveExpiredContracts); every 2 hours
   cron.schedule("*/5 * * * *", moveExpiredContracts); // every 5 mins

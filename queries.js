@@ -1,10 +1,31 @@
 import { gql } from "@apollo/client";
 
+export const GET_ALL_TOURNAMENTS_QUERY = gql`
+  query TournamentQuery($afterDate: Timestamp, $beforeDate: Timestamp) {
+    tournaments(
+      query: {
+        filter: {
+          afterDate: $afterDate
+          beforeDate: $beforeDate
+          isFeatured: true
+        }
+      }
+    ) {
+      nodes {
+        name
+        startAt
+        endAt
+        slug
+      }
+    }
+  }
+`;
 export const GET_TOURNAMENT_QUERY = gql`
   query TournamentQuery($slug: String) {
     tournament(slug: $slug) {
       id
       name
+      endAt
       events {
         id
         name
@@ -21,6 +42,9 @@ export const GET_PHASE_QUERY = gql`
     event(id: $eventId) {
       id
       name
+      videogame {
+        name
+      }
       phases {
         id
         name
@@ -35,6 +59,7 @@ export const GET_SETS_BY_PHASE_QUERY = gql`
       name
       sets(page: $page, perPage: $perPage, sortType: STANDARD) {
         nodes {
+          fullRoundText
           id
           slots {
             id

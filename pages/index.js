@@ -88,7 +88,7 @@ export default function ContractsPage() {
 
       // Check if any part of the address matches any part of the search query
       const addressMatch = queryLower.some((q) =>
-        contract.address.toLowerCase().includes(q)
+        contract.toLowerCase().includes(q)
       );
 
       // Assuming the correct property name is `NameOfMarket`
