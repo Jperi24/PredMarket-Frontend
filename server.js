@@ -29,25 +29,29 @@ client
   .catch((err) => {
     console.error("Failed to connect to MongoDB", err);
   });
+
 async function moveExpiredContracts() {
   try {
     const sourceCollection = db.collection("Contracts");
-    const targetCollection = db.collection("ExpiredContracts");
-    const now = Math.floor(new Date().getTime() / 1000);
-    const expiredContracts = await sourceCollection
-      .find({ endTime: { $lt: now } })
-      .toArray();
 
-    if (expiredContracts.length > 0) {
-      await targetCollection.insertMany(expiredContracts);
-      const idsToRemove = expiredContracts.map((contract) => contract._id);
-      await sourceCollection.deleteMany({ _id: { $in: idsToRemove } });
-    }
-    console.log("Expired contracts moved successfully");
+    // Get the current time and subtract 7 days (7 days * 24 hours * 60 minutes * 60 seconds * 1000 milliseconds)
+    const sevenDaysAgo = new Date().getTime() - 7 * 24 * 60 * 60 * 1000;
+    // Convert milliseconds back to seconds for the timestamp comparison in MongoDB
+    const threshold = Math.floor(sevenDaysAgo / 1000);
+
+    // Delete contracts that ended more than 7 days ago directly
+    const result = await sourceCollection.deleteMany({
+      endTime: { $lt: threshold },
+    });
+
+    console.log(
+      `${result.deletedCount} expired contracts deleted successfully`
+    );
   } catch (err) {
-    console.error("Error moving expired contracts:", err);
+    console.error("Error deleting expired contracts:", err);
   }
 }
+
 const rateCache = new NodeCache();
 const RATE_KEY = "ethToUsdRate";
 const FETCH_INTERVAL = 60000; // 6 seconds in milliseconds
@@ -91,13 +95,21 @@ app.get("/ethToUsdRate", (req, res) => {
 
 // Endpoint to check if a set has already been deployed
 app.get(`/check-set-deployment/:tags`, async (req, res) => {
-  const tags = req.params.tags;
+  // Decode URI component
+  const tags = decodeURIComponent(req.params.tags);
 
   try {
     const collection = db.collection("Contracts");
 
-    // Using a regular expression to match the tags exactly
-    const regex = new RegExp(`^${tags}$`, "i");
+    // Logging the tags and regex for debugging
+    console.log("Received tags:", tags);
+
+    // Using a more specific regex pattern
+    const regex = new RegExp(
+      `^${tags.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&")}$`,
+      "i"
+    );
+    console.log("Regex used:", regex);
 
     // Searching in MongoDB using a regex to ensure exact matching
     const contract = await collection.findOne({ tags: regex });
@@ -184,43 +196,15 @@ app.get("/getContracts", async (req, res) => {
   }
 });
 
-app.get("/getContracts2", async (req, res) => {
-  try {
-    const contractsCollection = db.collection("Contracts");
-    const expiredContractsCollection = db.collection("ExpiredContracts");
-
-    const contractsPromise = contractsCollection.find({}).toArray();
-    const expiredContractsPromise = expiredContractsCollection
-      .find({})
-      .toArray();
-
-    const [contracts, expiredContracts] = await Promise.all([
-      contractsPromise,
-      expiredContractsPromise,
-    ]);
-
-    const allContracts = contracts.concat(expiredContracts);
-
-    res.status(200).json(allContracts);
-  } catch (error) {
-    console.error("Error fetching contracts from MongoDB:", error);
-    res.status(500).send("Error fetching contracts");
-  }
-});
-
 app.get("/api/contracts/:address", async (req, res) => {
   try {
     const address = req.params.address;
     const contractsCollection = db.collection("Contracts");
-    const expiredContractsCollection = db.collection("ExpiredContracts");
 
     // First try to find the contract in the Contracts collection
     let contract = await contractsCollection.findOne({ address: address });
 
     // If not found in Contracts, try the ExpiredContracts collection
-    if (!contract) {
-      contract = await expiredContractsCollection.findOne({ address: address });
-    }
 
     if (contract) {
       res.status(200).json(contract);
@@ -280,40 +264,5 @@ app.post("/api/updateBetterMongoDB", async (req, res) => {
   } catch (error) {
     console.error("Error updating MongoDB:", error);
     res.status(500).send("Error updating MongoDB");
-  }
-});
-
-app.post("/removeBettor", async (req, res) => {
-  try {
-    const contractsCollection = db.collection("Contracts");
-    const expiredContractsCollection = db.collection("ExpiredContracts");
-    const { address } = req.body;
-
-    // First try to remove the bettor from the 'Contracts' collection
-    let updateResult = await contractsCollection.updateMany(
-      { betters: address },
-      { $pull: { betters: address } }
-    );
-
-    // If the bettor was not found in 'Contracts', try 'ExpiredContracts'
-    if (updateResult.modifiedCount === 0) {
-      updateResult = await expiredContractsCollection.updateMany(
-        { betters: address },
-        { $pull: { betters: address } }
-      );
-
-      if (updateResult.modifiedCount === 0) {
-        return res
-          .status(404)
-          .send("Bettor not found or already removed in both collections");
-      }
-    }
-
-    res
-      .status(200)
-      .send("Bettor removed successfully from one of the collections");
-  } catch (error) {
-    console.error("Error removing bettor from MongoDB:", error);
-    res.status(500).send("Error removing bettor");
   }
 });

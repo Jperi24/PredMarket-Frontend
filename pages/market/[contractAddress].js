@@ -41,6 +41,28 @@ export default function PredMarketPageV2() {
   });
   const [filter, setFilter] = useState("forSale");
 
+  const updateBetterMongoDB = async (address, signerAddress) => {
+    try {
+      // Correctly construct the URL using template literals
+
+      const url = `http://localhost:3001/api/updateBetterMongoDB`;
+
+      // Make the POST request
+      await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contractAddress: address,
+          better: signerAddress,
+        }), // Assuming you're sending the vote time in the request body
+      });
+    } catch (error) {
+      console.error("Error updating MongoDB:", error);
+    }
+  };
+
   const bigNumberToString = (bigNumber) =>
     parseInt(bigNumber._hex, 16).toString();
 
@@ -48,17 +70,22 @@ export default function PredMarketPageV2() {
     console.log(myBet);
     console.log(buyIn);
     console.log(selectedOutcome);
-    try {
-      // Convert myBet from ether to wei and ensure it's a BigNumber
-      const valueInWei = ethers.utils.parseEther(myBet.toString());
+    if (contractInstance) {
+      try {
+        // Convert myBet from ether to wei and ensure it's a BigNumber
+        const valueInWei = ethers.utils.parseEther(myBet.toString());
 
-      const tx = await contractInstance.sellANewBet(buyIn, selectedOutcome, {
-        value: valueInWei,
-      });
-      await tx.wait();
-    } catch (error) {
-      console.log("Can't send new bet, this whyyyy");
-      console.log(error);
+        const tx = await contractInstance.sellANewBet(buyIn, selectedOutcome, {
+          value: valueInWei,
+        });
+        await tx.wait();
+        updateBetterMongoDB(contractAddress, signerAddress);
+      } catch (error) {
+        console.log("Can't send new bet, this whyyyy");
+        console.log(error);
+      }
+    } else {
+      alert("Please Connect Wallet");
     }
   };
 
@@ -97,6 +124,7 @@ export default function PredMarketPageV2() {
         value: purchasePrice,
       });
       await tx.wait();
+      updateBetterMongoDB(contractAddress, signerAddress);
     } catch (error) {
       console.log("Can't unlist bet, this whyyyy");
       console.log(error);

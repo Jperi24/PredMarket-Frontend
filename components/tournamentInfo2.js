@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useQuery, useApolloClient } from "@apollo/client";
 import {
   GET_TOURNAMENT_QUERY,
@@ -9,17 +9,19 @@ import {
 import { deployPredMarket } from "./DeployPredMarketV2"; // Adjust path as necessary
 import { ethers } from "ethers";
 import { useSigner } from "@thirdweb-dev/react";
+import { debounce } from "lodash"; // Import debounce from lodash
 
 const TournamentInfo = ({ slug }) => {
   const [selectedEventId, setSelectedEventId] = useState("");
   const [selectedPhaseId, setSelectedPhaseId] = useState("");
   const [searchInput, setSearchInput] = useState("");
-
+  const [isLoadingSets, setIsLoadingSets] = useState(false);
   const [phases, setPhases] = useState([]);
   const apolloClient = useApolloClient();
   const signer = useSigner();
   const [currentPhaseSets, setCurrentPhaseSets] = useState([]);
   const [videogame, setPhaseVideoGame] = useState("");
+  const [isDeploying, setIsDeploying] = useState(false);
 
   const {
     loading: tournamentLoading,
@@ -27,8 +29,16 @@ const TournamentInfo = ({ slug }) => {
     data: tournamentData,
   } = useQuery(GET_TOURNAMENT_QUERY, { variables: { slug } });
 
+  const debouncedSearch = useCallback(
+    debounce((newSearchInput) => {
+      setSearchInput(newSearchInput);
+    }, 300),
+    []
+  ); // 300ms delay
+
   const deployContractForSet = async (set, tournamentName) => {
     // Example of getting signer, ensure you have configured your Ethereum provider
+    setIsDeploying(true);
 
     const currentPhaseObj = phases.find(
       (phase) => phase.id.toString() === selectedPhaseId
@@ -75,20 +85,21 @@ const TournamentInfo = ({ slug }) => {
       // And also send this information to your backend for persistence
     } catch (error) {
       console.error("Failed to deploy contract:", error);
+    } finally {
+      setIsDeploying(false); // Re-enable the button
     }
   };
 
   useEffect(() => {
     if (selectedEventId) fetchPhases(selectedEventId);
-  }, [selectedEventId]);
+  }, [selectedEventId, debouncedSearch]); // Add debounced search
 
   useEffect(() => {
     if (selectedPhaseId) {
-      // Clear existing sets before fetching new ones
       setCurrentPhaseSets([]);
       fetchSetsForSelectedPhase(selectedPhaseId);
     }
-  }, [selectedPhaseId]);
+  }, [selectedPhaseId, debouncedSearch]); // Add debounced search
 
   const fetchPhases = async (eventId) => {
     try {
@@ -104,6 +115,7 @@ const TournamentInfo = ({ slug }) => {
   };
 
   const fetchSetsForSelectedPhase = async (phaseId) => {
+    setIsLoadingSets(true); // Start loading
     try {
       let allSets = [];
       let page = 1;
@@ -120,14 +132,74 @@ const TournamentInfo = ({ slug }) => {
         page += 1;
       }
 
-      setCurrentPhaseSets(allSets); // Set current sets for the phase
+      setCurrentPhaseSets(allSets.sort((a, b) => sortSets(a, b)));
     } catch (error) {
       console.error("Failed to fetch sets for phase:", error);
+    } finally {
+      setIsLoadingSets(false); // End loading
     }
   };
 
-  const handleSearchInputChange = (e) =>
-    setSearchInput(e.target.value.toLowerCase());
+  const getStatus = (set) => {
+    const inGame = set.slots.every((slot) => slot.standing?.placement === 2);
+    const hasWinner = set.slots.some((slot) => slot.standing?.placement === 1);
+    const hasUnknownEntrant = set.slots.some(
+      (slot) => !slot.entrant || slot.entrant.name === "Unknown"
+    );
+
+    if (inGame && !hasWinner) return "In Game";
+    if (!inGame && !hasWinner && !hasUnknownEntrant) return "Pending";
+    return "Other";
+  };
+  const sortSets = (a, b) => {
+    const getStatusPriority = (status) => {
+      switch (status) {
+        case "Pending":
+          return 1; // Highest priority
+        case "In Game":
+          return 2; // Second highest priority
+        default:
+          return 3; // Lowest priority for all other statuses
+      }
+    };
+
+    const priorityA = getStatusPriority(getStatus(a));
+    const priorityB = getStatusPriority(getStatus(b));
+
+    return priorityA - priorityB; // Sorts by priority, ascending
+  };
+
+  const handleSearchInputChange = (e) => {
+    const value = e.target.value.toLowerCase();
+    debouncedSearch(value); // Use debounced function
+  };
+
+  function renderPhaseSets() {
+    return (
+      <div className="phase">
+        <div className="grid-container">
+          {currentPhaseSets
+            .filter((set) =>
+              set.slots.some((slot) =>
+                slot.entrant?.name.toLowerCase().includes(searchInput)
+              )
+            )
+            .map((set, setIndex) => (
+              <SetBox
+                key={`${set.id}-${setIndex}`}
+                set={set}
+                setIndex={setIndex}
+                deployContractForSet={deployContractForSet}
+                tournamentName={tournamentData?.tournament?.name}
+                phaseName={phases.find((p) => p.id === selectedPhaseId)?.name}
+                name={set.fullRoundText}
+                isDeploying={isDeploying}
+              />
+            ))}
+        </div>
+      </div>
+    );
+  }
 
   if (tournamentLoading) return <p>Loading...</p>;
   if (tournamentError) return <p>Error: {tournamentError.message}</p>;
@@ -171,36 +243,13 @@ const TournamentInfo = ({ slug }) => {
           placeholder="Search by player name"
         />
       </div>
-      <div className="grid-container">{renderPhaseSets()}</div>
+      {isLoadingSets ? (
+        <div className="spinner"></div> // Show spinner when loading sets
+      ) : (
+        <div className="grid-container">{renderPhaseSets()}</div>
+      )}
     </div>
   );
-
-  function renderPhaseSets() {
-    console.log(currentPhaseSets);
-    return (
-      <div className="phase">
-        <div className="grid-container">
-          {currentPhaseSets
-            .filter((set) =>
-              set.slots.some((slot) =>
-                slot.entrant?.name.toLowerCase().includes(searchInput)
-              )
-            )
-            .map((set, setIndex) => (
-              <SetBox
-                key={`${set.id}-${setIndex}`}
-                set={set}
-                setIndex={setIndex}
-                deployContractForSet={deployContractForSet}
-                tournamentName={tournamentData?.tournament?.name}
-                phaseName={phases.find((p) => p.id === selectedPhaseId)?.name}
-                name={set.fullRoundText}
-              />
-            ))}
-        </div>
-      </div>
-    );
-  }
 };
 
 const SetBox = ({
@@ -210,20 +259,37 @@ const SetBox = ({
   tournamentName,
   phaseName,
   name,
+  isDeploying,
 }) => {
-  const inGame = set.slots.every((slot) => slot.standing?.placement === 2);
-  const hasWinner = set.slots.some((slot) => slot.standing?.placement === 1);
-  const winningSlot = set.slots.find((slot) => slot.standing?.placement === 1);
-  const winnerName = winningSlot ? winningSlot.entrant.name : "Unknown";
-  const hasUnknownEntrant = set.slots.some(
-    (slot) => !slot.entrant || slot.entrant.name === "Unknown"
-  );
-  const handleDeploy = () => {
-    deployContractForSet(set, tournamentName, phaseName);
+  // Enhanced status determination logic
+  const getStatus = (set) => {
+    const inGame = set.slots.every((slot) => slot.standing?.placement === 2);
+    const hasWinner = set.slots.some((slot) => slot.standing?.placement === 1);
+    const hasUnknownEntrant = set.slots.some(
+      (slot) => !slot.entrant || slot.entrant.name === "Unknown"
+    );
+    const winnerName =
+      set.slots.find((slot) => slot.standing?.placement === 1)?.entrant.name ||
+      "Unknown";
+
+    if (inGame && !hasWinner) return "In Game";
+    if (!inGame && !hasWinner && !hasUnknownEntrant) return "Pending";
+    if (hasWinner) return `${winnerName} Has Won`;
+    return "Other"; // Covers other statuses, such as "Waiting For Opponent"
+  };
+
+  const status = getStatus(set);
+  const isPendingOrInGame = status === "Pending" || status === "In Game";
+
+  // Styling based on status
+  const setStyle = {
+    border: isPendingOrInGame ? "1px solid green" : "1px solid blue",
+    padding: "10px",
+    marginBottom: "10px",
   };
 
   return (
-    <div className="set-box">
+    <div className="set-box" style={setStyle}>
       <h4>{name}</h4>
       <p>
         Entrants:{" "}
@@ -234,18 +300,15 @@ const SetBox = ({
           )
           .join("")}
       </p>
-      <p>
-        Status:{" "}
-        {inGame && !hasWinner
-          ? "In game"
-          : hasWinner
-          ? `${winnerName} Won`
-          : hasUnknownEntrant
-          ? "Waiting For Opponent"
-          : "Pending"}
-      </p>
-
-      <button onClick={handleDeploy}>Deploy Contract</button>
+      <p>Status: {status}</p>
+      {isPendingOrInGame && (
+        <button
+          onClick={() => deployContractForSet(set, tournamentName, phaseName)}
+          disabled={isDeploying} // Button is disabled when isDeploying is true
+        >
+          {isDeploying ? "Deploying..." : "Deploy Contract"}
+        </button>
+      )}
     </div>
   );
 };

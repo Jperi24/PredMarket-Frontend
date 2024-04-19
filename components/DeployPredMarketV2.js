@@ -5,7 +5,7 @@ export async function deployPredMarket(
   eventA,
   eventB,
   tags,
-  NameofMaket,
+  NameofMarket,
   signer,
   fullName,
   endsAt
@@ -20,6 +20,9 @@ export async function deployPredMarket(
     predMarketArtifact.bytecode,
     signer
   );
+  if (!signer) {
+    alert("Please Connect Wallet");
+  }
   const deployerAddress = await signer.getAddress();
   console.log(
     endsAt,
@@ -40,12 +43,13 @@ export async function deployPredMarket(
       },
       body: JSON.stringify({
         address: predMarket.address,
-        NameofMaket,
+        NameofMarket,
         eventA,
         eventB,
         tags,
         deployerAddress: deployerAddress,
         fullName,
+        endsAt,
 
         // Assuming you want to log the deployed contract's address
       }),

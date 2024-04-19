@@ -2,153 +2,103 @@ import React, { useState, useEffect } from "react";
 import { getContracts, getContracts2 } from "../data/contractStore";
 import CountdownTimer from "../components/CountDownTimer";
 import Header from "../components/Header";
+import VideoGameSelector from "../components/videoGameSelector";
 import { useRouter } from "next/router";
-import { ethers } from "ethers";
 import { useAddress } from "@thirdweb-dev/react";
 
 export default function ContractsPage() {
-  const [contracts, setContracts] = useState([]);
-  const [contracts2, setContracts2] = useState([]);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [allContracts, setAllContracts] = useState([]);
   const [filteredContracts, setFilteredContracts] = useState([]);
-  const router = useRouter();
-  // const [signer, setSigner] = useState("");
-
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
   const signer = useAddress();
-
-  const handleUserBetsFilter = () => {
-    const userAddress = signer;
-    console.log(signer);
-    const filtered = contracts2.filter(
-      (contract) =>
-        Array.isArray(contract.betters) &&
-        contract.betters.includes(userAddress)
-    );
-    setFilteredContracts(filtered);
-    console.log(filtered);
-  };
-
-  const handleOwnerDeployedContractsFilter = () => {
-    const userAddress = signer; // Assuming 'signer' holds the user's address as a string
-    console.log(userAddress);
-
-    // Filter contracts where the user's address matches the deployerAddress
-    const filtered = contracts2.filter(
-      (contract) => contract.deployerAddress === userAddress
-    );
-
-    setFilteredContracts(filtered); // Assuming this sets the state with the filtered contracts
-    console.log(filtered);
-  };
+  const router = useRouter();
 
   useEffect(() => {
     async function fetchContracts() {
-      //USED TO GET ADDRESS //////////////////////////////////////////////////////////////////////////////
-      // if (typeof window.ethereum !== "undefined") {
-      //   // await window.ethereum.request({ method: "eth_requestAccounts" });
-      //   const tempProvider = new ethers.providers.JsonRpcProvider(
-      //     "http://localhost:8545"
-      //   );
-      //   await window.ethereum.request({ method: "eth_requestAccounts" });
-
-      //   // Create a provider that wraps around MetaMask's provider
-      //   const provider = new ethers.providers.Web3Provider(window.ethereum);
-
-      //   // Get the signer corresponding to the currently selected account in MetaMask
-      //   const signer2 = provider.getSigner();
-      //   // const tempSigner = tempProvider.getSigner();
-      //   const signer3 = await signer2.getAddress();
-      //   setSigner(signer3);
-      // }
-      //End Used to get address////////////////////////////////////////////////////////////////////////////////
-
       const contractsData = await getContracts();
-      setContracts(contractsData);
-      setFilteredContracts(contractsData); // Initially show all contracts
-      const contractsData2 = await getContracts2();
-      setContracts2(contractsData2);
-      console.log(contractsData2, "expired contracts too");
-    }
 
+      const combinedContracts = [...contractsData];
+      setAllContracts(combinedContracts);
+      applyFilters(combinedContracts, ""); // Apply initial filter (none)
+      setIsLoading(false);
+    }
     fetchContracts();
   }, []);
 
+  const applyFilters = (contracts, search) => {
+    let filtered = contracts.filter((contract) => {
+      return (
+        contract.tags &&
+        contract.tags.toLowerCase().includes(search.toLowerCase())
+      );
+    });
+    setFilteredContracts(filtered);
+  };
+
+  const handleTagFilter = (filterType) => {
+    let filtered = allContracts;
+    switch (filterType) {
+      case "allBets":
+        break;
+      case "userBets":
+        filtered = filtered.filter(
+          (contract) => contract.betters && contract.betters.includes(signer)
+        );
+        break;
+      case "ownerDeployed":
+        filtered = filtered.filter(
+          (contract) => contract.deployerAddress === signer
+        );
+        break;
+      default:
+        filtered = filtered.filter(
+          (contract) =>
+            contract.tags &&
+            contract.tags
+              .split(",")
+              .map((tag) => tag.trim())
+              .includes(filterType)
+        );
+        break;
+    }
+    applyFilters(filtered, searchQuery);
+  };
+
   const handleSearchChange = (e) => {
     setSearchQuery(e.target.value);
-  };
-
-  const handleSearchClick = () => {
-    const queryLower = searchQuery.toLowerCase().split(/\s+/);
-
-    const filtered = contracts.filter((contract) => {
-      // Optimize tag matching by only converting searchQuery to lower case once
-      const tagMatch = contract.tags.some((tag) =>
-        queryLower.some((q) => tag.toLowerCase().includes(q))
-      );
-
-      // Check if any part of the address matches any part of the search query
-      const addressMatch = queryLower.some((q) =>
-        contract.toLowerCase().includes(q)
-      );
-
-      // Assuming the correct property name is `NameOfMarket`
-      const nameWords = contract.NameOfMarket.toLowerCase().split(/\s+/);
-      const nameMatch =
-        queryLower.filter((word) => nameWords.includes(word)).length >=
-        queryLower.length * 0.5;
-
-      return tagMatch || addressMatch || nameMatch;
-    });
-
-    setFilteredContracts(filtered);
-  };
-
-  const handleTagFilter = (tag) => {
-    const filtered = contracts.filter((contract) =>
-      contract.tags.includes(tag)
-    );
-    setFilteredContracts(filtered);
+    applyFilters(filteredContracts, e.target.value);
   };
 
   const navigateToMarket = (contractAddress) => {
     router.push(`/market/${contractAddress}`);
   };
 
+  if (isLoading) {
+    return (
+      <div className="page-container">
+        <Header />
+        <h2>Deployed Contracts</h2>
+        <div className="spinner"></div> {/* Loading spinner */}
+      </div>
+    );
+  }
+
   return (
     <div className="page-container">
       <Header />
       <h2>Deployed Contracts</h2>
       <div className="search-container">
+        <VideoGameSelector onFilterSelect={handleTagFilter} />
         <input
-          className="search-input"
           type="text"
+          placeholder="Search by tags..."
           value={searchQuery}
           onChange={handleSearchChange}
-          placeholder="Search by tags"
+          className="search-input"
         />
-        <button className="search-button" onClick={handleSearchClick}>
-          Search
-        </button>
-        <button onClick={() => handleTagFilter("SSBMelee")}>SSB Melee</button>
-        <button onClick={() => handleTagFilter("SSBUltimate")}>
-          SSB Ultimate
-        </button>
-        <button onClick={() => handleTagFilter("LeagueOfLegends")}>LOL</button>
-        <button onClick={() => handleTagFilter("CSGO")}>CS:GO</button>
-        <button onClick={() => handleTagFilter("Fortnite")}>Fortnite</button>
-        <button onClick={() => setFilteredContracts(contracts)}>
-          All Contracts
-        </button>
-        <button onClick={() => handleUserBetsFilter()}>
-          {" "}
-          All Bets I Bet On
-        </button>
-
-        <button onClick={() => handleOwnerDeployedContractsFilter()}>
-          All Bets That I Deployed
-        </button>
       </div>
-      <div className="grid-container">
+      <div className="grid-container2">
         {filteredContracts.map((contract) => (
           <div
             key={contract.address}
@@ -157,46 +107,27 @@ export default function ContractsPage() {
           >
             <img
               src={
-                contract.tags[0] === "SSBMelee"
+                contract.tags && contract.tags.includes("SSBMelee")
                   ? "http://localhost:3000/MeleeBubble.png"
-                  : contract.tags[0] === "SSBUltimate"
+                  : contract.tags && contract.tags.includes("SSBUltimate")
                   ? "http://localhost:3000/SMASHULT.png"
-                  : contract.tags[0] === "LeagueOfLegends"
+                  : contract.tags && contract.tags.includes("LeagueOfLegends")
                   ? "http://localhost:3000/LeagueBubble.png"
-                  : contract.tags[0] === "CSGO"
+                  : contract.tags && contract.tags.includes("CSGO")
                   ? "http://localhost:3000/CSGOBubble.png"
-                  : contract.tags[0] === "Fortnite"
+                  : contract.tags && contract.tags.includes("Fortnite")
                   ? "http://localhost:3000/FortniteBubble.png"
-                  : "http://localhost:3000/noPhotoAvail.jpg" // default image if none of the tags match
+                  : "http://localhost:3000/noPhotoAvail.jpg"
               }
               alt="Contract Image"
               className="contract-image"
             />
-
-            <p>
-              <strong>Time left to Bet:</strong>
-              <CountdownTimer endTime={contract.endTime} />
-            </p>
-            <p>
-              <strong>Tags:</strong>{" "}
-              {Array.isArray(contract.tags)
-                ? contract.tags.join(", ")
-                : contract.tags}
-            </p>
-            <p>
-              <strong>Name of Market:</strong> {contract.NameofMaket}
-            </p>
-            {/* <p>
-              <strong>Condition of Market:</strong> {contract.ConditionOfMarket}
-            </p> */}
-
-            <p className="contract-address">
-              <strong>Address:</strong> {contract.address}
-            </p>
-
-            <p className="deployer-address">
-              <strong>Address of Deployer:</strong> {contract.deployerAddress}
-            </p>
+            <p>{contract.NameofMarket || "No Market Name"}</p>
+            <p>{contract.fullName || ""}</p>
+            <div>
+              {contract.eventA} <span style={{ color: "red" }}>VS</span>{" "}
+              {contract.eventB}
+            </div>
           </div>
         ))}
       </div>
