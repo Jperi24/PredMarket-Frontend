@@ -295,7 +295,7 @@ export default function PredMarketPageV2() {
               <div className="contract-details-grid">
                 <div className="contract-detail-item">
                   <h4>
-                    <h4>Tournament: {contract.NameofMaket}</h4>
+                    <h4>Tournament: {contract.NameofMarket}</h4>
                     <h4>{contract.fullName}</h4>
                     <div>
                       {contract.eventA} <span style={{ color: "red" }}>VS</span>{" "}
@@ -305,92 +305,77 @@ export default function PredMarketPageV2() {
                     <p>Total Potential Winnings: {totalWinnings}</p>
                   </h4>
                 </div>
+                <div className="input-container">
+                  <div>
+                    <div className="countdown-container">
+                      <h4 className="countdown-heading">Time left to bet:</h4>
+                      <CountdownTimer
+                        endTime={bets_balance.endTime}
+                        className="countdown-time"
+                      />
+                    </div>
+
+                    <div className="createBetContainer">
+                      <button
+                        className="toggle-inputs-btn"
+                        onClick={() => setShowInputs(!showInputs)}
+                      >
+                        {showInputs ? "Hide Details" : "Deploy A Bet"}
+                      </button>
+                      {showInputs && (
+                        <>
+                          <input
+                            className="input-field"
+                            value={myLocked}
+                            onChange={(e) => setmyLocked(e.target.value)}
+                            placeholder="My Bet"
+                          />
+                          <input
+                            className="input-field"
+                            value={buyInIChoose}
+                            onChange={(e) => setbuyInIChoose(e.target.value)}
+                            placeholder="Buyers Bet"
+                          />
+                          <select
+                            className="dropdown"
+                            value={selectedOutcome}
+                            onChange={(e) => setselectedOutcome(e.target.value)}
+                          >
+                            <option value="" disabled>
+                              Select an outcome...
+                            </option>
+                            <option value="1">{contract.eventA}</option>
+                            <option value="2">{contract.eventB}</option>
+                          </select>
+                          <button
+                            onClick={() =>
+                              sellANewBet(
+                                myLocked,
+                                buyInIChoose,
+                                selectedOutcome
+                              )
+                            }
+                          >
+                            Submit Bet
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="vertical-button-group">
+                  <button onClick={() => setFilter("all")}>All Bets</button>
+                  <button onClick={() => setFilter("forSale")}>
+                    Bets For Sale
+                  </button>
+                  <button onClick={() => setFilter("deployedByMe")}>
+                    My Deployed Bets
+                  </button>
+                  <button onClick={() => setFilter("ownedByMe")}>
+                    Bets I Own
+                  </button>
+                </div>
               </div>
-
-              <div className="input-container">
-                <button
-                  className="toggle-inputs-btn"
-                  onClick={() => setShowInputs(!showInputs)}
-                >
-                  {showInputs ? "Hide Details" : "Enter Bet Details"}
-                </button>
-
-                {showInputs && (
-                  <>
-                    <input
-                      style={{
-                        width: "10%",
-                        padding: "6px 10px",
-                        border: "1px solid #ccc",
-                        borderRadius: "4px",
-                        textAlign: "center",
-                        fontSize: "14px",
-                      }}
-                      value={myLocked}
-                      onChange={(e) => setmyLocked(e.target.value)}
-                      placeholder="How Much I am Locking In Before Deploying This Bet"
-                    />
-                    <input
-                      style={{
-                        width: "10%",
-                        padding: "6px 10px",
-                        border: "1px solid #ccc",
-                        borderRadius: "4px",
-                        textAlign: "center",
-                        fontSize: "14px",
-                      }}
-                      value={buyInIChoose}
-                      onChange={(e) => setbuyInIChoose(e.target.value)}
-                      placeholder="How Much is required To Buy This Bet"
-                    />
-                    <select
-                      id="outcomeSelect"
-                      className="dropdown"
-                      value={selectedOutcome}
-                      onChange={(e) => setselectedOutcome(e.target.value)}
-                    >
-                      <option value="" disabled>
-                        Select an outcome...
-                      </option>
-                      <option value="1">{contract.eventA}</option>
-                      <option value="2">{contract.eventB}</option>
-                    </select>
-                    <button
-                      onClick={() =>
-                        sellANewBet(myLocked, buyInIChoose, selectedOutcome)
-                      }
-                    >
-                      Submit Bet
-                    </button>
-                  </>
-                )}
-              </div>
-
-              <div>
-                <h3>You're Gay In:</h3>
-
-                <CountdownTimer
-                  endTime={bigNumberToString(bets_balance.endTime)}
-                  style={{
-                    fontSize: "20px", // Larger font size for the countdown
-                    fontWeight: "bold",
-                    textAlign: "center", // Center align text
-                    color: "#ffeb3b", // Make the countdown numbers stand out
-                  }}
-                />
-                <h3> And the winner is : {bets_balance.winner}</h3>
-              </div>
-            </div>
-
-            <div>
-              <button onClick={() => setFilter("all")}>All Bets</button>
-              <button onClick={() => setFilter("forSale")}>
-                Bets For Sale
-              </button>
-              <button onClick={() => setFilter("deployedByMe")}>
-                My Deployed Bets
-              </button>
-              <button onClick={() => setFilter("ownedByMe")}>Bets I Own</button>
             </div>
 
             <div>

@@ -1,4 +1,5 @@
 import "../styles/ContractsPage.css";
+
 import { ApolloProvider } from "@apollo/client";
 import apolloClient from "../apollo-client"; // Adjust the import path to where your Apollo client instance is defined
 import { ThirdwebProvider } from "@thirdweb-dev/react";
