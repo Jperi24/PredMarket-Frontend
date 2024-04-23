@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { getContracts, getContracts2 } from "../data/contractStore";
-import CountdownTimer from "../components/CountDownTimer";
+import { getContracts } from "../data/contractStore";
 import Header from "../components/Header";
 import VideoGameSelector from "../components/videoGameSelector";
 import { useRouter } from "next/router";
@@ -10,6 +9,7 @@ export default function ContractsPage() {
   const [allContracts, setAllContracts] = useState([]);
   const [filteredContracts, setFilteredContracts] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [currentFilter, setCurrentFilter] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const signer = useAddress();
   const router = useRouter();
@@ -17,26 +17,33 @@ export default function ContractsPage() {
   useEffect(() => {
     async function fetchContracts() {
       const contractsData = await getContracts();
-
-      const combinedContracts = [...contractsData];
-      setAllContracts(combinedContracts);
-      applyFilters(combinedContracts, ""); // Apply initial filter (none)
+      setAllContracts(contractsData);
+      applyFilters(contractsData, ""); // Apply initial filter (none)
       setIsLoading(false);
     }
     fetchContracts();
   }, []);
 
   const applyFilters = (contracts, search) => {
-    let filtered = contracts.filter((contract) => {
+    const filtered = contracts.filter((contract) => {
       return (
         contract.tags &&
-        contract.tags.toLowerCase().includes(search.toLowerCase())
+        contract.tags
+          .split(",")
+          .some((tag) =>
+            tag.trim().toLowerCase().includes(search.toLowerCase())
+          )
       );
     });
     setFilteredContracts(filtered);
   };
 
   const handleTagFilter = (filterType) => {
+    setCurrentFilter(filterType);
+    filterContractsByType(filterType);
+  };
+
+  const filterContractsByType = (filterType) => {
     let filtered = allContracts;
     switch (filterType) {
       case "allBets":
@@ -66,8 +73,25 @@ export default function ContractsPage() {
   };
 
   const handleSearchChange = (e) => {
-    setSearchQuery(e.target.value);
-    applyFilters(filteredContracts, e.target.value);
+    const newSearchQuery = e.target.value;
+    setSearchQuery(newSearchQuery);
+
+    if (newSearchQuery.trim() === "") {
+      // If the search query is empty, reset to the full list filtered by the current tag filter only
+      handleTagFilter(currentFilter);
+    } else {
+      // Filter within the already filtered contracts by the tag filter
+      const filteredBySearch = filteredContracts.filter(
+        (contract) =>
+          contract.tags &&
+          contract.tags
+            .split(",")
+            .some((tag) =>
+              tag.trim().toLowerCase().includes(newSearchQuery.toLowerCase())
+            )
+      );
+      setFilteredContracts(filteredBySearch);
+    }
   };
 
   const navigateToMarket = (contractAddress) => {
@@ -79,7 +103,7 @@ export default function ContractsPage() {
       <div className="page-container">
         <Header />
         <h2>Deployed Contracts</h2>
-        <div className="spinner"></div> {/* Loading spinner */}
+        <div className="spinner"></div>
       </div>
     );
   }
@@ -90,6 +114,13 @@ export default function ContractsPage() {
       <h2>Deployed Contracts</h2>
       <div className="search-container">
         <VideoGameSelector onFilterSelect={handleTagFilter} />
+        <button onClick={() => handleTagFilter("userBets")}>
+          Bets I Bet On
+        </button>
+        <button onClick={() => handleTagFilter("ownerDeployed")}>
+          Bets I Deployed
+        </button>
+
         <input
           type="text"
           placeholder="Search by tags..."

@@ -27,10 +27,14 @@ export default function ContractsPage() {
   }, []);
 
   const applyFilters = (contracts, search) => {
-    let filtered = contracts.filter((contract) => {
+    const filtered = contracts.filter((contract) => {
       return (
         contract.tags &&
-        contract.tags.toLowerCase().includes(search.toLowerCase())
+        contract.tags
+          .split(",")
+          .some((tag) =>
+            tag.trim().toLowerCase().includes(search.toLowerCase())
+          )
       );
     });
     setFilteredContracts(filtered);
@@ -66,8 +70,9 @@ export default function ContractsPage() {
   };
 
   const handleSearchChange = (e) => {
-    setSearchQuery(e.target.value);
-    applyFilters(filteredContracts, e.target.value);
+    const newSearchQuery = e.target.value;
+    setSearchQuery(newSearchQuery);
+    applyFilters(allContracts, newSearchQuery); // Always filter from all contracts
   };
 
   const navigateToMarket = (contractAddress) => {

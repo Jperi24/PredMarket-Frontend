@@ -13,7 +13,7 @@ const Header = ({}) => {
           FAQ
         </Link>{" "}
         {/* Link to FAQ Page */}
-        <Link href="/deployV2">Deploy A Pred Market</Link>{" "}
+        <Link href="/tdisplay2">Deploy A Pred Market</Link>{" "}
         {/* Link to Deployed Contracts Page */}
       </div>
       <ConnectWallet

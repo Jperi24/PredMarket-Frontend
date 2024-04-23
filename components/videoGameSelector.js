@@ -4,8 +4,7 @@ import Select from "react-select";
 const VideoGameSelector = ({ onFilterSelect }) => {
   const options = [
     { value: "allBets", label: "All Bets" },
-    { value: "userBets", label: "Bets I Bet On" },
-    { value: "ownerDeployed", label: "Bets I Deployed" },
+
     { value: "SSBMelee", label: "SSB Melee" },
     { value: "SSBUltimate", label: "SSB Ultimate" },
     { value: "LeagueOfLegends", label: "LOL" },

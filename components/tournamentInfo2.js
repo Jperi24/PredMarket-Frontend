@@ -52,7 +52,7 @@ const TournamentInfo = ({ slug }) => {
       // Example parameters, adjust as necessary for your contract
       const eventA = set.slots[0].entrant.name;
       const eventB = set.slots[1].entrant.name;
-      const NameofMarket = `${tournamentName} - ${currentPhaseObj}`;
+      const NameofMarket = `${tournamentName} - ${videogame}- ${currentPhaseObj}`;
       const fullName = set.fullRoundText;
       const tags = `${videogame},${tournamentName},${currentPhaseObj},${set.slots[0].entrant.name},${set.slots[1].entrant.name},${fullName}`;
 
