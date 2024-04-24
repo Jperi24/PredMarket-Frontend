@@ -135,6 +135,8 @@ const TournamentInfo = ({ slug }) => {
       setCurrentPhaseSets(allSets.sort((a, b) => sortSets(a, b)));
     } catch (error) {
       console.error("Failed to fetch sets for phase:", error);
+
+      alert("Failed to load sets: " + error.message);
     } finally {
       setIsLoadingSets(false); // End loading
     }

@@ -38,6 +38,7 @@ export default function PredMarketPageV2() {
     balance: 0,
     endTime: 0,
     winner: 0,
+    state: 0,
   });
   const [filter, setFilter] = useState("forSale");
 
@@ -146,31 +147,54 @@ export default function PredMarketPageV2() {
     }
   };
 
+  const BigNumber = require("bignumber.js");
+
   const calculateTotalWinnings = (allbets) => {
-    return Array.isArray(allbets)
-      ? allbets
-          .filter(
-            (bet) =>
-              bet.deployer === signerAddress || bet.owner === signerAddress
-          )
-          .reduce(
-            (total, bet) =>
-              total +
-              parseInt(
-                bigNumberToString(
-                  bet.amountDeployerLocked + bet.amountBuyerLocked
-                )
-              ),
-            0
-          )
-      : 0;
+    if (!Array.isArray(allbets)) {
+      return "0";
+    }
+
+    const totalWinnings = allbets
+      .filter(
+        (bet) => bet.deployer === signerAddress || bet.owner === signerAddress
+      )
+      .reduce((total, bet) => {
+        // Use the bigNumberToString function to convert BigNumber values
+        const amountDeployerLockedString = bigNumberToString(
+          bet.amountDeployerLocked
+        );
+        const amountBuyerLockedString = bigNumberToString(
+          bet.amountBuyerLocked
+        );
+
+        console.log(
+          `Converted Deployer Locked: ${amountDeployerLockedString}, Converted Buyer Locked: ${amountBuyerLockedString}`
+        ); // Debug output
+
+        // Convert strings to numbers to perform addition
+        const amountDeployerLocked = parseInt(amountDeployerLockedString, 10);
+        const amountBuyerLocked = parseInt(amountBuyerLockedString, 10);
+
+        // Check for NaN values and handle them appropriately
+        if (isNaN(amountDeployerLocked) || isNaN(amountBuyerLocked)) {
+          console.error("Invalid BigNumber conversion encountered.");
+          return total;
+        }
+
+        // Sum up the locked amounts and add to the total
+        return total + amountDeployerLocked + amountBuyerLocked;
+      }, 0); // Start with zero
+
+    // Return the total winnings as a string
+    console.log(`Total Winnings: ${totalWinnings}`); // Final output before conversion
+    return totalWinnings.toString(); // Convert to string for final output
   };
 
   const displayAllBets = async () => {
     if (contractInstance) {
       try {
-        let allbets, balance, endTime, winner;
-        [allbets, balance, endTime, winner] =
+        let allbets, balance, endTime, winner, state;
+        [allbets, balance, endTime, winner, state] =
           await contractInstance.allBets_Balance();
         console.log(allbets, "all the bets");
 
@@ -179,6 +203,7 @@ export default function PredMarketPageV2() {
           balance: balance,
           endTime: endTime,
           winner: winner,
+          state: state,
         });
 
         const totalWinnings = calculateTotalWinnings(allbets);
@@ -301,8 +326,11 @@ export default function PredMarketPageV2() {
                       {contract.eventA} <span style={{ color: "red" }}>VS</span>{" "}
                       {contract.eventB}
                     </div>
-                    <h4>Balance: {bets_balance.balance.toString()}</h4>
-                    <p>Total Potential Winnings: {totalWinnings}</p>
+                    {bets_balance.state === 0 ? (
+                      <p>Total Potential Winnings: {totalWinnings}</p>
+                    ) : (
+                      <h4>Balance: {bets_balance.balance.toString()}</h4>
+                    )}
                   </h4>
                 </div>
                 <div className="input-container">
@@ -310,7 +338,7 @@ export default function PredMarketPageV2() {
                     <div className="countdown-container">
                       <h4 className="countdown-heading">Time left to bet:</h4>
                       <CountdownTimer
-                        endTime={bets_balance.endTime}
+                        endTime={contract.endsAt}
                         className="countdown-time"
                       />
                     </div>

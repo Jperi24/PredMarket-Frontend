@@ -23,6 +23,7 @@ export const GET_ALL_TOURNAMENTS_QUERY = gql`
 export const GET_TOURNAMENT_QUERY = gql`
   query TournamentQuery($slug: String) {
     tournament(slug: $slug) {
+      id
       name
       endAt
       events {

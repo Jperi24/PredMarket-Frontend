@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { getContracts, getContracts2 } from "../data/contractStore";
-import CountdownTimer from "../components/CountDownTimer";
+import { getContracts } from "../data/contractStore";
 import Header from "../components/Header";
 import VideoGameSelector from "../components/videoGameSelector";
 import { useRouter } from "next/router";
@@ -10,6 +9,7 @@ export default function ContractsPage() {
   const [allContracts, setAllContracts] = useState([]);
   const [filteredContracts, setFilteredContracts] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [currentFilter, setCurrentFilter] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const signer = useAddress();
   const router = useRouter();
@@ -17,10 +17,8 @@ export default function ContractsPage() {
   useEffect(() => {
     async function fetchContracts() {
       const contractsData = await getContracts();
-
-      const combinedContracts = [...contractsData];
-      setAllContracts(combinedContracts);
-      applyFilters(combinedContracts, ""); // Apply initial filter (none)
+      setAllContracts(contractsData);
+      applyFilters(contractsData, ""); // Apply initial filter (none)
       setIsLoading(false);
     }
     fetchContracts();
@@ -41,6 +39,11 @@ export default function ContractsPage() {
   };
 
   const handleTagFilter = (filterType) => {
+    setCurrentFilter(filterType);
+    filterContractsByType(filterType);
+  };
+
+  const filterContractsByType = (filterType) => {
     let filtered = allContracts;
     switch (filterType) {
       case "allBets":
@@ -72,11 +75,52 @@ export default function ContractsPage() {
   const handleSearchChange = (e) => {
     const newSearchQuery = e.target.value;
     setSearchQuery(newSearchQuery);
-    applyFilters(allContracts, newSearchQuery); // Always filter from all contracts
+
+    if (newSearchQuery.trim() === "") {
+      // If the search query is empty, reset to the full list filtered by the current tag filter only
+      handleTagFilter(currentFilter);
+    } else {
+      // Filter within the already filtered contracts by the tag filter
+      const filteredBySearch = filteredContracts.filter(
+        (contract) =>
+          contract.tags &&
+          contract.tags
+            .split(",")
+            .some((tag) =>
+              tag.trim().toLowerCase().includes(newSearchQuery.toLowerCase())
+            )
+      );
+      setFilteredContracts(filteredBySearch);
+    }
   };
 
   const navigateToMarket = (contractAddress) => {
     router.push(`/market/${contractAddress}`);
+  };
+
+  const getImageForTag = (tags) => {
+    const tagMap = {
+      "Super Smash Bros. Melee": "Melee.jpg",
+      "Super Smash Bros. Ultimate": "SSBUltimate.jpg",
+      "TEKKEN 8": "tekken8.jpg",
+      "Street Fighter 6": "streetfighter6.png",
+      "Guilty Gear: Strive": "guiltygearstrive.jpg",
+      Brawlhalla: "brawlhalla.jpg",
+      "Rocket League": "rocketleague.jpg",
+      "Pokémon Unite": "pokemonunite.jpg",
+      "Counter-Strike 2": "csgo2.jpg",
+      "Counter Strike: Global Offensive": "CSGO-Symbol.jpg",
+      "Mortal Kombat 1": "mortalKombat1.jpg",
+
+      "League of Legends": "League:.jpg",
+
+      Fortnite: "FortniteImg.jpg",
+      "Overwatch 2": "overwatch2.jpg", // Add your game images here
+    };
+
+    const defaultImage = "noPhotoAvail.jpg";
+    const foundTag = tags.split(",").find((tag) => tagMap[tag.trim()]);
+    return `http://localhost:3000/${tagMap[foundTag] || defaultImage}`;
   };
 
   if (isLoading) {
@@ -84,7 +128,7 @@ export default function ContractsPage() {
       <div className="page-container">
         <Header />
         <h2>Deployed Contracts</h2>
-        <div className="spinner"></div> {/* Loading spinner */}
+        <div className="spinner"></div>
       </div>
     );
   }
@@ -95,6 +139,13 @@ export default function ContractsPage() {
       <h2>Deployed Contracts</h2>
       <div className="search-container">
         <VideoGameSelector onFilterSelect={handleTagFilter} />
+        <button onClick={() => handleTagFilter("userBets")}>
+          Bets I Bet On
+        </button>
+        <button onClick={() => handleTagFilter("ownerDeployed")}>
+          Bets I Deployed
+        </button>
+
         <input
           type="text"
           placeholder="Search by tags..."
@@ -111,19 +162,7 @@ export default function ContractsPage() {
             onClick={() => navigateToMarket(contract.address)}
           >
             <img
-              src={
-                contract.tags && contract.tags.includes("SSBMelee")
-                  ? "http://localhost:3000/MeleeBubble.png"
-                  : contract.tags && contract.tags.includes("SSBUltimate")
-                  ? "http://localhost:3000/SMASHULT.png"
-                  : contract.tags && contract.tags.includes("LeagueOfLegends")
-                  ? "http://localhost:3000/LeagueBubble.png"
-                  : contract.tags && contract.tags.includes("CSGO")
-                  ? "http://localhost:3000/CSGOBubble.png"
-                  : contract.tags && contract.tags.includes("Fortnite")
-                  ? "http://localhost:3000/FortniteBubble.png"
-                  : "http://localhost:3000/noPhotoAvail.jpg"
-              }
+              src={getImageForTag(contract.tags)}
               alt="Contract Image"
               className="contract-image"
             />
