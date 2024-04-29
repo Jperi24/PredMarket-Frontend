@@ -1,4 +1,4 @@
-import { ApolloClient, InMemoryCache, HttpLink } from "@apollo/client";
+const { ApolloClient, InMemoryCache, HttpLink } = require("@apollo/client");
 require("dotenv").config();
 
 const httpLink = new HttpLink({
@@ -14,4 +14,4 @@ const client = new ApolloClient({
   cache: new InMemoryCache(),
 });
 
-export default client;
+module.exports = client;

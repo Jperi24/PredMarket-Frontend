@@ -65,6 +65,7 @@ function App() {
       }
 
       setTournaments(allTournaments);
+      console.log(allTournaments);
     } catch (error) {
       console.error("Failed to fetch tournaments:", error);
     }

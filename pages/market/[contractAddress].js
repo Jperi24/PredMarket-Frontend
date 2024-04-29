@@ -25,14 +25,6 @@ export default function PredMarketPageV2() {
   const { contractAddress } = router.query;
   const [selectedBets, setSelectedBets] = useState([]);
 
-  // const [allBets, setAllBets] = useState({
-  //   allBets: [], // Assuming this would be an array of objects
-  //   balance: 0,
-  //   myDeployedBets: [],
-  //   myBetsIBetOn: [],
-  //   myAmountInLockedBets: 0,
-  //   myAmountToWin: 0,
-  // });
   const [bets_balance, setbetsbalance] = useState({
     allbets: [],
     balance: 0,

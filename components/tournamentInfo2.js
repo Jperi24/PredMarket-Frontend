@@ -11,7 +11,7 @@ import { ethers } from "ethers";
 import { useSigner } from "@thirdweb-dev/react";
 import { debounce } from "lodash"; // Import debounce from lodash
 
-const TournamentInfo = ({ slug }) => {
+const TournamentInfo = ({ name }) => {
   const [selectedEventId, setSelectedEventId] = useState("");
   const [selectedPhaseId, setSelectedPhaseId] = useState("");
   const [searchInput, setSearchInput] = useState("");
@@ -22,19 +22,45 @@ const TournamentInfo = ({ slug }) => {
   const [currentPhaseSets, setCurrentPhaseSets] = useState([]);
   const [videogame, setPhaseVideoGame] = useState("");
   const [isDeploying, setIsDeploying] = useState(false);
+  const [tournamentData, setTournamentData] = useState("");
 
-  const {
-    loading: tournamentLoading,
-    error: tournamentError,
-    data: tournamentData,
-  } = useQuery(GET_TOURNAMENT_QUERY, { variables: { slug } });
-
-  const debouncedSearch = useCallback(
+  const debouncedSetSearchInput = useCallback(
     debounce((newSearchInput) => {
       setSearchInput(newSearchInput);
     }, 300),
-    []
-  ); // 300ms delay
+    [] // This ensures the debounced function is created only once
+  );
+
+  // Handle search input changes
+  const handleSearchInputChange = (e) => {
+    debouncedSetSearchInput(e.target.value); // Use the debounced function
+  };
+
+  useEffect(() => {
+    async function fetchTournamentData() {
+      try {
+        const response = await fetch(
+          `http://localhost:3001/api/tournament/${name}`
+        );
+        const json = await response.json();
+        setTournamentData(json);
+      } catch (error) {
+        console.error("Error fetching tournament data:", error);
+      }
+    }
+
+    if (name) {
+      fetchTournamentData();
+    }
+  }, [name]);
+
+  if (!tournamentData) {
+    return <div>Loading tournament data...</div>;
+  }
+
+  if (!tournamentData.events) {
+    return <div>No events found for this tournament.</div>;
+  }
 
   const deployContractForSet = async (set, tournamentName) => {
     // Example of getting signer, ensure you have configured your Ethereum provider
@@ -92,7 +118,7 @@ const TournamentInfo = ({ slug }) => {
 
   useEffect(() => {
     if (selectedEventId) fetchPhases(selectedEventId);
-  }, [selectedEventId, debouncedSearch]); // Add debounced search
+  }, [selectedEventId]); // Add debounced search
 
   useEffect(() => {
     if (selectedPhaseId) {
@@ -101,18 +127,18 @@ const TournamentInfo = ({ slug }) => {
     }
   }, [selectedPhaseId, debouncedSearch]); // Add debounced search
 
-  const fetchPhases = async (eventId) => {
-    try {
-      const { data: eventData } = await apolloClient.query({
-        query: GET_PHASE_QUERY,
-        variables: { eventId },
-      });
-      setPhases(eventData.event.phases);
-      setPhaseVideoGame(eventData.event.videogame.name);
-    } catch (error) {
-      console.error("Failed to fetch phases:", error);
-    }
-  };
+  // const fetchPhases = async (eventId) => {
+  //   try {
+  //     const { data: eventData } = await apolloClient.query({
+  //       query: GET_PHASE_QUERY,
+  //       variables: { eventId },
+  //     });
+  //     setPhases(eventData.event.phases);
+  //     setPhaseVideoGame(eventData.event.videogame.name);
+  //   } catch (error) {
+  //     console.error("Failed to fetch phases:", error);
+  //   }
+  // };
 
   const fetchSetsForSelectedPhase = async (phaseId) => {
     setIsLoadingSets(true); // Start loading
@@ -171,11 +197,6 @@ const TournamentInfo = ({ slug }) => {
     return priorityA - priorityB; // Sorts by priority, ascending
   };
 
-  const handleSearchInputChange = (e) => {
-    const value = e.target.value.toLowerCase();
-    debouncedSearch(value); // Use debounced function
-  };
-
   function renderPhaseSets() {
     return (
       <div className="phase">
@@ -202,9 +223,6 @@ const TournamentInfo = ({ slug }) => {
       </div>
     );
   }
-
-  if (tournamentLoading) return <p>Loading...</p>;
-  if (tournamentError) return <p>Error: {tournamentError.message}</p>;
 
   return (
     <div className="tournament-info">

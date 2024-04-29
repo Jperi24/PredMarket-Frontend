@@ -50,37 +50,22 @@ function App() {
   const [slugInput, setSlugInput] = useState("");
   const apolloClient = useApolloClient();
 
-  const fetchAllTournaments = useCallback(async () => {
-    try {
-      let allTournaments = [];
-      let page = 1;
-      const perPage = 100;
-      let hasMore = true;
-
-      while (hasMore) {
-        const { data } = await apolloClient.query({
-          query: GET_ALL_TOURNAMENTS_QUERY,
-          variables: {
-            afterDate: Math.floor(
-              new Date(Date.now() - 45 * 24 * 3600 * 1000).getTime() / 1000
-            ),
-            beforeDate: Math.floor(
-              new Date(Date.now() + 45 * 24 * 3600 * 1000).getTime() / 1000
-            ),
-            page,
-            perPage,
-          },
-        });
-        allTournaments = [...allTournaments, ...data.tournaments.nodes];
-        hasMore = data.tournaments.nodes.length === perPage;
-        page += 1;
+  useEffect(() => {
+    const fetchTournaments = async () => {
+      try {
+        const response = await fetch(
+          "http://localhost:3001/api/tournament-details"
+        );
+        const data = await response.json();
+        setTournaments(data);
+        console.log(data);
+      } catch (error) {
+        console.error("Failed to fetch tournaments:", error);
       }
+    };
 
-      setTournaments(allTournaments);
-    } catch (error) {
-      console.error("Failed to fetch tournaments:", error);
-    }
-  }, [apolloClient]);
+    fetchTournaments();
+  }, []);
 
   const fetchTournamentBySlug = useCallback(
     async (slug) => {
@@ -112,13 +97,11 @@ function App() {
     setSlugInput(event.target.value);
   };
 
-  useEffect(() => {
-    fetchAllTournaments();
-  }, [fetchAllTournaments]);
-
   const handleTournamentClick = (slug) => {
     // Ensure we are getting the full tournament data before setting it
-    fetchTournamentBySlug(slug);
+    // fetchTournamentBySlug(slug);
+    setSelectedTournament(slug);
+    console.log(slug);
   };
 
   const resetSelection = () => {
@@ -148,7 +131,7 @@ function App() {
           >
             Show All Tournaments
           </button>
-          <TournamentInfo slug={selectedTournament.slug} />
+          <TournamentInfo name={selectedTournament.name} />
         </>
       ) : (
         <>
@@ -187,7 +170,7 @@ function App() {
             {filteredTournaments.map((tournament, index) => (
               <div
                 key={`${tournament.slug}-${index}`}
-                onClick={() => handleTournamentClick(tournament.slug)}
+                onClick={() => handleTournamentClick(tournament)}
                 style={{
                   cursor: "pointer",
                   padding: "10px",
