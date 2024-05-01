@@ -1,23 +1,17 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { useQuery, useApolloClient } from "@apollo/client";
-import {
-  GET_TOURNAMENT_QUERY,
-  GET_PHASE_QUERY,
-  GET_SETS_BY_PHASE_QUERY,
-} from "../queries";
 
 import { deployPredMarket } from "./DeployPredMarketV2"; // Adjust path as necessary
 import { ethers } from "ethers";
 import { useSigner } from "@thirdweb-dev/react";
 import { debounce } from "lodash"; // Import debounce from lodash
 
-const TournamentInfo = ({ name }) => {
+const TournamentInfo = ({ slug }) => {
   const [selectedEventId, setSelectedEventId] = useState("");
   const [selectedPhaseId, setSelectedPhaseId] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [isLoadingSets, setIsLoadingSets] = useState(false);
   const [phases, setPhases] = useState([]);
-  const apolloClient = useApolloClient();
+
   const signer = useSigner();
   const [currentPhaseSets, setCurrentPhaseSets] = useState([]);
   const [videogame, setPhaseVideoGame] = useState("");
@@ -38,49 +32,95 @@ const TournamentInfo = ({ name }) => {
 
   useEffect(() => {
     async function fetchTournamentData() {
-      try {
-        const response = await fetch(
-          `http://localhost:3001/api/tournament/${name}`
-        );
-        const json = await response.json();
-        setTournamentData(json);
-      } catch (error) {
-        console.error("Error fetching tournament data:", error);
+      if (slug) {
+        console.log(slug, "Fetching data for slug");
+        try {
+          const url = `http://localhost:3001/api/tournament/${encodeURIComponent(
+            slug
+          )}`;
+          const response = await fetch(url);
+          if (!response.ok) {
+            throw new Error("Failed to fetch tournament data");
+          }
+          const json = await response.json();
+          setTournamentData(json);
+          console.log(json, "this is the tourney check this out");
+          setPhases(json.events[0]?.phases || []);
+          setSelectedEventId(json.events[0]?.id || "");
+        } catch (error) {
+          console.error("Error fetching tournament data:", error);
+          setTournamentData(null);
+        }
+      } else {
+        console.log("slug not found");
       }
     }
 
-    if (name) {
-      fetchTournamentData();
+    fetchTournamentData();
+  }, [slug]);
+
+  useEffect(() => {
+    if (selectedEventId && tournamentData?.events) {
+      const selectedEvent = tournamentData.events.find(
+        (e) => e.id === selectedEventId
+      );
+
+      setPhases(selectedEvent?.phases || []);
+      setSelectedPhaseId(selectedEvent?.phases?.[0]?.id || "");
+
+      if (selectedEvent?.videogame?.name) {
+        setPhaseVideoGame(selectedEvent.videogame.name);
+      }
     }
-  }, [name]);
-
-  if (!tournamentData) {
-    return <div>Loading tournament data...</div>;
-  }
-
-  if (!tournamentData.events) {
-    return <div>No events found for this tournament.</div>;
-  }
+  }, [selectedEventId, tournamentData]); // Use tournamentData as a dependency
 
   const deployContractForSet = async (set, tournamentName) => {
     // Example of getting signer, ensure you have configured your Ethereum provider
     setIsDeploying(true);
 
-    const currentPhaseObj = phases.find(
-      (phase) => phase.id.toString() === selectedPhaseId
-    )?.name;
+    // Ensure that tournamentData.events is an array and not undefined
+    if (!Array.isArray(tournamentData.events)) {
+      console.error("Expected tournamentData.events to be an array");
+      return;
+    }
 
-    console.log(videogame, "name of videogame");
+    // Find the selected event using selectedEventId
+    const selectedEvent = tournamentData.events.find(
+      (event) => event.id === selectedEventId
+    );
 
-    // Ensure currentPhaseObj is not undefined before accessing .name
+    // Check if the selected event is found
+    if (!selectedEvent) {
+      console.error(
+        "No event found with the selectedEventId:",
+        selectedEventId
+      );
+      return;
+    }
+
+    // Now find the phase within the selected event
+    const currentPhaseObj = selectedEvent.phases.find(
+      (phase) => phase.id === selectedPhaseId
+    );
+
+    // Check if the phase was found
+    if (!currentPhaseObj) {
+      console.error("No phase found with the phaseId:", phaseId);
+      return;
+    }
+
+    // Log or use the phase name
+    console.log("Selected Event:", selectedEvent);
+    console.log("Current Phase Object:", currentPhaseObj);
 
     try {
       // Example parameters, adjust as necessary for your contract
       const eventA = set.slots[0].entrant.name;
       const eventB = set.slots[1].entrant.name;
-      const NameofMarket = `${tournamentName} - ${videogame}- ${currentPhaseObj}`;
+      const NameofMarket = `${tournamentData.name} - ${videogame}- ${currentPhaseObj}`;
       const fullName = set.fullRoundText;
-      const tags = `${videogame},${tournamentName},${currentPhaseObj},${set.slots[0].entrant.name},${set.slots[1].entrant.name},${fullName}`;
+
+      const tags = `${videogame},${tournamentData.name},${currentPhaseObj.name},${set.slots[0].entrant.name},${set.slots[1].entrant.name},${fullName}`;
 
       const encodedTags = encodeURIComponent(tags);
 
@@ -89,9 +129,7 @@ const TournamentInfo = ({ name }) => {
       );
 
       const { isDeployed } = await response.json();
-      const endsAt = tournamentData.tournament.endAt
-        ? tournamentData.tournament.endAt
-        : 86400;
+      const endsAt = tournamentData.endAt ? tournamentData.endAt : 86400;
 
       if (!isDeployed) {
         const contractAddress = await deployPredMarket(
@@ -116,55 +154,35 @@ const TournamentInfo = ({ name }) => {
     }
   };
 
-  useEffect(() => {
-    if (selectedEventId) fetchPhases(selectedEventId);
-  }, [selectedEventId]); // Add debounced search
+  // useEffect(() => {
+  //   if (selectedEventName) fetchPhases(selectedEventId);
+  // }, [selectedEventId]); // Add debounced search
 
   useEffect(() => {
     if (selectedPhaseId) {
       setCurrentPhaseSets([]);
       fetchSetsForSelectedPhase(selectedPhaseId);
     }
-  }, [selectedPhaseId, debouncedSearch]); // Add debounced search
-
-  // const fetchPhases = async (eventId) => {
-  //   try {
-  //     const { data: eventData } = await apolloClient.query({
-  //       query: GET_PHASE_QUERY,
-  //       variables: { eventId },
-  //     });
-  //     setPhases(eventData.event.phases);
-  //     setPhaseVideoGame(eventData.event.videogame.name);
-  //   } catch (error) {
-  //     console.error("Failed to fetch phases:", error);
-  //   }
-  // };
+  }, [selectedPhaseId, debouncedSetSearchInput]); // Add debounced search
 
   const fetchSetsForSelectedPhase = async (phaseId) => {
-    setIsLoadingSets(true); // Start loading
+    setIsLoadingSets(true);
+    console.log(`Fetching sets for phaseId: ${phaseId}`); // Confirm what's being sent
     try {
-      let allSets = [];
-      let page = 1;
-      const perPage = 100;
-      let hasMore = true;
-
-      while (hasMore) {
-        const { data: phaseData } = await apolloClient.query({
-          query: GET_SETS_BY_PHASE_QUERY,
-          variables: { phaseId, page, perPage },
-        });
-        allSets = [...allSets, ...phaseData.phase.sets.nodes];
-        hasMore = phaseData.phase.sets.nodes.length === perPage;
-        page += 1;
+      const response = await fetch(
+        `http://localhost:3001/api/phase-sets/${phaseId}`
+      );
+      if (!response.ok) {
+        throw new Error(`HTTP error, status = ${response.status}`);
       }
-
-      setCurrentPhaseSets(allSets.sort((a, b) => sortSets(a, b)));
+      const json = await response.json();
+      console.log(json.name, "this is the name of the current phase maybeee"); // Log what is received
+      setCurrentPhaseSets(json);
     } catch (error) {
       console.error("Failed to fetch sets for phase:", error);
-
       alert("Failed to load sets: " + error.message);
     } finally {
-      setIsLoadingSets(false); // End loading
+      setIsLoadingSets(false);
     }
   };
 
@@ -223,19 +241,26 @@ const TournamentInfo = ({ name }) => {
       </div>
     );
   }
+  if (!tournamentData) {
+    return <div>Loading tournament data...</div>;
+  }
+
+  if (!tournamentData.events || tournamentData.events.length === 0) {
+    return <div>No events found for this tournament.</div>;
+  }
 
   return (
     <div className="tournament-info">
       <div className="controls">
         <h2 style={{ color: "#0056b3" /* White text for high contrast */ }}>
-          Tournament: {tournamentData?.tournament?.name}
+          Tournament: {tournamentData?.name}
         </h2>
         <select
           onChange={(e) => setSelectedEventId(e.target.value)}
           value={selectedEventId}
         >
           <option value="">Select an event</option>
-          {tournamentData.tournament.events.map((event) => (
+          {tournamentData.events.map((event) => (
             <option key={event.id} value={event.id}>
               {event.name}
             </option>

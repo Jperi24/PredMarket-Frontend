@@ -4,44 +4,44 @@ import gql from "graphql-tag";
 import TournamentInfo from "../components/tournamentInfo2";
 import Header from "../components/Header";
 
-export const GET_ALL_TOURNAMENTS_QUERY = gql`
-  query ActiveTournaments(
-    $afterDate: Timestamp
-    $beforeDate: Timestamp
-    $page: Int
-    $perPage: Int
-  ) {
-    tournaments(
-      query: {
-        filter: {
-          afterDate: $afterDate
-          beforeDate: $beforeDate
-          isFeatured: true
-        }
-        page: $page
-        perPage: $perPage
-      }
-    ) {
-      nodes {
-        name
-        startAt
-        endAt
-        slug
-      }
-    }
-  }
-`;
+// export const GET_ALL_TOURNAMENTS_QUERY = gql`
+//   query ActiveTournaments(
+//     $afterDate: Timestamp
+//     $beforeDate: Timestamp
+//     $page: Int
+//     $perPage: Int
+//   ) {
+//     tournaments(
+//       query: {
+//         filter: {
+//           afterDate: $afterDate
+//           beforeDate: $beforeDate
+//           isFeatured: true
+//         }
+//         page: $page
+//         perPage: $perPage
+//       }
+//     ) {
+//       nodes {
+//         name
+//         startAt
+//         endAt
+//         slug
+//       }
+//     }
+//   }
+// `;
 
-export const GET_TOURNAMENT_BY_SLUG_QUERY = gql`
-  query TournamentBySlug($slug: String!) {
-    tournament(slug: $slug) {
-      name
-      startAt
-      endAt
-      slug
-    }
-  }
-`;
+// export const GET_TOURNAMENT_BY_SLUG_QUERY = gql`
+//   query TournamentBySlug($slug: String!) {
+//     tournament(slug: $slug) {
+//       name
+//       startAt
+//       endAt
+//       slug
+//     }
+//   }
+// `;
 
 function App() {
   const [tournaments, setTournaments] = useState([]);
@@ -97,11 +97,12 @@ function App() {
     setSlugInput(event.target.value);
   };
 
-  const handleTournamentClick = (slug) => {
+  const handleTournamentClick = (tournament) => {
     // Ensure we are getting the full tournament data before setting it
-    // fetchTournamentBySlug(slug);
-    setSelectedTournament(slug);
-    console.log(slug);
+    // fetchTournamentBySlug(tournament);
+    setSelectedTournament(tournament);
+
+    console.log(tournament.slug, "this is the slug");
   };
 
   const resetSelection = () => {
@@ -131,7 +132,7 @@ function App() {
           >
             Show All Tournaments
           </button>
-          <TournamentInfo name={selectedTournament.name} />
+          <TournamentInfo slug={selectedTournament.slug} />
         </>
       ) : (
         <>

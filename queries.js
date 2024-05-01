@@ -7,7 +7,7 @@ const GET_ALL_TOURNAMENTS_QUERY = gql`
         filter: {
           afterDate: $afterDate
           beforeDate: $beforeDate
-          isFeatured: true
+          upcoming: true
         }
       }
     ) {
@@ -24,11 +24,15 @@ const GET_ALL_TOURNAMENTS_QUERY = gql`
 const GET_TOURNAMENT_QUERY = gql`
   query GetTournamentDetails($slug: String!) {
     tournament(slug: $slug) {
+      slug
       id
       name
       startAt
       endAt
       events {
+        videogame {
+          name
+        }
         id
         name
         phases {
@@ -45,9 +49,7 @@ const GET_PHASE_QUERY = gql`
     event(id: $eventId) {
       id
       name
-      videogame {
-        name
-      }
+
       phases {
         id
         name

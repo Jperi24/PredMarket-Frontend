@@ -287,60 +287,140 @@ app.post("/api/updateBetterMongoDB", async (req, res) => {
 const {
   GET_ALL_TOURNAMENTS_QUERY,
   GET_TOURNAMENT_QUERY,
+  GET_SETS_BY_PHASE_QUERY,
 } = require("./queries");
 
+const dailyCache = new NodeCache({ stdTTL: 86400 }); // 24 hours TTL for tournaments and events
+const frequentCache = new NodeCache({ stdTTL: 1200 });
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function fetchAllTournamentDetails() {
-  try {
-    const { data } = await apolloClient.query({
-      query: GET_ALL_TOURNAMENTS_QUERY,
-      variables: {
-        afterDate: Math.floor(
-          new Date(Date.now() - 45 * 24 * 3600 * 1000).getTime() / 1000
-        ),
-        beforeDate: Math.floor(
-          new Date(Date.now() + 45 * 24 * 3600 * 1000).getTime() / 1000
-        ),
-      },
-      fetchPolicy: "network-only",
+  const tournamentsResponse = await apolloClient.query({
+    query: GET_ALL_TOURNAMENTS_QUERY,
+    variables: {
+      afterDate: Math.floor(
+        new Date(Date.now() - 3 * 24 * 3600 * 1000).getTime() / 1000
+      ),
+      beforeDate: Math.floor(
+        new Date(Date.now() + 3 * 24 * 3600 * 1000).getTime() / 1000
+      ),
+    },
+  });
+
+  const tournaments = tournamentsResponse.data.tournaments.nodes;
+
+  for (const tournament of tournaments) {
+    await sleep(1000); // Throttle requests to avoid rate limits
+
+    const tournamentDetailResponse = await apolloClient.query({
+      query: GET_TOURNAMENT_QUERY,
+      variables: { slug: tournament.slug },
     });
 
-    if (data && data.tournaments && data.tournaments.nodes.length > 0) {
-      const detailedTournaments = await Promise.all(
-        data.tournaments.nodes.map(async (tournament) => {
-          const detailData = await apolloClient.query({
-            query: GET_TOURNAMENT_QUERY,
-            variables: { slug: tournament.slug },
-            fetchPolicy: "network-only",
-          });
-          return detailData.data.tournament; // Assuming this returns the detailed data correctly
-        })
-      );
+    const detailedTournament = tournamentDetailResponse.data.tournament;
+    dailyCache.set(tournament.slug.toLowerCase(), detailedTournament); // Store tournament details
 
-      return detailedTournaments; // This array now contains detailed data for each tournament
+    for (const event of detailedTournament.events) {
+      if (event.phases) {
+        event.phases.forEach(async (phase) => {
+          if (detailedTournament) {
+            await sleep(1000); // Delay between fetching sets for active tournaments
+            const phaseSetsResponse = await apolloClient.query({
+              query: GET_SETS_BY_PHASE_QUERY,
+              variables: { phaseId: phase.id, page: 1, perPage: 100 },
+            });
+
+            frequentCache.set(
+              phase.id,
+              phaseSetsResponse.data.phase.sets.nodes
+            ); // Store sets frequently
+          }
+        });
+      }
     }
-  } catch (error) {
-    console.error("Failed to fetch tournaments:", error);
-    throw error; // or handle this more gracefully
   }
 }
 
-// Example endpoint to use this function
-app.get("/api/tournament-details", async (req, res) => {
-  try {
-    const detailedTournaments = await fetchAllTournamentDetails();
-    res.json(detailedTournaments);
-  } catch (error) {
-    res.status(500).send("Failed to fetch tournament details");
+async function updateFrequentCache() {
+  console.log("Updating frequent cache...");
+  const tournaments = dailyCache.keys();
+  for (const slug of tournaments) {
+    const tournament = dailyCache.get(slug);
+    if (tournament && tournament.events) {
+      for (const event of tournament.events) {
+        if (event.phases) {
+          for (const phase of event.phases) {
+            const phaseSetsResponse = await apolloClient.query({
+              query: GET_SETS_BY_PHASE_QUERY,
+              variables: { phaseId: phase.id, page: 1, perPage: 100 },
+            });
+            frequentCache.set(
+              phase.id,
+              phaseSetsResponse.data.phase.sets.nodes
+            );
+          }
+        }
+      }
+    }
   }
-});
+  console.log("Frequent cache updated.");
+}
 
-app.get("/api/tournament/:name", async (req, res) => {
-  const { name } = req.params;
-  const cachedTournaments = await fetchAllTournamentDetails();
-  const tournament = cachedTournaments.find((t) => t.name === name);
+// Schedule tasks to update caches
+cron.schedule("0 */20 * * * *", updateFrequentCache); // Update frequent cache every 20 minutes
+cron.schedule("0 0 */24 * * *", fetchAllTournamentDetails);
+
+app.get("/api/tournament/:slug", (req, res) => {
+  const { slug } = req.params;
+  const tournament = dailyCache.get(slug.toLowerCase());
+
   if (tournament) {
     res.json(tournament);
   } else {
-    res.status(404).send("Tournament not found");
+    res
+      .status(404)
+      .send(
+        "Tournament not found in cache. Please wait until the next cache refresh."
+      );
+  }
+});
+
+app.get("/api/phase-sets/:phaseId", (req, res) => {
+  const { phaseId } = req.params;
+  console.log(`Requested phaseId: ${phaseId}`);
+  if (frequentCache.has(phaseId.toLowerCase())) {
+    const set = frequentCache.get(phaseId.toLowerCase());
+
+    res.json(set);
+  } else {
+    console.log(`Cache miss for phaseId: ${phaseId}`);
+    res
+      .status(404)
+      .send(
+        "phaseId not found in cache. Please wait until the next cache refresh."
+      );
+  }
+});
+
+app.get("/api/tournament-details", (req, res) => {
+  const allTournaments = [];
+  dailyCache.keys().forEach((key) => {
+    const tournament = dailyCache.get(key);
+    if (tournament) {
+      allTournaments.push(tournament);
+    }
+  });
+
+  if (allTournaments.length > 0) {
+    res.json(allTournaments);
+  } else {
+    res
+      .status(404)
+      .send(
+        "No tournament details available. Please wait until the next cache refresh."
+      );
   }
 });
