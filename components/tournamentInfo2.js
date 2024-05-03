@@ -60,12 +60,14 @@ const TournamentInfo = ({ slug }) => {
   }, [slug]);
 
   useEffect(() => {
-    if (selectedEventId && tournamentData?.events) {
+    if (tournamentData && selectedEventId) {
       const selectedEvent = tournamentData.events.find(
         (e) => e.id === selectedEventId
       );
 
       setPhases(selectedEvent?.phases || []);
+      console.log(phases, "phases");
+
       setSelectedPhaseId(selectedEvent?.phases?.[0]?.id || "");
 
       if (selectedEvent?.videogame?.name) {
@@ -101,11 +103,11 @@ const TournamentInfo = ({ slug }) => {
     // Now find the phase within the selected event
     const currentPhaseObj = selectedEvent.phases.find(
       (phase) => phase.id === selectedPhaseId
-    );
+    ).name;
 
     // Check if the phase was found
     if (!currentPhaseObj) {
-      console.error("No phase found with the phaseId:", phaseId);
+      console.error("No phase found with the phaseId:", selectedPhaseId);
       return;
     }
 
@@ -129,7 +131,20 @@ const TournamentInfo = ({ slug }) => {
       );
 
       const { isDeployed } = await response.json();
-      const endsAt = tournamentData.endAt ? tournamentData.endAt : 86400;
+      const now = Math.floor(Date.now() / 1000); // Current time in seconds
+      const twelveHoursInSeconds = 12 * 60 * 60; // 12 hours in seconds
+
+      // Check if tournamentData.endAt exists and calculate the difference
+      const timeDifference = tournamentData.endAt
+        ? tournamentData.endAt - now
+        : null;
+
+      // Conditionally set endsAt
+      const endsAt =
+        !tournamentData.endAt ||
+        (timeDifference && timeDifference < twelveHoursInSeconds)
+          ? 43200
+          : tournamentData.endAt;
 
       if (!isDeployed) {
         const contractAddress = await deployPredMarket(
@@ -176,7 +191,7 @@ const TournamentInfo = ({ slug }) => {
         throw new Error(`HTTP error, status = ${response.status}`);
       }
       const json = await response.json();
-      console.log(json.name, "this is the name of the current phase maybeee"); // Log what is received
+
       setCurrentPhaseSets(json);
     } catch (error) {
       console.error("Failed to fetch sets for phase:", error);

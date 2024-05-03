@@ -296,6 +296,7 @@ const frequentCache = new NodeCache({ stdTTL: 1200 });
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
 async function fetchAllTournamentDetails() {
   let allTournaments = [];
   let page = 1;
@@ -304,76 +305,57 @@ async function fetchAllTournamentDetails() {
 
   while (hasMore) {
     await sleep(1000);
-    try {
-      const { data } = await apolloClient.query({
-        query: GET_ALL_TOURNAMENTS_QUERY,
-        variables: {
-          afterDate: Math.floor(
-            new Date(Date.now() - 45 * 24 * 3600 * 1000).getTime() / 1000
-          ),
-          beforeDate: Math.floor(
-            new Date(Date.now() + 45 * 24 * 3600 * 1000).getTime() / 1000
-          ),
-          page,
-          perPage,
-        },
-      });
-      allTournaments = [...allTournaments, ...data.tournaments.nodes];
-      hasMore = data.tournaments.nodes.length === perPage;
-      page += 1;
-    } catch (error) {
-      console.error("Failed to fetch tournament page:", page, error);
-      hasMore = false; // Optional: Decide whether to stop or continue fetching more pages
-    }
+    const { data } = await apolloClient.query({
+      query: GET_ALL_TOURNAMENTS_QUERY,
+      variables: {
+        afterDate: Math.floor(
+          new Date(Date.now() - 45 * 24 * 3600 * 1000).getTime() / 1000
+        ),
+        beforeDate: Math.floor(
+          new Date(Date.now() + 45 * 24 * 3600 * 1000).getTime() / 1000
+        ),
+        page,
+        perPage,
+      },
+    });
+    allTournaments = [...allTournaments, ...data.tournaments.nodes];
+    hasMore = data.tournaments.nodes.length === perPage;
+    page += 1;
   }
 
   for (const tournament of allTournaments) {
     await sleep(1000);
-    try {
-      const tournamentDetailResponse = await apolloClient.query({
-        query: GET_TOURNAMENT_QUERY,
-        variables: { slug: tournament.slug },
-      });
-      const detailedTournament = tournamentDetailResponse.data.tournament;
-      dailyCache.set(tournament.slug.toLowerCase(), detailedTournament);
 
-      if (detailedTournament.events) {
-        for (const event of detailedTournament.events) {
-          if (event.phases) {
-            for (const phase of event.phases) {
-              await sleep(1000);
-              let allSets = [];
-              let page2 = 1;
-              let hasMore2 = true;
-              const phaseId = phase.id;
+    const tournamentDetailResponse = await apolloClient.query({
+      query: GET_TOURNAMENT_QUERY,
+      variables: { slug: tournament.slug },
+    });
+    const detailedTournament = tournamentDetailResponse.data.tournament;
+    dailyCache.set(tournament.slug.toLowerCase(), detailedTournament);
 
-              while (hasMore2) {
-                await sleep(1000);
-                try {
-                  const { data: phaseData } = await apolloClient.query({
-                    query: GET_SETS_BY_PHASE_QUERY,
-                    variables: { phaseId, page: page2, perPage },
-                  });
-                  allSets = [...allSets, ...phaseData.phase.sets.nodes];
-                  hasMore2 = phaseData.phase.sets.nodes.length === perPage;
-                  page2 += 1;
-                } catch (error) {
-                  console.error(
-                    "Error fetching sets for phase:",
-                    phase.id,
-                    error
-                  );
-                  hasMore2 = false; // Decide based on your needs
-                }
-              }
+    for (const event of detailedTournament.events) {
+      if (event.phases) {
+        for (const phase of event.phases) {
+          await sleep(1000);
+          let allSets = [];
+          let page2 = 1;
+          let hasMore2 = true;
+          const phaseId = phase.id;
 
-              frequentCache.set(phase.id, allSets);
-            }
+          while (hasMore2) {
+            await sleep(1000);
+            const { data: phaseData } = await apolloClient.query({
+              query: GET_SETS_BY_PHASE_QUERY,
+              variables: { phaseId, page: page2, perPage },
+            });
+            allSets = [...allSets, ...phaseData.phase.sets.nodes];
+            hasMore2 = phaseData.phase.sets.nodes.length === perPage;
+            page2 += 1;
           }
+
+          frequentCache.set(phaseId, allSets);
         }
       }
-    } catch (error) {
-      console.error("Error handling tournament:", tournament.slug, error);
     }
     console.log("completed tournament:", tournament);
   }
@@ -381,55 +363,44 @@ async function fetchAllTournamentDetails() {
 
 async function updateFrequentCache() {
   console.log("Updating frequent cache...");
+
+  // Iterate over all tournaments stored in the daily cache
   const slugs = dailyCache.keys();
-
   for (const slug of slugs) {
-    await sleep(1000);
-    try {
-      const tournament = dailyCache.get(slug);
-      if (tournament && tournament.events) {
-        for (const event of tournament.events) {
-          if (event.phases) {
-            for (const phase of event.phases) {
-              let allSets = [];
-              let page = 1;
-              let hasMore = true;
+    await sleep(1000); // Throttle requests to avoid rate limits
 
-              while (hasMore) {
-                await sleep(1000);
-                try {
-                  const phaseSetsResponse = await apolloClient.query({
-                    query: GET_SETS_BY_PHASE_QUERY,
-                    variables: { phaseId: phase.id, page, perPage: 100 },
-                  });
-                  allSets = [
-                    ...allSets,
-                    ...phaseSetsResponse.data.phase.sets.nodes,
-                  ];
-                  hasMore =
-                    phaseSetsResponse.data.phase.sets.nodes.length === 100;
-                  page += 1;
-                } catch (error) {
-                  console.error(
-                    "Error fetching sets for phase:",
-                    phase.id,
-                    error
-                  );
-                  hasMore = false; // Decide based on your needs
-                }
-              }
+    const tournament = dailyCache.get(slug);
+    if (tournament && tournament.events) {
+      for (const event of tournament.events) {
+        if (event.phases) {
+          for (const phase of event.phases) {
+            let allSets = [];
+            let page = 1;
+            let hasMore = true;
 
-              frequentCache.set(phase.id, allSets);
+            // Fetch all sets for each phase, paginating through the results
+            while (hasMore) {
+              await sleep(1000); // Throttle requests to avoid rate limits
+
+              const phaseSetsResponse = await apolloClient.query({
+                query: GET_SETS_BY_PHASE_QUERY,
+                variables: { phaseId: phase.id, page: page, perPage: 100 },
+              });
+
+              // Append new sets to allSets array
+              allSets = [
+                ...allSets,
+                ...phaseSetsResponse.data.phase.sets.nodes,
+              ];
+              hasMore = phaseSetsResponse.data.phase.sets.nodes.length === 100;
+              page += 1;
             }
+
+            // Store the collected sets in the frequent cache
+            frequentCache.set(phase.id, allSets);
           }
         }
       }
-    } catch (error) {
-      console.error(
-        "Error updating frequent cache for tournament:",
-        slug,
-        error
-      );
     }
   }
   console.log("Frequent cache updated.");

@@ -1,7 +1,12 @@
 const { gql } = require("@apollo/client");
 
 const GET_ALL_TOURNAMENTS_QUERY = gql`
-  query TournamentQuery($afterDate: Timestamp, $beforeDate: Timestamp) {
+  query TournamentQuery(
+    $afterDate: Timestamp
+    $beforeDate: Timestamp
+    $page: Int
+    $perPage: Int
+  ) {
     tournaments(
       query: {
         filter: {
@@ -9,6 +14,8 @@ const GET_ALL_TOURNAMENTS_QUERY = gql`
           beforeDate: $beforeDate
           upcoming: true
         }
+        page: $page
+        perPage: $perPage
       }
     ) {
       nodes {
