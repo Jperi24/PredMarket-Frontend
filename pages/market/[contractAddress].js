@@ -24,6 +24,7 @@ export default function PredMarketPageV2() {
   const [totalLocked, setTotalLocked] = useState(0);
   const { contractAddress } = router.query;
   const [selectedBets, setSelectedBets] = useState([]);
+  const [betPrices, setBetPrices] = useState({});
 
   const [bets_balance, setbetsbalance] = useState({
     allbets: [],
@@ -91,6 +92,7 @@ export default function PredMarketPageV2() {
 
       const tx = await contractInstance.unlistBets(positions);
       await tx.wait();
+      setSelectedBets([]);
     } catch (error) {
       console.log("Can't unlist bet, this is why:");
       console.log(error);
@@ -138,6 +140,13 @@ export default function PredMarketPageV2() {
       console.log(error);
     }
   };
+
+  function handleChangePrice(value, index) {
+    setBetPrices((prevPrices) => ({
+      ...prevPrices,
+      [index]: value, // Update the price for the specific bet
+    }));
+  }
 
   const BigNumber = require("bignumber.js");
 
@@ -312,7 +321,7 @@ export default function PredMarketPageV2() {
               <div className="contract-details-grid">
                 <div className="contract-detail-item">
                   <h4>
-                    <h4>Tournament: {contract.NameofMarket}</h4>
+                    <h4>{contract.NameofMarket}</h4>
                     <h4>{contract.fullName}</h4>
                     <div>
                       {contract.eventA} <span style={{ color: "red" }}>VS</span>{" "}
@@ -399,107 +408,116 @@ export default function PredMarketPageV2() {
             </div>
 
             <div>
-              {/* List all bets */}
               <ul>
-                <div class="bets-container">
+                <div className="bets-container">
                   {selectedBets.length > 0 && (
                     <button onClick={() => unlistBet(selectedBets)}>
                       Unlist All Selected
                     </button>
                   )}
                   {bets_balance.allbets &&
-                    Array.isArray(bets_balance.allbets) &&
-                    bets_balance.allbets
-                      .filter((bet) => {
-                        // Example filtering conditions, adjust according to your actual data structure
-                        switch (filter) {
-                          case "forSale":
-                            return bet.selling; // Assuming this is a boolean indicating the bet is for sale
-                          case "deployedByMe":
-                            return bet.deployer === signerAddress; // You'll need to determine `signerAddress`
-                          case "ownedByMe":
-                            return bet.owner === signerAddress; // Adjust based on your data
-                          case "all":
-                          default:
-                            return true; // No filtering, return all bets
-                        }
-                      })
-                      .map((bet, index) => (
-                        <div key={index} class="bet">
-                          <h3>Bet {index + 1}</h3>
-
-                          <div class="bet-info">
-                            Amount To Win:{" "}
-                            {bigNumberToString(
-                              bet.amountDeployerLocked.add(
-                                bet.amountBuyerLocked
-                              )
-                            )}
-                          </div>
-
-                          {bet.selling && (
-                            <div class="bet-info">
-                              Cost To Purchase:{" "}
-                              {bigNumberToString(bet.amountToBuyFor)}
+                  Array.isArray(bets_balance.allbets) ? (
+                    bets_balance.allbets.length > 0 ? (
+                      bets_balance.allbets
+                        .filter((bet) => {
+                          // Example filtering conditions, adjust according to your actual data structure
+                          switch (filter) {
+                            case "forSale":
+                              return bet.selling; // Assuming this is a boolean indicating the bet is for sale
+                            case "deployedByMe":
+                              return bet.deployer === signerAddress; // You'll need to determine `signerAddress`
+                            case "ownedByMe":
+                              return bet.owner === signerAddress; // Adjust based on your data
+                            case "all":
+                            default:
+                              return true; // No filtering, return all bets
+                          }
+                        })
+                        .map((bet, index) => (
+                          <div key={index} className="bet">
+                            <h3>Bet {index + 1}</h3>
+                            <div className="bet-info">
+                              Amount To Win:{" "}
+                              {bigNumberToString(
+                                bet.amountDeployerLocked.add(
+                                  bet.amountBuyerLocked
+                                )
+                              )}
                             </div>
-                          )}
-                          <div class="bet-info">
-                            Owner Of Bet Wins If :{" "}
-                            {bet.conditionForBuyerToWin === 0
-                              ? contract.eventA
-                              : contract.eventB}{" "}
-                            Wins
-                          </div>
-                          {bet.selling ? (
-                            bet.owner === signerAddress ? (
-                              <div className="bet-selection">
-                                <input
-                                  type="checkbox"
-                                  value={bet.positionInArray}
-                                  onChange={(e) =>
-                                    handleSelectBet(e.target.value)
-                                  }
-                                />
-                                Select To Unlist
+                            {bet.selling && (
+                              <div className="bet-info">
+                                Cost To Purchase:{" "}
+                                {bigNumberToString(bet.amountToBuyFor)}
                               </div>
-                            ) : (
-                              <button
-                                onClick={() =>
-                                  buyBet(
-                                    bet.positionInArray,
-                                    bet.amountToBuyFor
-                                  )
-                                }
-                              >
-                                Buy Bet
-                              </button>
-                            )
-                          ) : !bet.selling && bet.owner === signerAddress ? (
-                            <>
-                              <input
-                                style={{
-                                  width: "50%",
-                                  padding: "6px 10px",
-                                  border: "1px solid #ccc",
-                                  borderRadius: "4px",
-                                  textAlign: "center",
-                                  fontSize: "14px",
-                                }}
-                                value={newPrice}
-                                onChange={(e) => setnewPrice(e.target.value)}
-                                placeholder="ReSell Price"
-                              />
-                              <button
-                                onClick={() =>
-                                  listBetForSale(bet.positionInArray, newPrice)
-                                }
-                              >
-                                Re-List Bet
-                              </button>
-                            </>
-                          ) : null}
-                        </div>
-                      ))}
+                            )}
+                            <div className="bet-info">
+                              Owner Of Bet Wins If:{" "}
+                              {bet.conditionForBuyerToWin === 0
+                                ? contract.eventA
+                                : contract.eventB}{" "}
+                              Wins
+                            </div>
+                            {bet.selling ? (
+                              bet.owner === signerAddress ? (
+                                <div className="bet-selection">
+                                  <input
+                                    type="checkbox"
+                                    value={bet.positionInArray}
+                                    onChange={(e) =>
+                                      handleSelectBet(e.target.value)
+                                    }
+                                  />
+                                  Select To Unlist
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() =>
+                                    buyBet(
+                                      bet.positionInArray,
+                                      bet.amountToBuyFor
+                                    )
+                                  }
+                                >
+                                  Buy Bet
+                                </button>
+                              )
+                            ) : !bet.selling && bet.owner === signerAddress ? (
+                              <>
+                                <input
+                                  style={{
+                                    width: "50%",
+                                    padding: "6px 10px",
+                                    border: "1px solid #ccc",
+                                    borderRadius: "4px",
+                                    textAlign: "center",
+                                    fontSize: "14px",
+                                  }}
+                                  value={betPrices[index] || ""}
+                                  onChange={(e) =>
+                                    handleChangePrice(e.target.value, index)
+                                  }
+                                  placeholder="ReSell Price"
+                                />
+                                <button
+                                  onClick={() =>
+                                    listBetForSale(
+                                      bet.positionInArray,
+                                      betPrices[index] || ""
+                                    )
+                                  }
+                                >
+                                  Re-List Bet
+                                </button>
+                              </>
+                            ) : null}
+                          </div>
+                        ))
+                    ) : (
+                      <div>No Bets Available</div>
+                    )
+                  ) : (
+                    <div>No Bets Available</div>
+                  )}
                 </div>
               </ul>
             </div>

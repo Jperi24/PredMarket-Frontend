@@ -520,7 +520,10 @@ input[type="text"]:hover {
   color: white;
   white-space: nowrap;
   overflow: hidden;
-  width: max-content;
+  width: fit-content;
+  white-space: normal;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
   text-overflow: ellipsis;
   margin-bottom: 3px;
   padding: 5px; /* Adjusted padding for a more balanced spacing */

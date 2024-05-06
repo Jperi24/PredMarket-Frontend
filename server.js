@@ -309,10 +309,10 @@ async function fetchAllTournamentDetails() {
         query: GET_ALL_TOURNAMENTS_QUERY,
         variables: {
           afterDate: Math.floor(
-            new Date(Date.now() - 45 * 24 * 3600 * 1000).getTime() / 1000
+            new Date(Date.now() - 5 * 24 * 3600 * 1000).getTime() / 1000
           ),
           beforeDate: Math.floor(
-            new Date(Date.now() + 45 * 24 * 3600 * 1000).getTime() / 1000
+            new Date(Date.now() + 5 * 24 * 3600 * 1000).getTime() / 1000
           ),
           page,
           perPage,

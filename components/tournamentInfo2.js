@@ -79,40 +79,46 @@ const TournamentInfo = ({ slug }) => {
   const deployContractForSet = async (set, tournamentName) => {
     // Example of getting signer, ensure you have configured your Ethereum provider
     setIsDeploying(true);
+    let currentPhaseObj;
+    try {
+      // Ensure that tournamentData.events is an array and not undefined
+      if (!Array.isArray(tournamentData.events)) {
+        console.error("Expected tournamentData.events to be an array");
+        return;
+      }
 
-    // Ensure that tournamentData.events is an array and not undefined
-    if (!Array.isArray(tournamentData.events)) {
-      console.error("Expected tournamentData.events to be an array");
-      return;
-    }
-
-    // Find the selected event using selectedEventId
-    const selectedEvent = tournamentData.events.find(
-      (event) => event.id === selectedEventId
-    );
-
-    // Check if the selected event is found
-    if (!selectedEvent) {
-      console.error(
-        "No event found with the selectedEventId:",
-        selectedEventId
+      // Find the selected event using selectedEventId
+      const selectedEvent = tournamentData.events.find(
+        (event) => event.id === selectedEventId
       );
-      return;
-    }
 
-    // Now find the phase within the selected event
-    const currentPhaseObj = selectedEvent.phases.find(
-      (phase) => phase.id === selectedPhaseId
-    ).name;
+      // Check if the selected event is found
+      if (!selectedEvent) {
+        console.error(
+          "No event found with the selectedEventId:",
+          selectedEventId
+        );
+        return;
+      }
+      console.log(selectedEvent.phases, "selected Event.phases");
 
-    // Check if the phase was found
-    if (!currentPhaseObj) {
-      console.error("No phase found with the phaseId:", selectedPhaseId);
-      return;
+      // Now find the phase within the selected event
+      currentPhaseObj = selectedEvent.phases.find(
+        (phase) => phase.id === selectedPhaseId
+      ).name;
+
+      // Check if the phase was found
+      if (!currentPhaseObj) {
+        console.error("No phase found with the phaseId:", selectedPhaseId);
+        return;
+      }
+    } catch (error) {
+      console.log("error", error);
+      currentPhaseObj = "";
     }
 
     // Log or use the phase name
-    console.log("Selected Event:", selectedEvent);
+
     console.log("Current Phase Object:", currentPhaseObj);
 
     try {
