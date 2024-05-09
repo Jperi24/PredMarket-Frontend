@@ -99,16 +99,6 @@ updateAllRates();
 setInterval(updateAllRates, FETCH_INTERVAL);
 
 // Endpoint to get ETH to USD rate from the cache
-app.get("/ethToUsdRate", (req, res) => {
-  const rate = rateCache.get(RATE_KEY);
-  if (rate) {
-    res.json({ rate });
-  } else {
-    res.status(503).json({
-      error: "Rate is currently unavailable, please try again later.",
-    });
-  }
-});
 
 // Endpoint to check if a set has already been deployed
 app.get(`/check-set-deployment/:tags`, async (req, res) => {

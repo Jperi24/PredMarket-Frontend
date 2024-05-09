@@ -28,6 +28,7 @@ export async function deployPredMarket(
     endsAt,
     "is the end Time that was passed into the smart contract"
   );
+  const chainId = signer?.provider?.network?.chainId || "";
 
   const predMarket = await PredMarket.deploy(endsAt, {
     value: ethers.utils.parseEther("0.05"),
@@ -50,6 +51,7 @@ export async function deployPredMarket(
         deployerAddress: deployerAddress,
         fullName,
         endsAt,
+        chainId,
 
         // Assuming you want to log the deployed contract's address
       }),

@@ -45,8 +45,6 @@ const TournamentInfo = ({ slug }) => {
           const json = await response.json();
           setTournamentData(json);
           console.log(json, "this is the tourney check this out");
-          setPhases(json.events[0]?.phases || []);
-          setSelectedEventId(json.events[0]?.id || "");
         } catch (error) {
           console.error("Error fetching tournament data:", error);
           setTournamentData(null);
@@ -62,9 +60,10 @@ const TournamentInfo = ({ slug }) => {
   useEffect(() => {
     if (tournamentData && selectedEventId) {
       const selectedEvent = tournamentData.events.find(
-        (e) => e.id === selectedEventId
+        (e) => e.id.toString() === selectedEventId.toString()
       );
 
+      console.log(selectedEvent, "eventID");
       setPhases(selectedEvent?.phases || []);
       console.log(phases, "phases");
 
@@ -89,7 +88,7 @@ const TournamentInfo = ({ slug }) => {
 
       // Find the selected event using selectedEventId
       const selectedEvent = tournamentData.events.find(
-        (event) => event.id === selectedEventId
+        (e) => e.id.toString() === selectedEventId.toString()
       );
 
       // Check if the selected event is found
@@ -104,8 +103,8 @@ const TournamentInfo = ({ slug }) => {
 
       // Now find the phase within the selected event
       currentPhaseObj = selectedEvent.phases.find(
-        (phase) => phase.id === selectedPhaseId
-      ).name;
+        (phase) => phase.id.toString() === selectedPhaseId.toString()
+      );
 
       // Check if the phase was found
       if (!currentPhaseObj) {
@@ -125,7 +124,7 @@ const TournamentInfo = ({ slug }) => {
       // Example parameters, adjust as necessary for your contract
       const eventA = set.slots[0].entrant.name;
       const eventB = set.slots[1].entrant.name;
-      const NameofMarket = `${tournamentData.name} - ${videogame}- ${currentPhaseObj}`;
+      const NameofMarket = `${tournamentData.name} - ${videogame}- ${currentPhaseObj.name}`;
       const fullName = set.fullRoundText;
 
       const tags = `${videogame},${tournamentData.name},${currentPhaseObj.name},${set.slots[0].entrant.name},${set.slots[1].entrant.name},${fullName}`;
@@ -137,6 +136,7 @@ const TournamentInfo = ({ slug }) => {
       );
 
       const { isDeployed } = await response.json();
+
       const now = Math.floor(Date.now() / 1000); // Current time in seconds
       const twelveHoursInSeconds = 12 * 60 * 60; // 12 hours in seconds
 
@@ -152,7 +152,10 @@ const TournamentInfo = ({ slug }) => {
           ? 43200
           : tournamentData.endAt;
 
-      if (!isDeployed) {
+      const chainId = signer?.provider?.network?.chainId;
+      console.log(chainId);
+
+      if (!isDeployed && chainId) {
         const contractAddress = await deployPredMarket(
           eventA,
           eventB,

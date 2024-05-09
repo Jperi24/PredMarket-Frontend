@@ -25,6 +25,7 @@ export default function PredMarketPageV2() {
   const { contractAddress } = router.query;
   const [selectedBets, setSelectedBets] = useState([]);
   const [betPrices, setBetPrices] = useState({});
+  const [chainId, setChainId] = useState(null);
 
   const [bets_balance, setbetsbalance] = useState({
     allbets: [],
@@ -253,6 +254,7 @@ export default function PredMarketPageV2() {
         .then((data) => {
           if (data) {
             setContract(data);
+
             displayAllBets();
           } else {
             console.log("Contract data not found or error occurred");
@@ -277,6 +279,11 @@ export default function PredMarketPageV2() {
         if (signer) {
           const saddress = await signer.getAddress();
           setSignerAddress(saddress);
+
+          const network = signer?.provider?.network || "";
+          console.log("this is the network", network);
+
+          setChainId(network.chainId);
         }
         setContractInstance(tempContractInstance);
       }

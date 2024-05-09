@@ -16,9 +16,15 @@ export default function ContractsPage() {
 
   useEffect(() => {
     async function fetchContracts() {
-      const contractsData = await getContracts();
-      setAllContracts(contractsData);
-      applyFilters(contractsData, ""); // Apply initial filter (none)
+      const response = await fetch("http://localhost:3001/getContracts");
+      if (!response.ok) {
+        throw new Error("Network response was not ok");
+      }
+
+      const contracts = await response.json();
+      setAllContracts(contracts);
+      applyFilters(contracts, ""); // Apply initial filter (none)
+      console.log("worked, fuck that old shit");
       setIsLoading(false);
     }
     fetchContracts();
