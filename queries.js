@@ -9,7 +9,11 @@ const GET_ALL_TOURNAMENTS_QUERY = gql`
   ) {
     tournaments(
       query: {
-        filter: { afterDate: $afterDate, beforeDate: $beforeDate }
+        filter: {
+          afterDate: $afterDate
+          beforeDate: $beforeDate
+          upcoming: true
+        }
         page: $page
         perPage: $perPage
       }

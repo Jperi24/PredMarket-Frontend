@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { deployPredMarket } from "./DeployPredMarketV2"; // Adjust path as necessary
 import { ethers } from "ethers";
 import { useSigner } from "@thirdweb-dev/react";
+
 import { debounce } from "lodash"; // Import debounce from lodash
 
 const TournamentInfo = ({ slug }) => {
@@ -13,6 +14,9 @@ const TournamentInfo = ({ slug }) => {
   const [phases, setPhases] = useState([]);
 
   const signer = useSigner();
+  const [currentChainId, setCurrentChainId] = useState(
+    signer?.provider?.network?.chainId || null
+  );
   const [currentPhaseSets, setCurrentPhaseSets] = useState([]);
   const [videogame, setPhaseVideoGame] = useState("");
   const [isDeploying, setIsDeploying] = useState(false);
@@ -56,6 +60,33 @@ const TournamentInfo = ({ slug }) => {
 
     fetchTournamentData();
   }, [slug]);
+
+  useEffect(() => {
+    const updateChainId = async () => {
+      if (signer) {
+        const network = await signer.provider.getNetwork();
+        setCurrentChainId(network.chainId);
+      } else {
+        setCurrentChainId(null);
+      }
+    };
+
+    updateChainId();
+
+    // Optional: Listen for network changes if your environment supports it
+    // This part depends on the Ethereum provider (e.g., MetaMask) used in your project
+    const provider = signer?.provider;
+    provider?.on("network", (newNetwork, oldNetwork) => {
+      if (oldNetwork) {
+        updateChainId();
+      }
+    });
+
+    // Cleanup function to remove the listener when the component unmounts or signer changes
+    return () => {
+      provider?.removeListener("network", updateChainId);
+    };
+  }, [signer]); // Depend on signer to re-run when it changes
 
   useEffect(() => {
     if (tournamentData && selectedEventId) {
@@ -149,7 +180,7 @@ const TournamentInfo = ({ slug }) => {
       const endsAt =
         !tournamentData.endAt ||
         (timeDifference && timeDifference < twelveHoursInSeconds)
-          ? 43200
+          ? now + 43200
           : tournamentData.endAt;
 
       const chainId = signer?.provider?.network?.chainId;
@@ -167,6 +198,7 @@ const TournamentInfo = ({ slug }) => {
         );
       } else {
         alert("Contract Already Deployed");
+        console.log(isDeployed);
       }
 
       // Here, you could update your local state to include the contractAddress for this set
@@ -221,6 +253,7 @@ const TournamentInfo = ({ slug }) => {
     if (!inGame && !hasWinner && !hasUnknownEntrant) return "Pending";
     return "Other";
   };
+
   const sortSets = (a, b) => {
     const getStatusPriority = (status) => {
       switch (status) {
@@ -276,6 +309,8 @@ const TournamentInfo = ({ slug }) => {
   return (
     <div className="tournament-info">
       <div className="controls">
+        <div>Current Chain ID: {currentChainId}</div>
+
         <h2 style={{ color: "#0056b3" /* White text for high contrast */ }}>
           Tournament: {tournamentData?.name}
         </h2>

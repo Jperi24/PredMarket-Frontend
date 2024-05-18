@@ -124,6 +124,7 @@ function App() {
   return (
     <div>
       <Header />
+
       {selectedTournament ? (
         <>
           <button
@@ -132,6 +133,7 @@ function App() {
           >
             Show All Tournaments
           </button>
+
           <TournamentInfo slug={selectedTournament.slug} />
         </>
       ) : (

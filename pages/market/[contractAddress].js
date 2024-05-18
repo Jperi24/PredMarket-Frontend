@@ -25,7 +25,7 @@ export default function PredMarketPageV2() {
   const { contractAddress } = router.query;
   const [selectedBets, setSelectedBets] = useState([]);
   const [betPrices, setBetPrices] = useState({});
-  const [chainId, setChainId] = useState(null);
+  const [chain, setChain] = useState(null);
 
   const [bets_balance, setbetsbalance] = useState({
     allbets: [],
@@ -61,6 +61,8 @@ export default function PredMarketPageV2() {
   const bigNumberToString = (bigNumber) =>
     parseInt(bigNumber._hex, 16).toString();
 
+  const convertCryptoToUSD = (numberInCrypto) => {};
+
   const sellANewBet = async (myBet, buyIn, selectedOutcome) => {
     console.log(myBet);
     console.log(buyIn);
@@ -68,11 +70,30 @@ export default function PredMarketPageV2() {
     if (contractInstance) {
       try {
         // Convert myBet from ether to wei and ensure it's a BigNumber
+        const total = parseFloat(myBet) + parseFloat(buyIn);
+        const reverseSelected = selectedOutcome === 1 ? 2 : 1;
+        const selectedName =
+          selectedOutcome === 1 ? contract.eventA : contract.eventB;
         const valueInWei = ethers.utils.parseEther(myBet.toString());
+        const valueInWeiBuyIn = ethers.utils.parseEther(buyIn.toString());
 
-        const tx = await contractInstance.sellANewBet(buyIn, selectedOutcome, {
-          value: valueInWei,
-        });
+        // Display the alert-style message to the user and get their response
+        const userConfirmed = confirm(
+          `You are depositing ${myBet} ETH. If ${selectedName} wins and another user buys this bet for ${buyIn} ETH, you will be rewarded ${total} ETH. If another user does not buy in, you will be refunded ${myBet} ETH. Do you accept the terms?`
+        );
+
+        if (!userConfirmed) {
+          alert("You declined the terms. The bet was not placed.");
+          return;
+        }
+
+        const tx = await contractInstance.sellANewBet(
+          valueInWeiBuyIn,
+          reverseSelected,
+          {
+            value: valueInWei,
+          }
+        );
         await tx.wait();
         updateBetterMongoDB(contractAddress, signerAddress);
       } catch (error) {
@@ -116,13 +137,40 @@ export default function PredMarketPageV2() {
     try {
       // Convert myBet from ether to wei and ensure it's a BigNumber
 
+      const selectedName =
+        bets_balance.allbets[positionInArray].conditionForBuyerToWin === 1
+          ? contract.eventA
+          : contract.eventB;
+
+      const buyerPrice =
+        bets_balance.allbets[positionInArray].amountBuyerLocked > 0
+          ? bets_balance.allbets[positionInArray].amountBuyerLocked
+          : bets_balance.allbets[positionInArray].amountToBuyFor;
+
+      const winnings =
+        parseFloat(
+          ethers.utils.formatEther(
+            bets_balance.allbets[positionInArray].amountDeployerLocked
+          )
+        ) + parseFloat(ethers.utils.formatEther(buyerPrice));
+
+      const purchasePriceString = ethers.utils.formatEther(purchasePrice);
+
+      const userConfirmed = confirm(
+        `You are spending ${purchasePriceString} to buy into a bet that states: if ${selectedName} wins you will be rewarded ${winnings}`
+      );
+
+      if (!userConfirmed) {
+        alert("You declined the terms. The bet was not placed.");
+        return;
+      }
+
       const tx = await contractInstance.buyABet(positionInArray, {
         value: purchasePrice,
       });
       await tx.wait();
       updateBetterMongoDB(contractAddress, signerAddress);
     } catch (error) {
-      console.log("Can't unlist bet, this whyyyy");
       console.log(error);
     }
   };
@@ -130,10 +178,11 @@ export default function PredMarketPageV2() {
   const listBetForSale = async (positionInArray, askingPrice) => {
     try {
       // Convert myBet from ether to wei and ensure it's a BigNumber
+      const valueInWei = ethers.utils.parseEther(askingPrice.toString());
 
       const tx = await contractInstance.sellAnExistingBet(
         positionInArray,
-        askingPrice
+        valueInWei
       );
       await tx.wait();
     } catch (error) {
@@ -161,21 +210,15 @@ export default function PredMarketPageV2() {
         (bet) => bet.deployer === signerAddress || bet.owner === signerAddress
       )
       .reduce((total, bet) => {
-        // Use the bigNumberToString function to convert BigNumber values
-        const amountDeployerLockedString = bigNumberToString(
-          bet.amountDeployerLocked
+        // Convert BigNumber values to ether and then to numbers
+        const amountDeployerLocked = parseFloat(
+          ethers.utils.formatEther(bet.amountDeployerLocked)
         );
-        const amountBuyerLockedString = bigNumberToString(
-          bet.amountBuyerLocked
+        const amountBuyerLocked = parseFloat(
+          ethers.utils.formatEther(
+            bet.amountBuyerLocked > 0 ? bet.amountBuyerLocked : 0
+          )
         );
-
-        console.log(
-          `Converted Deployer Locked: ${amountDeployerLockedString}, Converted Buyer Locked: ${amountBuyerLockedString}`
-        ); // Debug output
-
-        // Convert strings to numbers to perform addition
-        const amountDeployerLocked = parseInt(amountDeployerLockedString, 10);
-        const amountBuyerLocked = parseInt(amountBuyerLockedString, 10);
 
         // Check for NaN values and handle them appropriately
         if (isNaN(amountDeployerLocked) || isNaN(amountBuyerLocked)) {
@@ -202,7 +245,7 @@ export default function PredMarketPageV2() {
 
         setbetsbalance({
           allbets: allbets,
-          balance: balance,
+          balance: ethers.utils.formatEther(balance),
           endTime: endTime,
           winner: winner,
           state: state,
@@ -283,7 +326,7 @@ export default function PredMarketPageV2() {
           const network = signer?.provider?.network || "";
           console.log("this is the network", network);
 
-          setChainId(network.chainId);
+          setChain(network);
         }
         setContractInstance(tempContractInstance);
       }
@@ -445,21 +488,30 @@ export default function PredMarketPageV2() {
                             <h3>Bet {index + 1}</h3>
                             <div className="bet-info">
                               Amount To Win:{" "}
-                              {bigNumberToString(
-                                bet.amountDeployerLocked.add(
-                                  bet.amountBuyerLocked
+                              {ethers.utils.formatEther(
+                                ethers.BigNumber.from(
+                                  bet.amountDeployerLocked
+                                ).add(
+                                  ethers.BigNumber.from(
+                                    bet.amountBuyerLocked > 0
+                                      ? bet.amountBuyerLocked
+                                      : bet.amountToBuyFor
+                                  )
                                 )
                               )}
+                              {contract.chain.name}
                             </div>
                             {bet.selling && (
                               <div className="bet-info">
                                 Cost To Purchase:{" "}
-                                {bigNumberToString(bet.amountToBuyFor)}
+                                {ethers.utils.formatEther(
+                                  bigNumberToString(bet.amountToBuyFor)
+                                )}
                               </div>
                             )}
                             <div className="bet-info">
                               Owner Of Bet Wins If:{" "}
-                              {bet.conditionForBuyerToWin === 0
+                              {bet.conditionForBuyerToWin === 1
                                 ? contract.eventA
                                 : contract.eventB}{" "}
                               Wins

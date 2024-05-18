@@ -1,0 +1,146 @@
+.container {
+  font-family: "Roboto", sans-serif;
+  color: #333;
+  padding: 20px;
+  background-color: #f7f7f7;
+}
+
+.content {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.details,
+.betForm,
+.bets {
+  flex: 1;
+  padding: 20px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  margin: 10px;
+}
+
+.marketName,
+.fullName,
+.matchup,
+.winnings,
+.balance {
+  margin-bottom: 10px;
+}
+
+.matchup {
+  font-size: 18px;
+}
+
+.vs {
+  color: red;
+}
+
+.timer,
+.createBet {
+  margin-bottom: 20px;
+}
+
+.toggleButton {
+  background: #4caf50;
+  color: white;
+  border: none;
+  padding: 10px;
+  cursor: pointer;
+  border-radius: 4px;
+  margin-bottom: 10px;
+}
+
+.inputFields {
+  margin-top: 10px;
+}
+
+.input,
+.select,
+.submitButton {
+  display: block;
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 10px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+}
+
+.submitButton {
+  background: #007bff;
+  color: white;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.filterButton {
+  background: #007bff;
+  color: white;
+  border: none;
+  padding: 10px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.bets {
+  margin-top: 20px;
+}
+
+.betCard {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  margin-bottom: 10px;
+  padding: 20px;
+}
+
+.betInfo {
+  margin-bottom: 10px;
+}
+
+.betSelection {
+  display: flex;
+  align-items: center;
+}
+
+.unlistButton,
+.buyButton,
+.sellButton {
+  background: #ff5733;
+  color: white;
+  border: none;
+  padding: 10px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.adminControls {
+  margin-top: 20px;
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.endBetButton {
+  background: #dc3545;
+  color: white;
+  border: none;
+  padding: 10px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.noBets {
+  text-align: center;
+  color: #999;
+  font-size: 18px;
+  padding: 20px;
+}

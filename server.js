@@ -94,6 +94,15 @@ async function updateAllRates() {
   console.log("All rates updated");
 }
 
+app.get("/api/rates", async (req, res) => {
+  let rates = {};
+  // Assuming 'rateCache' is a Map or similar structure
+  rateCache.forEach((value, key) => {
+    rates[key] = value;
+  });
+  res.json(rates);
+});
+
 // Initial fetch and setup periodic update
 updateAllRates();
 setInterval(updateAllRates, FETCH_INTERVAL);
