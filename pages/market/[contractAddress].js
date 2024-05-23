@@ -96,6 +96,51 @@ export default function PredMarketPageV2() {
   });
   const [filter, setFilter] = useState("forSale");
 
+  useEffect(() => {
+    const deployContract = async () => {
+      if (
+        signer &&
+        contract &&
+        contractAddress &&
+        typeof window.ethereum !== "undefined"
+      ) {
+        const tempContractInstance = new ethers.Contract(
+          contractAddress,
+          predMarketArtifact.abi,
+          signer
+        );
+
+        if (signer) {
+          const saddress = await signer.getAddress();
+          setSignerAddress(saddress);
+
+          const network = await signer.provider.getNetwork();
+          console.log("This is the network", network);
+
+          if (contract && contract.chain && contract.chain.chainId) {
+            const expectedChainId = contract.chain.chainId;
+
+            if (network.chainId !== expectedChainId) {
+              setNetworkMismatch(true);
+            } else {
+              setNetworkMismatch(false);
+              console.log("Live on chain: ", network.chainId);
+              setContractInstance(tempContractInstance);
+
+              setChain(commonChains[network.chainId]);
+            }
+          } else {
+            console.error("Contract or contract.chain.chainId is not defined");
+          }
+        }
+      }
+    };
+
+    if (contractAddress) {
+      deployContract();
+    }
+  }, [contractAddress, signer, contract]);
+
   const updateBetterMongoDB = async (address, signerAddress) => {
     try {
       // Correctly construct the URL using template literals
@@ -310,7 +355,6 @@ export default function PredMarketPageV2() {
         let allbets, balance, endTime, winner, state;
         [allbets, balance, endTime, winner, state] =
           await contractInstance.allBets_Balance();
-        console.log(allbets, "all the bets");
 
         setbetsbalance({
           allbets: allbets,
@@ -319,7 +363,6 @@ export default function PredMarketPageV2() {
           winner: winner,
           state: state,
         });
-        console.log(bets_balance.state, "state ");
 
         const totalWinnings = calculateTotalWinnings(allbets);
 
@@ -390,8 +433,6 @@ export default function PredMarketPageV2() {
         .then((data) => {
           if (data) {
             setContract(data);
-
-            displayAllBets();
           } else {
             console.log("Contract data not found or error occurred");
           }
@@ -448,54 +489,10 @@ export default function PredMarketPageV2() {
   };
 
   useEffect(() => {
-    const deployContract = async () => {
-      if (
-        signer &&
-        contract &&
-        contractAddress &&
-        typeof window.ethereum !== "undefined"
-      ) {
-        const tempContractInstance = new ethers.Contract(
-          contractAddress,
-          predMarketArtifact.abi,
-          signer
-        );
-
-        if (signer) {
-          const saddress = await signer.getAddress();
-          setSignerAddress(saddress);
-
-          const network = await signer.provider.getNetwork();
-          console.log("This is the network", network);
-
-          if (contract && contract.chain && contract.chain.chainId) {
-            const expectedChainId = contract.chain.chainId;
-
-            if (network.chainId !== expectedChainId) {
-              setNetworkMismatch(true);
-            } else {
-              setNetworkMismatch(false);
-              console.log("Live on chain: ", network.chainId);
-              setContractInstance(tempContractInstance);
-
-              setChain(commonChains[network.chainId]);
-            }
-          } else {
-            console.error("Contract or contract.chain.chainId is not defined");
-          }
-        }
-      }
-    };
-
-    if (contractAddress) {
-      deployContract();
-    }
-  }, [contractAddress, signer, contract]);
-
-  useEffect(() => {
     // Ensure that contractInstance is not null and is ready to use
     if (contractInstance && signer) {
       const eventName = "shithappened"; // Make sure this matches your contract
+      displayAllBets();
 
       // Attach the event listener
       contractInstance.on(eventName, displayAllBets);
@@ -553,13 +550,15 @@ export default function PredMarketPageV2() {
                 </div>
                 <div className="input-container">
                   <div>
-                    <div className="countdown-container">
-                      <h4 className="countdown-heading">Time left to bet:</h4>
-                      <CountdownTimer
-                        endTime={contract.endsAt}
-                        className="countdown-time"
-                      />
-                    </div>
+                    {bets_balance.state === 0 && (
+                      <div className="countdown-container">
+                        <h4 className="countdown-heading">Time left to bet:</h4>
+                        <CountdownTimer
+                          endTime={contract.endsAt}
+                          className="countdown-time"
+                        />
+                      </div>
+                    )}
 
                     <div className="createBetContainer">
                       {bets_balance.state === 0 &&
@@ -616,8 +615,9 @@ export default function PredMarketPageV2() {
                           )}
                         </>
                       ) : bets_balance.state === 1 ||
-                        Date.now() >
-                          new Date(bets_balance.endTime).getTime() ? (
+                        (bets_balance.state === 0 &&
+                          Date.now() >
+                            new Date(bets_balance.endTime).getTime()) ? (
                         <>
                           <p>The betting is closed or completed.</p>
                           <input

@@ -16,14 +16,13 @@ export default function ContractsPage() {
 
   useEffect(() => {
     async function fetchInitialContracts() {
-      const response = await fetch(
-        "http://localhost:3001/getContracts?collections=Contracts,ExpiredContracts,Disagreements"
-      );
+      const response = await fetch("http://localhost:3001/getContracts");
       if (!response.ok) {
         throw new Error("Network response was not ok");
       }
       const contracts = await response.json();
       setAllContracts(contracts);
+      console.log(contracts);
       setIsLoading(false);
     }
 
