@@ -12,6 +12,28 @@ const TournamentInfo = ({ slug }) => {
   const [searchInput, setSearchInput] = useState("");
   const [isLoadingSets, setIsLoadingSets] = useState(false);
   const [phases, setPhases] = useState([]);
+  const commonChains = {
+    56: {
+      // Binance Smart Chain
+      chainName: "Binance Smart Chain",
+    },
+    137: {
+      // Polygon
+      chainName: "Polygon Mainnet",
+    },
+    43114: {
+      // Avalanche
+      chainName: "Avalanche Mainnet",
+    },
+    250: {
+      // Fantom
+      chainName: "Fantom Opera",
+    },
+    31337: {
+      // Hardhat Localhost
+      chainName: "Hardhat Localhost",
+    },
+  };
 
   const signer = useSigner();
   const [currentChainId, setCurrentChainId] = useState(
@@ -187,18 +209,27 @@ const TournamentInfo = ({ slug }) => {
       console.log(chainId);
 
       if (!isDeployed && chainId) {
-        const contractAddress = await deployPredMarket(
-          eventA,
-          eventB,
-          tags,
-          NameofMarket,
-          signer,
-          fullName,
-          endsAt
+        console.log(signer);
+        const userConfirmed = confirm(
+          `You are about to deploy a Bet that involves ${eventA} and ${eventB}... on chain: ${signer.provider.network.name}`
         );
+        if (userConfirmed) {
+          const contractAddress = await deployPredMarket(
+            eventA,
+            eventB,
+            tags,
+            NameofMarket,
+            signer,
+            fullName,
+            endsAt
+          );
+        }
       } else {
-        alert("Contract Already Deployed");
-        console.log(isDeployed);
+        if (chainId) {
+          alert("Contract Already Deployed");
+        } else {
+          alert("Can Not Confirm Chain");
+        }
       }
 
       // Here, you could update your local state to include the contractAddress for this set

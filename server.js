@@ -26,6 +26,7 @@ client
       console.log(`Server running on port ${PORT}`);
       scheduleTasks();
       fetchAllTournamentDetails();
+      updateContractsCache();
     });
   })
   .catch((err) => {
@@ -160,8 +161,8 @@ app.post("/addContract", async (req, res) => {
 
 app.post("/moveToDisagreements", async (req, res) => {
   try {
-    const { contractAddress, disagreementText } = req.body;
-    let sourceCollection = db.collection("ExpiredContracts");
+    const { contractAddress, reason } = req.body;
+    let sourceCollection = db.collection("Contracts");
     const targetCollection = db.collection("Disagreements");
 
     // Find the contract in the source collection
@@ -169,7 +170,7 @@ app.post("/moveToDisagreements", async (req, res) => {
 
     // If not found in ExpiredContracts, search in Contracts collection
     if (!contract) {
-      sourceCollection = db.collection("Contracts");
+      sourceCollection = db.collection("ExpiredContracts");
       contract = await sourceCollection.findOne({ address: contractAddress });
 
       // If still not found, respond with an error
@@ -182,7 +183,7 @@ app.post("/moveToDisagreements", async (req, res) => {
     // Include the disagreementText and update the lastModified field
     const updatedContract = {
       ...contract,
-      disagreementText: disagreementText,
+      disagreementText: reason,
       lastModified: new Date(),
     };
 
@@ -201,13 +202,65 @@ app.post("/moveToDisagreements", async (req, res) => {
   }
 });
 
+// app.get("/getContracts", async (req, res) => {
+//   try {
+//     const collection = db.collection("Contracts");
+//     const contracts = await collection.find({}).toArray();
+//     res.status(200).json(contracts);
+//   } catch (error) {
+//     console.error("Error fetching contracts from MongoDB:", error);
+//     res.status(500).send("Error fetching contracts");
+//   }
+// });
+
+const contractsCache = new NodeCache(); // This will store the contracts
+
+async function updateContractsCache() {
+  const collections = ["Contracts", "ExpiredContracts", "Disagreements"];
+  let allContracts = [];
+
+  try {
+    for (const collectionName of collections) {
+      const collection = db.collection(collectionName);
+      const contracts = await collection.find({}).toArray();
+
+      // Append the collectionName to each contract
+      const augmentedContracts = contracts.map((contract) => ({
+        ...contract,
+        collectionName: collectionName, // Adding collection name to each document
+      }));
+
+      allContracts = allContracts.concat(augmentedContracts);
+    }
+
+    // Cache the combined list of contracts with augmented collection name
+    contractsCache.set("allContracts", allContracts, 600); // Set TTL for 10 minutes
+    console.log("Contracts cache updated successfully.");
+  } catch (error) {
+    console.error("Failed to update contracts cache:", error);
+  }
+}
+
+// Schedule the cache update to run every 10 minutes
+cron.schedule("*/10 * * * *", updateContractsCache);
+
 app.get("/getContracts", async (req, res) => {
   try {
-    const collection = db.collection("Contracts");
-    const contracts = await collection.find({}).toArray();
-    res.status(200).json(contracts);
+    // Attempt to get the contracts from the cache
+    const cachedContracts = contractsCache.get("allContracts");
+
+    if (cachedContracts) {
+      console.log("Serving contracts from cache.");
+      res.status(200).json(cachedContracts);
+    } else {
+      // If the cache is empty (unlikely unless there's an error), fallback to DB query
+      console.log("Cache miss, fetching contracts from database...");
+      await updateContractsCache(); // Ensure cache is populated
+      const freshContracts = contractsCache.get("allContracts") || [];
+      res.status(200).json(freshContracts);
+    }
   } catch (error) {
-    console.error("Error fetching contracts from MongoDB:", error);
+    console.error("Error fetching contracts:", error);
     res.status(500).send("Error fetching contracts");
   }
 });

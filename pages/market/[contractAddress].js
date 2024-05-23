@@ -10,6 +10,64 @@ import CountdownTimer, { timeLeft } from "../../components/CountDownTimer";
 export default function PredMarketPageV2() {
   const [contractInstance, setContractInstance] = useState(null);
   const signer = useSigner();
+  const commonChains = {
+    56: {
+      // Binance Smart Chain
+      chainName: "Binance Smart Chain",
+      rpcUrl: "https://bsc-dataseed.binance.org/",
+      nativeCurrency: {
+        name: "Binance Coin",
+        symbol: "BNB",
+        decimals: 18,
+      },
+      blockExplorerUrls: ["https://bscscan.com"],
+    },
+    137: {
+      // Polygon
+      chainName: "Polygon Mainnet",
+      rpcUrl: "https://polygon-rpc.com/",
+      nativeCurrency: {
+        name: "MATIC",
+        symbol: "MATIC",
+        decimals: 18,
+      },
+      blockExplorerUrls: ["https://polygonscan.com"],
+    },
+    43114: {
+      // Avalanche
+      chainName: "Avalanche Mainnet",
+      rpcUrl: "https://api.avax.network/ext/bc/C/rpc",
+      nativeCurrency: {
+        name: "Avalanche",
+        symbol: "AVAX",
+        decimals: 18,
+      },
+      blockExplorerUrls: ["https://snowtrace.io"],
+    },
+    250: {
+      // Fantom
+      chainName: "Fantom Opera",
+      rpcUrl: "https://rpc.ftm.tools/",
+      nativeCurrency: {
+        name: "Fantom",
+        symbol: "FTM",
+        decimals: 18,
+      },
+      blockExplorerUrls: ["https://ftmscan.com"],
+    },
+    31337: {
+      // Hardhat Localhost
+      chainName: "Hardhat Localhost",
+      rpcUrl: "http://127.0.0.1:8545/",
+      nativeCurrency: {
+        name: "Ether",
+        symbol: "ETH",
+        decimals: 18,
+      },
+      // Typically, there is no block explorer for localhost networks
+      blockExplorerUrls: [],
+    },
+  };
 
   const [myLocked, setmyLocked] = useState(null);
   const [buyInIChoose, setbuyInIChoose] = useState(null);
@@ -26,6 +84,8 @@ export default function PredMarketPageV2() {
   const [selectedBets, setSelectedBets] = useState([]);
   const [betPrices, setBetPrices] = useState({});
   const [chain, setChain] = useState(null);
+  const [netWorkMismatch, setNetworkMismatch] = useState(true);
+  const [disagreeText, setDisagreeText] = useState("");
 
   const [bets_balance, setbetsbalance] = useState({
     allbets: [],
@@ -71,9 +131,9 @@ export default function PredMarketPageV2() {
       try {
         // Convert myBet from ether to wei and ensure it's a BigNumber
         const total = parseFloat(myBet) + parseFloat(buyIn);
-        const reverseSelected = selectedOutcome === 1 ? 2 : 1;
+        const reverseSelected = selectedOutcome === "1" ? "2" : "1";
         const selectedName =
-          selectedOutcome === 1 ? contract.eventA : contract.eventB;
+          selectedOutcome === "1" ? contract.eventA : contract.eventB;
         const valueInWei = ethers.utils.parseEther(myBet.toString());
         const valueInWeiBuyIn = ethers.utils.parseEther(buyIn.toString());
 
@@ -180,6 +240,15 @@ export default function PredMarketPageV2() {
       // Convert myBet from ether to wei and ensure it's a BigNumber
       const valueInWei = ethers.utils.parseEther(askingPrice.toString());
 
+      const userConfirmed = confirm(
+        `You are selling this bet for ${askingPrice} ETH. Do you agree?`
+      );
+
+      if (!userConfirmed) {
+        alert("You declined the terms. The bet was not placed.");
+        return;
+      }
+
       const tx = await contractInstance.sellAnExistingBet(
         positionInArray,
         valueInWei
@@ -246,10 +315,11 @@ export default function PredMarketPageV2() {
         setbetsbalance({
           allbets: allbets,
           balance: ethers.utils.formatEther(balance),
-          endTime: endTime,
+          endTime: endTime.toNumber(),
           winner: winner,
           state: state,
         });
+        console.log(bets_balance.state, "state ");
 
         const totalWinnings = calculateTotalWinnings(allbets);
 
@@ -265,6 +335,29 @@ export default function PredMarketPageV2() {
       try {
         const tx = await contractInstance.declareWinner(winner);
         await tx.wait();
+      } catch (error) {
+        console.log(error);
+      }
+    }
+  };
+
+  const voteDisagree = async (reason) => {
+    if (contractInstance) {
+      try {
+        const tx = await contractInstance.disagreeWithOwner({
+          value: ethers.utils.parseEther("0.05"),
+        });
+        await tx.wait();
+        const response = await fetch(
+          "http://localhost:3001/moveToDisagreements",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ contractAddress, reason }), // Include disagreement text here
+          }
+        );
       } catch (error) {
         console.log(error);
       }
@@ -309,33 +402,95 @@ export default function PredMarketPageV2() {
     } else {
       console.log("contractAddress is undefined, waiting for it to be set");
     }
-  }, [contractAddress, signer, contractInstance]); // Ensure this effect runs whenever contractAddress changes
+  }, [contractAddress, signer]); // Ensure this effect runs whenever contractAddress changes
+
+  const switchNetwork = async (targetChainId) => {
+    const chainHex = `0x${targetChainId.toString(16)}`;
+
+    try {
+      await window.ethereum.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: chainHex }],
+      });
+    } catch (switchError) {
+      if (switchError.code === 4902) {
+        try {
+          const chainDetails = commonChains[targetChainId];
+          if (chainDetails) {
+            await window.ethereum.request({
+              method: "wallet_addEthereumChain",
+              params: [
+                {
+                  chainId: chainHex,
+                  chainName: chainDetails.chainName,
+                  nativeCurrency: chainDetails.nativeCurrency,
+                  rpcUrls: [chainDetails.rpcUrl], // Ensure this is an array
+                  blockExplorerUrls: chainDetails.blockExplorerUrls,
+                },
+              ],
+            });
+            window.location.reload();
+          } else {
+            console.error(
+              `No RPC URL available for chain ID: ${targetChainId}. Please add the network manually.`
+            );
+            alert(
+              `Please add the network with chain ID ${targetChainId} manually, as no RPC URL is available.`
+            );
+          }
+        } catch (addError) {
+          console.error("Failed to add the network:", addError);
+        }
+      } else {
+        console.error("Failed to switch the network:", switchError);
+      }
+    }
+  };
 
   useEffect(() => {
     const deployContract = async () => {
-      if (signer && typeof window.ethereum !== "undefined") {
+      if (
+        signer &&
+        contract &&
+        contractAddress &&
+        typeof window.ethereum !== "undefined"
+      ) {
         const tempContractInstance = new ethers.Contract(
           contractAddress,
           predMarketArtifact.abi,
           signer
         );
+
         if (signer) {
           const saddress = await signer.getAddress();
           setSignerAddress(saddress);
 
-          const network = signer?.provider?.network || "";
-          console.log("this is the network", network);
+          const network = await signer.provider.getNetwork();
+          console.log("This is the network", network);
 
-          setChain(network);
+          if (contract && contract.chain && contract.chain.chainId) {
+            const expectedChainId = contract.chain.chainId;
+
+            if (network.chainId !== expectedChainId) {
+              setNetworkMismatch(true);
+            } else {
+              setNetworkMismatch(false);
+              console.log("Live on chain: ", network.chainId);
+              setContractInstance(tempContractInstance);
+
+              setChain(commonChains[network.chainId]);
+            }
+          } else {
+            console.error("Contract or contract.chain.chainId is not defined");
+          }
         }
-        setContractInstance(tempContractInstance);
       }
     };
 
     if (contractAddress) {
       deployContract();
     }
-  }, [contractAddress, signer]);
+  }, [contractAddress, signer, contract]);
 
   useEffect(() => {
     // Ensure that contractInstance is not null and is ready to use
@@ -365,7 +520,16 @@ export default function PredMarketPageV2() {
     <>
       <main className="contract-container">
         <Header />
-        {contract && (
+        {netWorkMismatch ? (
+          <div className="network-switch-modal">
+            <p>
+              You are on the wrong network. Please switch to the correct one.
+            </p>
+            <button onClick={() => switchNetwork(contract.chain.chainId)}>
+              Switch Network
+            </button>
+          </div>
+        ) : (
           <div>
             <div className="contract-container">
               <div className="contract-details-grid">
@@ -378,7 +542,10 @@ export default function PredMarketPageV2() {
                       {contract.eventB}
                     </div>
                     {bets_balance.state === 0 ? (
-                      <p>Total Potential Winnings: {totalWinnings}</p>
+                      <p>
+                        Total Potential Winnings: {totalWinnings}{" "}
+                        {chain?.nativeCurrency?.symbol}
+                      </p>
                     ) : (
                       <h4>Balance: {bets_balance.balance.toString()}</h4>
                     )}
@@ -395,49 +562,76 @@ export default function PredMarketPageV2() {
                     </div>
 
                     <div className="createBetContainer">
-                      <button
-                        className="toggle-inputs-btn"
-                        onClick={() => setShowInputs(!showInputs)}
-                      >
-                        {showInputs ? "Hide Details" : "Deploy A Bet"}
-                      </button>
-                      {showInputs && (
+                      {bets_balance.state === 0 &&
+                      Date.now() < new Date(bets_balance.endTime).getTime() ? (
                         <>
-                          <input
-                            className="input-field"
-                            value={myLocked}
-                            onChange={(e) => setmyLocked(e.target.value)}
-                            placeholder="My Bet"
-                          />
-                          <input
-                            className="input-field"
-                            value={buyInIChoose}
-                            onChange={(e) => setbuyInIChoose(e.target.value)}
-                            placeholder="Buyers Bet"
-                          />
-                          <select
-                            className="dropdown"
-                            value={selectedOutcome}
-                            onChange={(e) => setselectedOutcome(e.target.value)}
-                          >
-                            <option value="" disabled>
-                              Select an outcome...
-                            </option>
-                            <option value="1">{contract.eventA}</option>
-                            <option value="2">{contract.eventB}</option>
-                          </select>
+                          <p>The betting is open.</p>
                           <button
-                            onClick={() =>
-                              sellANewBet(
-                                myLocked,
-                                buyInIChoose,
-                                selectedOutcome
-                              )
-                            }
+                            className="toggle-inputs-btn"
+                            onClick={() => setShowInputs(!showInputs)}
                           >
-                            Submit Bet
+                            {showInputs ? "Hide Details" : "Deploy A Bet"}
+                          </button>
+                          {showInputs && (
+                            <>
+                              <input
+                                className="input-field"
+                                value={myLocked}
+                                onChange={(e) => setmyLocked(e.target.value)}
+                                placeholder={`My Bet In ${chain?.nativeCurrency?.symbol}`}
+                              />
+                              <input
+                                className="input-field"
+                                value={buyInIChoose}
+                                onChange={(e) =>
+                                  setbuyInIChoose(e.target.value)
+                                }
+                                placeholder={`Opponent's Bet In ${chain?.nativeCurrency?.symbol}`}
+                              />
+                              <select
+                                className="dropdown"
+                                value={selectedOutcome}
+                                onChange={(e) =>
+                                  setselectedOutcome(e.target.value)
+                                }
+                              >
+                                <option value="" disabled>
+                                  Select an outcome...
+                                </option>
+                                <option value="1">{contract.eventA}</option>
+                                <option value="2">{contract.eventB}</option>
+                              </select>
+                              <button
+                                onClick={() =>
+                                  sellANewBet(
+                                    myLocked,
+                                    buyInIChoose,
+                                    selectedOutcome
+                                  )
+                                }
+                              >
+                                Submit Bet
+                              </button>
+                            </>
+                          )}
+                        </>
+                      ) : bets_balance.state === 1 ||
+                        Date.now() >
+                          new Date(bets_balance.endTime).getTime() ? (
+                        <>
+                          <p>The betting is closed or completed.</p>
+                          <input
+                            className="input-field"
+                            value={disagreeText}
+                            onChange={(e) => setDisagreeText(e.target.value)}
+                            placeholder={`Disagreement Reason`}
+                          />
+                          <button onClick={() => voteDisagree(disagreeText)}>
+                            Disagree
                           </button>
                         </>
+                      ) : (
+                        <p>Invalid state or the bets have not yet started.</p>
                       )}
                     </div>
                   </div>
@@ -498,15 +692,16 @@ export default function PredMarketPageV2() {
                                       : bet.amountToBuyFor
                                   )
                                 )
-                              )}
-                              {contract.chain.name}
+                              )}{" "}
+                              {chain?.nativeCurrency?.symbol}
                             </div>
                             {bet.selling && (
                               <div className="bet-info">
                                 Cost To Purchase:{" "}
                                 {ethers.utils.formatEther(
                                   bigNumberToString(bet.amountToBuyFor)
-                                )}
+                                )}{" "}
+                                {chain?.nativeCurrency?.symbol}
                               </div>
                             )}
                             <div className="bet-info">
@@ -555,7 +750,7 @@ export default function PredMarketPageV2() {
                                   onChange={(e) =>
                                     handleChangePrice(e.target.value, index)
                                   }
-                                  placeholder="ReSell Price"
+                                  placeholder={`ReSell Price In ${chain?.nativeCurrency?.symbol}`}
                                 />
                                 <button
                                   onClick={() =>

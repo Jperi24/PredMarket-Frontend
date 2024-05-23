@@ -16,9 +16,15 @@ export default function ContractsPage() {
 
   useEffect(() => {
     async function fetchContracts() {
-      const contractsData = await getContracts();
-      setAllContracts(contractsData);
-      applyFilters(contractsData, ""); // Apply initial filter (none)
+      const response = await fetch("http://localhost:3001/getContracts");
+      if (!response.ok) {
+        throw new Error("Network response was not ok");
+      }
+
+      const contracts = await response.json();
+      setAllContracts(contracts);
+      applyFilters(contracts, ""); // Apply initial filter (none)
+      console.log("worked, fuck that old shit");
       setIsLoading(false);
     }
     fetchContracts();
@@ -98,6 +104,31 @@ export default function ContractsPage() {
     router.push(`/market/${contractAddress}`);
   };
 
+  const getImageForTag = (tags) => {
+    const tagMap = {
+      "Super Smash Bros. Melee": "Melee.jpg",
+      "Super Smash Bros. Ultimate": "SSBUltimate.jpg",
+      "TEKKEN 8": "tekken8.jpg",
+      "Street Fighter 6": "streetfighter6.png",
+      "Guilty Gear: Strive": "guiltygearstrive.jpg",
+      Brawlhalla: "brawlhalla.jpg",
+      "Rocket League": "rocketleague.jpg",
+      "Pokémon Unite": "pokemonunite.jpg",
+      "Counter-Strike 2": "csgo2.jpg",
+      "Counter Strike: Global Offensive": "CSGO-Symbol.jpg",
+      "Mortal Kombat 1": "mortalKombat1.jpg",
+
+      "League of Legends": "League:.jpg",
+
+      Fortnite: "FortniteImg.jpg",
+      "Overwatch 2": "overwatch2.jpg", // Add your game images here
+    };
+
+    const defaultImage = "noPhotoAvail.jpg";
+    const foundTag = tags.split(",").find((tag) => tagMap[tag.trim()]);
+    return `http://localhost:3000/${tagMap[foundTag] || defaultImage}`;
+  };
+
   if (isLoading) {
     return (
       <div className="page-container">
@@ -137,19 +168,7 @@ export default function ContractsPage() {
             onClick={() => navigateToMarket(contract.address)}
           >
             <img
-              src={
-                contract.tags && contract.tags.includes("SSBMelee")
-                  ? "http://localhost:3000/MeleeBubble.png"
-                  : contract.tags && contract.tags.includes("SSBUltimate")
-                  ? "http://localhost:3000/SMASHULT.png"
-                  : contract.tags && contract.tags.includes("LeagueOfLegends")
-                  ? "http://localhost:3000/LeagueBubble.png"
-                  : contract.tags && contract.tags.includes("CSGO")
-                  ? "http://localhost:3000/CSGOBubble.png"
-                  : contract.tags && contract.tags.includes("Fortnite")
-                  ? "http://localhost:3000/FortniteBubble.png"
-                  : "http://localhost:3000/noPhotoAvail.jpg"
-              }
+              src={getImageForTag(contract.tags)}
               alt="Contract Image"
               className="contract-image"
             />
