@@ -22,6 +22,8 @@ export default function ContractsPage() {
       }
       const contracts = await response.json();
       setAllContracts(contracts);
+      filterContractsByType("allBets");
+
       console.log(contracts);
       setIsLoading(false);
     }

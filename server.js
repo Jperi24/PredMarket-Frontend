@@ -274,16 +274,27 @@ app.get("/api/contracts/:address", async (req, res) => {
   try {
     const address = req.params.address;
     const contractsCollection = db.collection("Contracts");
+    const disagreementsCollection = db.collection("Disagreements");
+    const expiredContractsCollection = db.collection("ExpiredContracts");
 
     // First try to find the contract in the Contracts collection
     let contract = await contractsCollection.findOne({ address: address });
 
-    // If not found in Contracts, try the ExpiredContracts collection
+    // If not found in Contracts, try the Disagreements collection
+    if (!contract) {
+      contract = await disagreementsCollection.findOne({ address: address });
+    }
 
+    // If not found in Disagreements, try the ExpiredContracts collection
+    if (!contract) {
+      contract = await expiredContractsCollection.findOne({ address: address });
+    }
+
+    // Return the contract if found
     if (contract) {
       res.status(200).json(contract);
     } else {
-      // If the contract is not found in both collections
+      // If the contract is not found in any of the collections
       res.status(404).send("Contract not found");
     }
   } catch (error) {

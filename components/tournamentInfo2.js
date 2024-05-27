@@ -198,6 +198,8 @@ const TournamentInfo = ({ slug }) => {
         ? tournamentData.endAt - now
         : null;
 
+      console.log(tournamentData.endAt, "---", now, "tourneyends new");
+
       // Conditionally set endsAt
       const endsAt =
         !tournamentData.endAt ||

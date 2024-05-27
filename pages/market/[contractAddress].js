@@ -126,6 +126,7 @@ export default function PredMarketPageV2() {
               setNetworkMismatch(false);
               console.log("Live on chain: ", network.chainId);
               setContractInstance(tempContractInstance);
+              displayAllBets();
 
               setChain(commonChains[network.chainId]);
             }
@@ -348,6 +349,9 @@ export default function PredMarketPageV2() {
     console.log(`Total Winnings: ${totalWinnings}`); // Final output before conversion
     return totalWinnings.toString(); // Convert to string for final output
   };
+  const bigNumberToNumber = (bigNumber) => {
+    return parseInt(bigNumber._hex, 16);
+  };
 
   const displayAllBets = async () => {
     if (contractInstance) {
@@ -359,7 +363,7 @@ export default function PredMarketPageV2() {
         setbetsbalance({
           allbets: allbets,
           balance: ethers.utils.formatEther(balance),
-          endTime: endTime.toNumber(),
+          endTime: bigNumberToNumber(endTime),
           winner: winner,
           state: state,
         });
@@ -491,18 +495,22 @@ export default function PredMarketPageV2() {
   useEffect(() => {
     // Ensure that contractInstance is not null and is ready to use
     if (contractInstance && signer) {
-      const eventName = "shithappened"; // Make sure this matches your contract
-      displayAllBets();
+      // Define a list of event names you want to listen to
+      const eventNames = ["shithappened", "winnerDeclaredVoting", "userVoted"];
 
-      // Attach the event listener
-      contractInstance.on(eventName, displayAllBets);
+      // Attach the event listener for each event
+      eventNames.forEach((eventName) => {
+        contractInstance.on(eventName, displayAllBets);
+      });
 
-      // Cleanup function to remove the event listener
+      // Cleanup function to remove the event listeners
       return () => {
-        contractInstance.off(eventName, displayAllBets);
+        eventNames.forEach((eventName) => {
+          contractInstance.off(eventName, displayAllBets);
+        });
       };
     }
-  }, [contractInstance, signer]); // Depend on contractInstance to re-attach the listener if it changes
+  }, [contractInstance, signer]);
 
   const handleSelectBet = (position) => {
     setSelectedBets(
@@ -544,10 +552,21 @@ export default function PredMarketPageV2() {
                         {chain?.nativeCurrency?.symbol}
                       </p>
                     ) : (
-                      <h4>Balance: {bets_balance.balance.toString()}</h4>
+                      <h4>
+                        <div>Balance: {bets_balance.balance.toString()}</div>
+                        <div>
+                          Winner:{" "}
+                          {bets_balance.winner.toString() === "1"
+                            ? contract.eventA
+                            : bets_balance.winner.toString() === "2"
+                            ? contract.eventB
+                            : "Draw/Cancel All Bets Refunded"}
+                        </div>
+                      </h4>
                     )}
                   </h4>
                 </div>
+
                 <div className="input-container">
                   <div>
                     {bets_balance.state === 0 && (
@@ -562,7 +581,7 @@ export default function PredMarketPageV2() {
 
                     <div className="createBetContainer">
                       {bets_balance.state === 0 &&
-                      Date.now() < new Date(bets_balance.endTime).getTime() ? (
+                      Math.floor(Date.now() / 1000) < bets_balance.endTime ? (
                         <>
                           <p>The betting is open.</p>
                           <button
@@ -616,8 +635,8 @@ export default function PredMarketPageV2() {
                         </>
                       ) : bets_balance.state === 1 ||
                         (bets_balance.state === 0 &&
-                          Date.now() >
-                            new Date(bets_balance.endTime).getTime()) ? (
+                          Math.floor(Date.now() / 1000) >
+                            bets_balance.endTime) ? (
                         <>
                           <p>The betting is closed or completed.</p>
                           <input
@@ -631,7 +650,11 @@ export default function PredMarketPageV2() {
                           </button>
                         </>
                       ) : (
-                        <p>Invalid state or the bets have not yet started.</p>
+                        <div className="contract-detail-item">
+                          {" "}
+                          A User has disagreed with the deployer of the bet with
+                          reasoning: {contract.disagreementText}
+                        </div>
                       )}
                     </div>
                   </div>
