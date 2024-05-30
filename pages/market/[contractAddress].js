@@ -6,6 +6,7 @@ import Header from "../../components/Header";
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import CountdownTimer, { timeLeft } from "../../components/CountDownTimer";
+import { resultKeyNameFromField } from "@apollo/client/utilities";
 
 export default function PredMarketPageV2() {
   const [contractInstance, setContractInstance] = useState(null);
@@ -227,6 +228,32 @@ export default function PredMarketPageV2() {
     }
   };
 
+  const redeemBets = async () => {
+    try {
+      const tx = await contractInstance.redeemBets();
+      await tx.wait();
+      if (contract.disagreementText) {
+        try {
+          const response = await fetch(
+            `http://localhost:3001/moveFromDisagreementsToContracts`
+          );
+          if (!response.ok) {
+            throw new Error(
+              `Network response was not ok, status: ${response.status}`
+            );
+          }
+          const data = await response.json();
+          return data;
+        } catch (error) {
+          console.error("Error fetching contract details:", error);
+          // Consider setting state here to display the error on the UI if appropriate
+        }
+      }
+    } catch (error) {
+      console.log(error);
+    }
+  };
+
   // const listBet = async (positionInArray) => {
   //   try {
   //     // Convert myBet from ether to wei and ensure it's a BigNumber
@@ -306,6 +333,15 @@ export default function PredMarketPageV2() {
     }
   };
 
+  const withdrawBet = async () => {
+    try {
+      const tx = await contractInstance.withdraw();
+      await tx.wait;
+    } catch (error) {
+      console.log(error);
+    }
+  };
+
   function handleChangePrice(value, index) {
     setBetPrices((prevPrices) => ({
       ...prevPrices,
@@ -376,6 +412,11 @@ export default function PredMarketPageV2() {
       }
     }
   };
+  const isAuthorizedUser =
+    signerAddress &&
+    contract?.deployerAddress &&
+    (signerAddress === contract.deployerAddress ||
+      signerAddress === "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
 
   const declareWinner = async (winner) => {
     if (contractInstance) {
@@ -583,7 +624,6 @@ export default function PredMarketPageV2() {
                       {bets_balance.state === 0 &&
                       Math.floor(Date.now() / 1000) < bets_balance.endTime ? (
                         <>
-                          <p>The betting is open.</p>
                           <button
                             className="toggle-inputs-btn"
                             onClick={() => setShowInputs(!showInputs)}
@@ -649,12 +689,30 @@ export default function PredMarketPageV2() {
                             Disagree
                           </button>
                         </>
+                      ) : bets_balance.state === 2 ? (
+                        <>
+                          <h4>
+                            A User has disagreed with the deployer of the bet
+                            with reasoning:
+                          </h4>
+                          <h4>{contract.disagreementText}</h4>
+                          <h4>
+                            The Team is looking into it and we will resolve this
+                            issue immediately
+                          </h4>
+                        </>
                       ) : (
-                        <div className="contract-detail-item">
+                        <>
                           {" "}
-                          A User has disagreed with the deployer of the bet with
-                          reasoning: {contract.disagreementText}
-                        </div>
+                          <div className="contract-detail-item">
+                            {" "}
+                            The winner has been finalized, you may withdraw your
+                            balance
+                          </div>
+                          <button onClick={() => withdrawBet()}>
+                            Withdraw Balance
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -799,27 +857,32 @@ export default function PredMarketPageV2() {
               </ul>
             </div>
 
-            {signerAddress == contract.deployerAddress && (
-              <>
-                <div>
-                  <select id="outcomeSelect" className="dropdown">
-                    <option value="1">Set Winner As {contract.eventA}</option>
-                    <option value="2">Set Winner As {contract.eventB}</option>
-                    <option value="3">Cancel Refund</option>
-                  </select>
-
-                  <button
-                    onClick={() => {
-                      const selectedOutcome =
-                        document.getElementById("outcomeSelect").value;
-                      declareWinner(parseInt(selectedOutcome, 10));
-                    }}
-                  >
-                    End Bet
-                  </button>
-                </div>
-              </>
-            )}
+            {contract &&
+              contractInstance &&
+              isAuthorizedUser &&
+              bets_balance.state < 4 && (
+                <>
+                  <div>
+                    <select id="outcomeSelect" className="dropdown">
+                      <option value="1">Set Winner As {contract.eventA}</option>
+                      <option value="2">Set Winner As {contract.eventB}</option>
+                      <option value="3">Cancel Refund</option>
+                    </select>
+                    <button
+                      onClick={() => {
+                        const selectedOutcome =
+                          document.getElementById("outcomeSelect").value;
+                        declareWinner(parseInt(selectedOutcome, 10));
+                      }}
+                    >
+                      End Bet
+                    </button>
+                    {bets_balance.state > 0 && (
+                      <button onClick={() => redeemBets()}>Redeem Bets</button>
+                    )}
+                  </div>
+                </>
+              )}
           </div>
         )}
       </main>

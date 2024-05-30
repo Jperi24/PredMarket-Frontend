@@ -201,6 +201,44 @@ app.post("/moveToDisagreements", async (req, res) => {
   }
 });
 
+app.post("/moveFromDisagreementsToContracts", async (req, res) => {
+  try {
+    const { contractAddress } = req.body;
+    const targetCollection = db.collection("Contracts");
+    let sourceCollection = db.collection("Disagreements");
+
+    // Find the contract in the source collection
+    let contract = await sourceCollection.findOne({ address: contractAddress });
+
+    if (!contract) {
+      sourceCollection = db.collection("ExpiredContracts");
+      contract = await sourceCollection.findOne({ address: contractAddress });
+      if (!contract) {
+        return res.status(404).send("Contract not found in collections");
+      }
+    }
+
+    // Prepare the document to be inserted into the Contracts collection
+    // Removing the disagreementText field
+    const updatedContract = {
+      ...contract,
+      lastModified: new Date(),
+    };
+    delete updatedContract.disagreementText; // Deletes the disagreementText field
+
+    // Insert the updated document into the Contracts collection
+    await targetCollection.insertOne(updatedContract);
+
+    // Remove the original document from its source collection
+    await sourceCollection.deleteOne({ address: contractAddress });
+
+    res.status(200).send("Contract moved to Contracts collection successfully");
+  } catch (error) {
+    console.error("Error moving contract to Contracts:", error);
+    res.status(500).send("Error moving contract");
+  }
+});
+
 // app.get("/getContracts", async (req, res) => {
 //   try {
 //     const collection = db.collection("Contracts");
