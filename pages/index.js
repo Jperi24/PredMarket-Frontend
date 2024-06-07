@@ -22,7 +22,6 @@ export default function ContractsPage() {
       }
       const contracts = await response.json();
       setAllContracts(contracts);
-      filterContractsByType("allBets");
 
       console.log(contracts);
       setIsLoading(false);
@@ -50,34 +49,6 @@ export default function ContractsPage() {
     filterContractsByType(filterType);
   };
 
-  // const filterContractsByType = (filterType) => {
-  //   let filtered = allContracts;
-  //   switch (filterType) {
-  //     case "allBets":
-  //       break;
-  //     case "userBets":
-  //       filtered = filtered.filter(
-  //         (contract) => contract.betters && contract.betters.includes(signer)
-  //       );
-  //       break;
-  //     case "ownerDeployed":
-  //       filtered = filtered.filter(
-  //         (contract) => contract.deployerAddress === signer
-  //       );
-  //       break;
-  //     default:
-  //       filtered = filtered.filter(
-  //         (contract) =>
-  //           contract.tags &&
-  //           contract.tags
-  //             .split(",")
-  //             .map((tag) => tag.trim())
-  //             .includes(filterType)
-  //       );
-  //       break;
-  //   }
-  //   applyFilters(filtered, searchQuery);
-  // };
   const filterContractsByType = (filterType) => {
     let filtered = allContracts;
     switch (filterType) {
@@ -86,6 +57,7 @@ export default function ContractsPage() {
         filtered = filtered.filter(
           (contract) => contract.collectionName === "Contracts"
         );
+        console.log("Filtered for allBets:", filtered);
         break;
       case "userBets":
         filtered = filtered.filter(

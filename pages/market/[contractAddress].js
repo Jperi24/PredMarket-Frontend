@@ -90,10 +90,11 @@ export default function PredMarketPageV2() {
 
   const [bets_balance, setbetsbalance] = useState({
     allbets: [],
-    balance: 0,
     endTime: 0,
     winner: 0,
     state: 0,
+    endOfVoting: 0,
+    winnings: 0,
   });
   const [filter, setFilter] = useState("forSale");
 
@@ -186,7 +187,7 @@ export default function PredMarketPageV2() {
 
         // Display the alert-style message to the user and get their response
         const userConfirmed = confirm(
-          `You are depositing ${myBet} ETH. If ${selectedName} wins and another user buys this bet for ${buyIn} ETH, you will be rewarded ${total} ETH. If another user does not buy in, you will be refunded ${myBet} ETH. Do you accept the terms?`
+          `You are depositing ${myBet} ETH. If ${selectedName} wins and another user buys this bet for ${buyIn} ETH, you will be rewarded ${total} ETH. If another user does not buy in by the time the deployer of the bet declares a winner, you will be refunded ${myBet} ETH. You are eligible to unlist this bet at any time. Do you accept the terms?`
         );
 
         if (!userConfirmed) {
@@ -235,7 +236,14 @@ export default function PredMarketPageV2() {
       if (contract.disagreementText) {
         try {
           const response = await fetch(
-            `http://localhost:3001/moveFromDisagreementsToContracts`
+            `http://localhost:3001/moveFromDisagreementsToContracts`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ contractAddress }), // Include disagreement text here
+            }
           );
           if (!response.ok) {
             throw new Error(
@@ -314,7 +322,7 @@ export default function PredMarketPageV2() {
       const valueInWei = ethers.utils.parseEther(askingPrice.toString());
 
       const userConfirmed = confirm(
-        `You are selling this bet for ${askingPrice} ETH. Do you agree?`
+        `You are selling this bet for ${askingPrice} ETH and will no longer be participating. Do you agree?`
       );
 
       if (!userConfirmed) {
@@ -392,16 +400,17 @@ export default function PredMarketPageV2() {
   const displayAllBets = async () => {
     if (contractInstance) {
       try {
-        let allbets, balance, endTime, winner, state;
-        [allbets, balance, endTime, winner, state] =
+        let allbets, endTime, winner, state, endOfVoting, winnings;
+        [allbets, endTime, winner, state, endOfVoting, winnings] =
           await contractInstance.allBets_Balance();
 
         setbetsbalance({
           allbets: allbets,
-          balance: ethers.utils.formatEther(balance),
           endTime: bigNumberToNumber(endTime),
           winner: winner,
           state: state,
+          endOfVoting: bigNumberToNumber(endOfVoting),
+          winnings: ethers.utils.formatEther(bigNumberToNumber(winnings)),
         });
 
         const totalWinnings = calculateTotalWinnings(allbets);
@@ -594,7 +603,6 @@ export default function PredMarketPageV2() {
                       </p>
                     ) : (
                       <h4>
-                        <div>Balance: {bets_balance.balance.toString()}</div>
                         <div>
                           Winner:{" "}
                           {bets_balance.winner.toString() === "1"
@@ -689,7 +697,9 @@ export default function PredMarketPageV2() {
                             Disagree
                           </button>
                         </>
-                      ) : bets_balance.state === 2 ? (
+                      ) : bets_balance.state === 2 &&
+                        Math.floor(Date.now() / 1000) <
+                          bets_balance.endOfVoting ? (
                         <>
                           <h4>
                             A User has disagreed with the deployer of the bet
@@ -707,8 +717,9 @@ export default function PredMarketPageV2() {
                           <div className="contract-detail-item">
                             {" "}
                             The winner has been finalized, you may withdraw your
-                            balance
+                            balance of:
                           </div>
+                          <h4>{bets_balance.winnings}</h4>
                           <button onClick={() => withdrawBet()}>
                             Withdraw Balance
                           </button>
