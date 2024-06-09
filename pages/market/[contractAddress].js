@@ -432,6 +432,18 @@ export default function PredMarketPageV2() {
       try {
         const tx = await contractInstance.declareWinner(winner);
         await tx.wait();
+        const voteTime = Math.floor(Date.now() / 7200) + 1000;
+
+        const response = await fetch(
+          "http://localhost:3001/api/updateMongoDB",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ contractAddress, voteTime }), // Include disagreement text here
+          }
+        );
       } catch (error) {
         console.log(error);
       }
@@ -681,7 +693,9 @@ export default function PredMarketPageV2() {
                             </>
                           )}
                         </>
-                      ) : bets_balance.state === 1 ||
+                      ) : (bets_balance.state === 1 &&
+                          Math.floor(Date.now() / 1000) <
+                            bets_balance.voteTime) ||
                         (bets_balance.state === 0 &&
                           Math.floor(Date.now() / 1000) >
                             bets_balance.endTime) ? (
@@ -693,6 +707,13 @@ export default function PredMarketPageV2() {
                             onChange={(e) => setDisagreeText(e.target.value)}
                             placeholder={`Disagreement Reason`}
                           />
+                          <p>
+                            You May Disagree For{" "}
+                            <CountdownTimer
+                              endTime={contract.voteTime}
+                              className="countdown-time"
+                            />
+                          </p>
                           <button onClick={() => voteDisagree(disagreeText)}>
                             Disagree
                           </button>

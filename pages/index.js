@@ -30,6 +30,12 @@ export default function ContractsPage() {
     fetchInitialContracts();
   }, []);
 
+  useEffect(() => {
+    if (allContracts.length > 0) {
+      handleTagFilter("allBets");
+    }
+  }, [allContracts]); // Dependency on allContracts and currentFilter
+
   const applyFilters = (contracts, search) => {
     const filtered = contracts.filter((contract) => {
       return (

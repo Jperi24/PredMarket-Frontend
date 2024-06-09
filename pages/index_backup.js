@@ -15,20 +15,27 @@ export default function ContractsPage() {
   const router = useRouter();
 
   useEffect(() => {
-    async function fetchContracts() {
+    async function fetchInitialContracts() {
       const response = await fetch("http://localhost:3001/getContracts");
       if (!response.ok) {
         throw new Error("Network response was not ok");
       }
-
       const contracts = await response.json();
       setAllContracts(contracts);
-      applyFilters(contracts, ""); // Apply initial filter (none)
-      console.log("worked, fuck that old shit");
+
+      console.log(contracts);
+      handleTagFilter("allBets");
       setIsLoading(false);
     }
-    fetchContracts();
+
+    fetchInitialContracts();
   }, []);
+
+  useEffect(() => {
+    if (allContracts.length > 0) {
+      handleTagFilter("allBets");
+    }
+  }, [allContracts]); // Dependency on allContracts and currentFilter
 
   const applyFilters = (contracts, search) => {
     const filtered = contracts.filter((contract) => {
@@ -53,15 +60,29 @@ export default function ContractsPage() {
     let filtered = allContracts;
     switch (filterType) {
       case "allBets":
+        // Filter out contracts from "ExpiredContracts" and "Disagreements"
+        filtered = filtered.filter(
+          (contract) => contract.collectionName === "Contracts"
+        );
+        console.log("Filtered for allBets:", filtered);
         break;
       case "userBets":
         filtered = filtered.filter(
-          (contract) => contract.betters && contract.betters.includes(signer)
+          (contract) =>
+            contract.betters &&
+            contract.betters.includes(signer) &&
+            (contract.collectionName === "Contracts" ||
+              contract.collectionName === "ExpiredContracts" ||
+              contract.collectionName === "Disagreements")
         );
         break;
       case "ownerDeployed":
         filtered = filtered.filter(
-          (contract) => contract.deployerAddress === signer
+          (contract) =>
+            contract.deployerAddress === signer &&
+            (contract.collectionName === "Contracts" ||
+              contract.collectionName === "ExpiredContracts" ||
+              contract.collectionName === "Disagreements")
         );
         break;
       default:
