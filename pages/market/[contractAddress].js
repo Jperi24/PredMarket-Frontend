@@ -76,7 +76,7 @@ export default function PredMarketPageV2() {
   const [showInputs, setShowInputs] = useState(false);
   const [contract, setContract] = useState(null);
   const router = useRouter();
-  const [selectedOutcome, setselectedOutcome] = useState("");
+
   const [signerAddress, setSignerAddress] = useState(null);
   const [newPrice, setnewPrice] = useState(null);
   const [totalWinnings, setTotalWinnings] = useState(0);
@@ -87,6 +87,8 @@ export default function PredMarketPageV2() {
   const [chain, setChain] = useState(null);
   const [netWorkMismatch, setNetworkMismatch] = useState(true);
   const [disagreeText, setDisagreeText] = useState("");
+  const [selectedOutcome, setSelectedOutcome] = useState("");
+  const [selectedOutcome2, setSelectedOutcome2] = useState("0");
 
   const [bets_balance, setbetsbalance] = useState({
     allbets: [],
@@ -97,6 +99,33 @@ export default function PredMarketPageV2() {
     winnings: 0,
   });
   const [filter, setFilter] = useState("forSale");
+
+  const [currentTime, setCurrentTime] = useState(Math.floor(Date.now() / 1000));
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const newTime = Math.floor(Date.now() / 1000);
+      console.log(newTime, "new time"); // Log the converted timestamp
+      setCurrentTime(newTime);
+      console.log(
+        isBettingOpen,
+        isVotingTime,
+        isBettingClosed,
+        isDisagreementState,
+        bets_balance.voteTime
+      );
+    }, 10000);
+
+    return () => clearInterval(interval); // Clean up the interval
+  }, []);
+
+  const isBettingOpen =
+    bets_balance.state === 0 && currentTime < bets_balance.endTime;
+  const isVotingTime =
+    bets_balance.state === 1 && currentTime < contract.voteTime;
+  const isBettingClosed =
+    bets_balance.state === 0 && currentTime > bets_balance.endTime;
+  const isDisagreementState = bets_balance.state === 2;
 
   useEffect(() => {
     const deployContract = async () => {
@@ -228,51 +257,6 @@ export default function PredMarketPageV2() {
       console.log(error);
     }
   };
-
-  const redeemBets = async () => {
-    try {
-      const tx = await contractInstance.redeemBets();
-      await tx.wait();
-      if (contract.disagreementText) {
-        try {
-          const response = await fetch(
-            `http://localhost:3001/moveFromDisagreementsToContracts`,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ contractAddress }), // Include disagreement text here
-            }
-          );
-          if (!response.ok) {
-            throw new Error(
-              `Network response was not ok, status: ${response.status}`
-            );
-          }
-          const data = await response.json();
-          return data;
-        } catch (error) {
-          console.error("Error fetching contract details:", error);
-          // Consider setting state here to display the error on the UI if appropriate
-        }
-      }
-    } catch (error) {
-      console.log(error);
-    }
-  };
-
-  // const listBet = async (positionInArray) => {
-  //   try {
-  //     // Convert myBet from ether to wei and ensure it's a BigNumber
-
-  //     const tx = await contractInstance.listBet(positionInArray);
-  //     await tx.wait();
-  //   } catch (error) {
-  //     console.log("Can't unlist bet, this whyyyy");
-  //     console.log(error);
-  //   }
-  // };
 
   const buyBet = async (positionInArray, purchasePrice) => {
     try {
@@ -410,7 +394,7 @@ export default function PredMarketPageV2() {
           winner: winner,
           state: state,
           endOfVoting: bigNumberToNumber(endOfVoting),
-          winnings: ethers.utils.formatEther(bigNumberToNumber(winnings)),
+          winnings: ethers.utils.formatEther(winnings),
         });
 
         const totalWinnings = calculateTotalWinnings(allbets);
@@ -427,12 +411,16 @@ export default function PredMarketPageV2() {
     (signerAddress === contract.deployerAddress ||
       signerAddress === "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
 
-  const declareWinner = async (winner) => {
+  const declareWinner = async (winner, isDeclaredCorrect) => {
     if (contractInstance) {
       try {
-        const tx = await contractInstance.declareWinner(winner);
+        const voteTime = Math.floor(Date.now() / 1000) + 7200;
+        console.log(voteTime);
+        const tx = await contractInstance.declareWinner(
+          winner,
+          isDeclaredCorrect
+        );
         await tx.wait();
-        const voteTime = Math.floor(Date.now() / 7200) + 1000;
 
         const response = await fetch(
           "http://localhost:3001/api/updateMongoDB",
@@ -453,8 +441,9 @@ export default function PredMarketPageV2() {
   const voteDisagree = async (reason) => {
     if (contractInstance) {
       try {
+        const value = await contractInstance.creatorLocked();
         const tx = await contractInstance.disagreeWithOwner({
-          value: ethers.utils.parseEther("0.05"),
+          value: value,
         });
         await tx.wait();
         const response = await fetch(
@@ -583,6 +572,12 @@ export default function PredMarketPageV2() {
     );
   };
 
+  const handleEndBet = () => {
+    const outcomeValue = parseInt(selectedOutcome, 10);
+    const outcomeValue2 = parseInt(selectedOutcome2, 10);
+    declareWinner(outcomeValue, outcomeValue2);
+  };
+
   return (
     <>
       <main className="contract-container">
@@ -641,8 +636,7 @@ export default function PredMarketPageV2() {
                     )}
 
                     <div className="createBetContainer">
-                      {bets_balance.state === 0 &&
-                      Math.floor(Date.now() / 1000) < bets_balance.endTime ? (
+                      {isBettingOpen ? (
                         <>
                           <button
                             className="toggle-inputs-btn"
@@ -670,7 +664,7 @@ export default function PredMarketPageV2() {
                                 className="dropdown"
                                 value={selectedOutcome}
                                 onChange={(e) =>
-                                  setselectedOutcome(e.target.value)
+                                  setSelectedOutcome(e.target.value)
                                 }
                               >
                                 <option value="" disabled>
@@ -693,12 +687,7 @@ export default function PredMarketPageV2() {
                             </>
                           )}
                         </>
-                      ) : (bets_balance.state === 1 &&
-                          Math.floor(Date.now() / 1000) <
-                            bets_balance.voteTime) ||
-                        (bets_balance.state === 0 &&
-                          Math.floor(Date.now() / 1000) >
-                            bets_balance.endTime) ? (
+                      ) : isVotingTime ? (
                         <>
                           <p>The betting is closed or completed.</p>
                           <input
@@ -708,7 +697,6 @@ export default function PredMarketPageV2() {
                             placeholder={`Disagreement Reason`}
                           />
                           <p>
-                            You May Disagree For{" "}
                             <CountdownTimer
                               endTime={contract.voteTime}
                               className="countdown-time"
@@ -718,9 +706,7 @@ export default function PredMarketPageV2() {
                             Disagree
                           </button>
                         </>
-                      ) : bets_balance.state === 2 &&
-                        Math.floor(Date.now() / 1000) <
-                          bets_balance.endOfVoting ? (
+                      ) : isDisagreementState ? (
                         <>
                           <h4>
                             A User has disagreed with the deployer of the bet
@@ -740,7 +726,10 @@ export default function PredMarketPageV2() {
                             The winner has been finalized, you may withdraw your
                             balance of:
                           </div>
-                          <h4>{bets_balance.winnings}</h4>
+                          <h4>
+                            {bets_balance.winnings}{" "}
+                            {chain?.nativeCurrency?.symbol}{" "}
+                          </h4>
                           <button onClick={() => withdrawBet()}>
                             Withdraw Balance
                           </button>
@@ -893,27 +882,41 @@ export default function PredMarketPageV2() {
               contractInstance &&
               isAuthorizedUser &&
               bets_balance.state < 4 && (
-                <>
-                  <div>
-                    <select id="outcomeSelect" className="dropdown">
-                      <option value="1">Set Winner As {contract.eventA}</option>
-                      <option value="2">Set Winner As {contract.eventB}</option>
-                      <option value="3">Cancel Refund</option>
-                    </select>
-                    <button
-                      onClick={() => {
-                        const selectedOutcome =
-                          document.getElementById("outcomeSelect").value;
-                        declareWinner(parseInt(selectedOutcome, 10));
-                      }}
+                <div>
+                  <select
+                    id="outcomeSelect"
+                    className="dropdown"
+                    value={selectedOutcome}
+                    onChange={(e) => setSelectedOutcome(e.target.value)}
+                  >
+                    <option value="1">Set Winner As {contract.eventA}</option>
+                    <option value="2">Set Winner As {contract.eventB}</option>
+                    <option value="3">Cancel Refund</option>
+                  </select>
+
+                  {bets_balance.state === 2 && (
+                    <select
+                      id="outcomeSelect2"
+                      className="dropdown"
+                      value={selectedOutcome2}
+                      onChange={(e) => setSelectedOutcome2(e.target.value)}
                     >
-                      End Bet
-                    </button>
-                    {bets_balance.state > 0 && (
-                      <button onClick={() => redeemBets()}>Redeem Bets</button>
-                    )}
-                  </div>
-                </>
+                      <option value="1">
+                        The User That Disagreed Was Correct And Owner Was Wrong
+                      </option>
+                      <option value="2">
+                        The User That Disagreed Was Not Correct And Owner Was
+                        Right
+                      </option>
+                      <option value="3">
+                        The User That Disagreed Was Not Correct And Owner Was
+                        Not Correct
+                      </option>
+                    </select>
+                  )}
+
+                  <button onClick={handleEndBet}>End Bet</button>
+                </div>
               )}
           </div>
         )}

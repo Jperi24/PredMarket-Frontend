@@ -153,23 +153,6 @@ function App() {
               padding: "20px",
             }}
           >
-            <div
-              style={{
-                padding: "10px",
-                border: "1px solid #ccc",
-              }}
-            >
-              <input
-                type="text"
-                placeholder="Enter tournament slug..."
-                value={slugInput}
-                onChange={handleSlugInputChange}
-                style={{ margin: "10px", padding: "5px", width: "90%" }}
-              />
-              <button onClick={handleSlugSubmit} style={{ padding: "5px" }}>
-                Load Tournament
-              </button>
-            </div>
             {filteredTournaments.map((tournament, index) => (
               <div
                 key={`${tournament.slug}-${index}`}

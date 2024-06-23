@@ -8,7 +8,8 @@ export async function deployPredMarket(
   NameofMarket,
   signer,
   fullName,
-  endsAt
+  endsAt,
+  tokenAmount
 ) {
   // const localNetworkURL = "http://localhost:8545";
   // await window.ethereum.request({ method: "eth_requestAccounts" });
@@ -32,7 +33,7 @@ export async function deployPredMarket(
 
   try {
     const predMarket = await PredMarket.deploy(endsAt, {
-      value: ethers.utils.parseEther("0.05"),
+      value: tokenAmount,
     });
     await predMarket.deployed(); // Waits for the contract to be mined
 

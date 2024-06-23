@@ -215,27 +215,45 @@ const TournamentInfo = ({ slug }) => {
         const userConfirmed = confirm(
           `You are about to deploy a Bet that involves ${eventA} and ${eventB}... on chain: ${signer.provider.network.name}`
         );
-        if (userConfirmed) {
-          const contractAddress = await deployPredMarket(
-            eventA,
-            eventB,
-            tags,
-            NameofMarket,
-            signer,
-            fullName,
-            endsAt
-          );
-        }
-      } else {
-        if (chainId) {
-          alert("Contract Already Deployed");
-        } else {
-          alert("Can Not Confirm Chain");
-        }
-      }
 
-      // Here, you could update your local state to include the contractAddress for this set
-      // And also send this information to your backend for persistence
+        if (userConfirmed) {
+          const tokenAmount = prompt(
+            "Enter the amount of tokens you wish to lock up:",
+            "0"
+          );
+          const tokenAmountNumber = parseFloat(tokenAmount);
+          if (!isNaN(tokenAmountNumber) && tokenAmountNumber > 0) {
+            const tokenAmountInWei = ethers.utils.parseEther(
+              tokenAmount.toString()
+            );
+            try {
+              const contractAddress = await deployPredMarket(
+                eventA,
+                eventB,
+                tags,
+                NameofMarket,
+                signer,
+                fullName,
+                endsAt,
+                tokenAmountInWei
+              );
+            } catch (deployError) {
+              console.error("Failed to deploy contract:", deployError);
+            }
+          } else {
+            alert("Invalid token amount entered.");
+          }
+        } else {
+          if (chainId) {
+            alert("Contract Already Deployed");
+          } else {
+            alert("Can Not Confirm Chain");
+          }
+        }
+
+        // Here, you could update your local state to include the contractAddress for this set
+        // And also send this information to your backend for persistence
+      }
     } catch (error) {
       console.error("Failed to deploy contract:", error);
     } finally {
@@ -294,8 +312,10 @@ const TournamentInfo = ({ slug }) => {
           return 1; // Highest priority
         case "In Game":
           return 2; // Second highest priority
+        case "Other":
+          return 3;
         default:
-          return 3; // Lowest priority for all other statuses
+          return 4; // Lowest priority for all other statuses
       }
     };
 
@@ -315,6 +335,7 @@ const TournamentInfo = ({ slug }) => {
                 slot.entrant?.name.toLowerCase().includes(searchInput)
               )
             )
+            .sort(sortSets)
             .map((set, setIndex) => (
               <SetBox
                 key={`${set.id}-${setIndex}`}
