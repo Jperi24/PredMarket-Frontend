@@ -9,8 +9,8 @@ const Header = ({}) => {
       {/* Navigation Buttons */}
       <div className="navigation-buttons">
         <Link href="/">Home</Link> {/* Link to Home Page */}
-        <Link target="_blank" href="/deployingFAQ">
-          FAQ
+        <Link target="_blank" href="/deployingFAQ.pdf">
+          Get Started
         </Link>{" "}
         {/* Link to FAQ Page */}
         <Link href="/tdisplay2">Create A Bet</Link>{" "}

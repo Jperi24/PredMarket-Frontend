@@ -24,7 +24,6 @@ export default function ContractsPage() {
       setAllContracts(contracts);
 
       console.log(contracts);
-      handleTagFilter("allBets");
       setIsLoading(false);
     }
 
@@ -49,6 +48,21 @@ export default function ContractsPage() {
       );
     });
     setFilteredContracts(filtered);
+  };
+
+  const getChainLogo = (id) => {
+    const chainInfo = {
+      1: "EthLogo.png",
+      56: "BnbLogo.png",
+      137: "PolygonLogo.png",
+      43114: "avalancheLogo.jpg",
+      250: "fantomLogo.png",
+      31337: "hardHatLogo.png", // Assumes local Hardhat testnet uses the same rate as Ethereum
+    };
+
+    const defaultImage = "noPhotoAvail.jpg";
+    const foundImage = chainInfo[id]; // Get the image filename directly from the map using the id
+    return `http://localhost:3000/${foundImage || defaultImage}`; // Use the foundImage if available, otherwise use defaultImage
   };
 
   const handleTagFilter = (filterType) => {
@@ -193,6 +207,10 @@ export default function ContractsPage() {
               alt="Contract Image"
               className="contract-image"
             />
+            <img
+              src={getChainLogo(contract.chain.chainId)}
+              className="chain-image"
+            />{" "}
             <p>{contract.NameofMarket || "No Market Name"}</p>
             <p>{contract.fullName || ""}</p>
             <div>

@@ -26,6 +26,7 @@ client
       console.log(`Server running on port ${PORT}`);
       scheduleTasks();
       fetchAllTournamentDetails();
+      moveExpiredContracts();
     });
   })
   .catch((err) => {
@@ -35,22 +36,40 @@ client
 async function moveExpiredContracts() {
   try {
     const sourceCollection = db.collection("Contracts");
+    const targetCollection = db.collection("ExpiredContracts");
 
     // Get the current time and subtract 7 days (7 days * 24 hours * 60 minutes * 60 seconds * 1000 milliseconds)
     const sevenDaysAgo = new Date().getTime() - 7 * 24 * 60 * 60 * 1000;
     // Convert milliseconds back to seconds for the timestamp comparison in MongoDB
+    // const threshold = Math.floor(sevenDaysAgo / 1000);
     const threshold = Math.floor(sevenDaysAgo / 1000);
 
-    // Delete contracts that ended more than 7 days ago directly
-    const result = await sourceCollection.deleteMany({
-      endTime: { $lt: threshold },
-    });
+    // Find contracts that ended more than 7 days ago
+    const expiredContracts = await sourceCollection
+      .find({
+        endsAt: { $lt: threshold },
+      })
+      .toArray();
 
-    console.log(
-      `${result.deletedCount} expired contracts deleted successfully`
-    );
+    if (expiredContracts.length > 0) {
+      // Insert expired contracts into the target collection
+      const insertResult = await targetCollection.insertMany(expiredContracts);
+      console.log(
+        `${insertResult.insertedCount} contracts moved to ExpiredContracts collection successfully`
+      );
+
+      // Delete the moved contracts from the source collection
+      const deleteResult = await sourceCollection.deleteMany({
+        endsAt: { $lt: threshold },
+      });
+      console.log(
+        `${deleteResult.deletedCount} expired contracts deleted from Contracts collection successfully`
+      );
+    } else {
+      console.log("No expired contracts found to move");
+    }
   } catch (err) {
-    console.error("Error deleting expired contracts:", err);
+    console.error("Error moving expired contracts:", err);
   }
 }
 
@@ -393,6 +412,7 @@ app.post("/api/updateBetterMongoDB", async (req, res) => {
 const {
   GET_ALL_TOURNAMENTS_QUERY,
   GET_TOURNAMENT_QUERY,
+  GET_FEATURED_TOURNAMENTS_QUERY,
   GET_SETS_BY_PHASE_QUERY,
 } = require("./queries");
 
@@ -402,37 +422,160 @@ const frequentCache = new NodeCache({ stdTTL: 1200 });
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+// async function fetchAllTournamentDetails() {
+//   let allTournaments = [];
+//   let page = 1;
+//   const perPage = 100;
+//   let hasMore = true;
+
+//   while (hasMore) {
+//     await sleep(1000);
+//     try {
+//       const { data } = await apolloClient.query({
+//         query: GET_ALL_TOURNAMENTS_QUERY,
+//         variables: {
+//           afterDate: Math.floor(
+//             new Date(Date.now() - 5 * 24 * 3600 * 1000).getTime() / 1000
+//           ),
+//           beforeDate: Math.floor(
+//             new Date(Date.now() + 5 * 24 * 3600 * 1000).getTime() / 1000
+//           ),
+//           page,
+//           perPage,
+//         },
+//       });
+//       allTournaments = [...allTournaments, ...data.tournaments.nodes];
+//       hasMore = data.tournaments.nodes.length === perPage;
+//       page += 1;
+//     } catch (error) {
+//       console.error("Failed to fetch tournament page:", page, error);
+//       hasMore = false; // Optional: Decide whether to stop or continue fetching more pages
+//     }
+//   }
+
+//   for (const tournament of allTournaments) {
+//     await sleep(1000);
+//     try {
+//       const tournamentDetailResponse = await apolloClient.query({
+//         query: GET_TOURNAMENT_QUERY,
+//         variables: { slug: tournament.slug },
+//       });
+//       const detailedTournament = tournamentDetailResponse.data.tournament;
+//       dailyCache.set(tournament.slug.toLowerCase(), detailedTournament);
+
+//       if (detailedTournament.events) {
+//         for (const event of detailedTournament.events) {
+//           if (event.phases) {
+//             for (const phase of event.phases) {
+//               await sleep(1000);
+//               let allSets = [];
+//               let page2 = 1;
+//               let hasMore2 = true;
+//               const phaseId = phase.id;
+
+//               while (hasMore2) {
+//                 await sleep(1000);
+//                 try {
+//                   const { data: phaseData } = await apolloClient.query({
+//                     query: GET_SETS_BY_PHASE_QUERY,
+//                     variables: { phaseId, page: page2, perPage },
+//                   });
+//                   allSets = [...allSets, ...phaseData.phase.sets.nodes];
+//                   hasMore2 = phaseData.phase.sets.nodes.length === perPage;
+//                   page2 += 1;
+//                 } catch (error) {
+//                   console.error(
+//                     "Error fetching sets for phase:",
+//                     phase.id,
+//                     error
+//                   );
+//                   hasMore2 = false; // Decide based on your needs
+//                 }
+//               }
+
+//               frequentCache.set(phase.id, allSets);
+//             }
+//           }
+//         }
+//       }
+//     } catch (error) {
+//       console.error("Error handling tournament:", tournament.slug, error);
+//     }
+//     console.log("completed tournament:", tournament);
+//   }
+// }
+
 async function fetchAllTournamentDetails() {
   let allTournaments = [];
   let page = 1;
   const perPage = 100;
   let hasMore = true;
 
+  // Define the date ranges
+  const todayDate = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000); // Start of today in Unix timestamp
+  const tomorrowDate = Math.floor(
+    new Date(Date.now() + 24 * 3600 * 1000).setHours(0, 0, 0, 0) / 1000
+  ); // Start of tomorrow in Unix timestamp
+  const afterDate = Math.floor(
+    new Date(Date.now() - 7 * 24 * 3600 * 1000).getTime() / 1000
+  ); // 7 days ago
+  const beforeDate = Math.floor(
+    new Date(Date.now() + 7 * 24 * 3600 * 1000).getTime() / 1000
+  ); // 7 days from now
+
+  // Fetch Featured Tournaments that began up to 7 days ago and end up to 7 days following
+  while (hasMore) {
+    await sleep(1000);
+    try {
+      const { data } = await apolloClient.query({
+        query: GET_FEATURED_TOURNAMENTS_QUERY,
+        variables: {
+          afterDate,
+          beforeDate,
+          page,
+          perPage,
+        },
+      });
+      const filteredTournaments = data.tournaments.nodes.filter(
+        (tournament) => tournament.endAt >= todayDate
+      );
+      allTournaments = [...allTournaments, ...filteredTournaments];
+      hasMore = data.tournaments.nodes.length === perPage;
+      page += 1;
+    } catch (error) {
+      console.error("Failed to fetch featured tournaments page:", page, error);
+      hasMore = false; // Optional: Decide whether to stop or continue fetching more pages
+    }
+  }
+
+  // Fetch Regular Tournaments that start today or tomorrow and have not ended before today
+  page = 1;
+  hasMore = true;
   while (hasMore) {
     await sleep(1000);
     try {
       const { data } = await apolloClient.query({
         query: GET_ALL_TOURNAMENTS_QUERY,
         variables: {
-          afterDate: Math.floor(
-            new Date(Date.now() - 5 * 24 * 3600 * 1000).getTime() / 1000
-          ),
-          beforeDate: Math.floor(
-            new Date(Date.now() + 5 * 24 * 3600 * 1000).getTime() / 1000
-          ),
+          todayDate,
+          tomorrowDate,
           page,
           perPage,
         },
       });
-      allTournaments = [...allTournaments, ...data.tournaments.nodes];
+      const filteredTournaments = data.tournaments.nodes.filter(
+        (tournament) => tournament.endAt >= todayDate
+      );
+      allTournaments = [...allTournaments, ...filteredTournaments];
       hasMore = data.tournaments.nodes.length === perPage;
       page += 1;
     } catch (error) {
-      console.error("Failed to fetch tournament page:", page, error);
+      console.error("Failed to fetch tournaments page:", page, error);
       hasMore = false; // Optional: Decide whether to stop or continue fetching more pages
     }
   }
 
+  // Process the fetched tournaments (the existing logic)
   for (const tournament of allTournaments) {
     await sleep(1000);
     try {

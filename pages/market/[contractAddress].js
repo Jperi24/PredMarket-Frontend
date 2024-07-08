@@ -13,7 +13,6 @@ export default function PredMarketPageV2() {
   const signer = useSigner();
   const commonChains = {
     56: {
-      // Binance Smart Chain
       chainName: "Binance Smart Chain",
       rpcUrl: "https://bsc-dataseed.binance.org/",
       nativeCurrency: {
@@ -24,7 +23,6 @@ export default function PredMarketPageV2() {
       blockExplorerUrls: ["https://bscscan.com"],
     },
     137: {
-      // Polygon
       chainName: "Polygon Mainnet",
       rpcUrl: "https://polygon-rpc.com/",
       nativeCurrency: {
@@ -35,7 +33,6 @@ export default function PredMarketPageV2() {
       blockExplorerUrls: ["https://polygonscan.com"],
     },
     43114: {
-      // Avalanche
       chainName: "Avalanche Mainnet",
       rpcUrl: "https://api.avax.network/ext/bc/C/rpc",
       nativeCurrency: {
@@ -46,7 +43,6 @@ export default function PredMarketPageV2() {
       blockExplorerUrls: ["https://snowtrace.io"],
     },
     250: {
-      // Fantom
       chainName: "Fantom Opera",
       rpcUrl: "https://rpc.ftm.tools/",
       nativeCurrency: {
@@ -57,7 +53,6 @@ export default function PredMarketPageV2() {
       blockExplorerUrls: ["https://ftmscan.com"],
     },
     31337: {
-      // Hardhat Localhost
       chainName: "Hardhat Localhost",
       rpcUrl: "http://127.0.0.1:8545/",
       nativeCurrency: {
@@ -65,7 +60,6 @@ export default function PredMarketPageV2() {
         symbol: "ETH",
         decimals: 18,
       },
-      // Typically, there is no block explorer for localhost networks
       blockExplorerUrls: [],
     },
   };
@@ -89,6 +83,7 @@ export default function PredMarketPageV2() {
   const [disagreeText, setDisagreeText] = useState("");
   const [selectedOutcome, setSelectedOutcome] = useState("");
   const [selectedOutcome2, setSelectedOutcome2] = useState("0");
+  const [deployerLocked, setDeployerLocked] = useState("");
 
   const [bets_balance, setbetsbalance] = useState({
     allbets: [],
@@ -122,7 +117,8 @@ export default function PredMarketPageV2() {
   const isBettingOpen =
     bets_balance.state === 0 && currentTime < bets_balance.endTime;
   const isVotingTime =
-    bets_balance.state === 1 && currentTime < contract.voteTime;
+    (bets_balance.state === 1 && currentTime < contract.voteTime) ||
+    (bets_balance.state === 0 && currentTime > bets_balance.endTime);
   const isBettingClosed =
     bets_balance.state === 0 && currentTime > bets_balance.endTime;
   const isDisagreementState = bets_balance.state === 2;
@@ -157,6 +153,11 @@ export default function PredMarketPageV2() {
               setNetworkMismatch(false);
               console.log("Live on chain: ", network.chainId);
               setContractInstance(tempContractInstance);
+              const deployerLockedStatus =
+                await tempContractInstance.creatorLocked();
+              setDeployerLocked(
+                ethers.utils.formatEther(deployerLockedStatus.toString())
+              );
               displayAllBets();
 
               setChain(commonChains[network.chainId]);
@@ -188,7 +189,7 @@ export default function PredMarketPageV2() {
         body: JSON.stringify({
           contractAddress: address,
           better: signerAddress,
-        }), // Assuming you're sending the vote time in the request body
+        }),
       });
     } catch (error) {
       console.error("Error updating MongoDB:", error);
@@ -206,7 +207,6 @@ export default function PredMarketPageV2() {
     console.log(selectedOutcome);
     if (contractInstance) {
       try {
-        // Convert myBet from ether to wei and ensure it's a BigNumber
         const total = parseFloat(myBet) + parseFloat(buyIn);
         const reverseSelected = selectedOutcome === "1" ? "2" : "1";
         const selectedName =
@@ -214,7 +214,6 @@ export default function PredMarketPageV2() {
         const valueInWei = ethers.utils.parseEther(myBet.toString());
         const valueInWeiBuyIn = ethers.utils.parseEther(buyIn.toString());
 
-        // Display the alert-style message to the user and get their response
         const userConfirmed = confirm(
           `You are depositing ${myBet} ETH. If ${selectedName} wins and another user buys this bet for ${buyIn} ETH, you will be rewarded ${total} ETH. If another user does not buy in by the time the deployer of the bet declares a winner, you will be refunded ${myBet} ETH. You are eligible to unlist this bet at any time. Do you accept the terms?`
         );
@@ -244,7 +243,6 @@ export default function PredMarketPageV2() {
 
   const unlistBet = async (positionsArray) => {
     try {
-      // Ensure positionsArray is an array, even if it's just one position
       const positions = Array.isArray(positionsArray)
         ? positionsArray
         : [positionsArray];
@@ -260,8 +258,6 @@ export default function PredMarketPageV2() {
 
   const buyBet = async (positionInArray, purchasePrice) => {
     try {
-      // Convert myBet from ether to wei and ensure it's a BigNumber
-
       const selectedName =
         bets_balance.allbets[positionInArray].conditionForBuyerToWin === 1
           ? contract.eventA
@@ -302,7 +298,6 @@ export default function PredMarketPageV2() {
 
   const listBetForSale = async (positionInArray, askingPrice) => {
     try {
-      // Convert myBet from ether to wei and ensure it's a BigNumber
       const valueInWei = ethers.utils.parseEther(askingPrice.toString());
 
       const userConfirmed = confirm(
@@ -337,7 +332,7 @@ export default function PredMarketPageV2() {
   function handleChangePrice(value, index) {
     setBetPrices((prevPrices) => ({
       ...prevPrices,
-      [index]: value, // Update the price for the specific bet
+      [index]: value,
     }));
   }
 
@@ -349,11 +344,18 @@ export default function PredMarketPageV2() {
     }
 
     const totalWinnings = allbets
+      .filter((bet) => {
+        if (bet.deployer !== bet.owner) {
+          return true;
+        } else if (bet.deployer === bet.owner && bet.amountBuyerLocked > 0) {
+          return true;
+        }
+        return false;
+      })
       .filter(
         (bet) => bet.deployer === signerAddress || bet.owner === signerAddress
       )
       .reduce((total, bet) => {
-        // Convert BigNumber values to ether and then to numbers
         const amountDeployerLocked = parseFloat(
           ethers.utils.formatEther(bet.amountDeployerLocked)
         );
@@ -363,20 +365,18 @@ export default function PredMarketPageV2() {
           )
         );
 
-        // Check for NaN values and handle them appropriately
         if (isNaN(amountDeployerLocked) || isNaN(amountBuyerLocked)) {
           console.error("Invalid BigNumber conversion encountered.");
           return total;
         }
 
-        // Sum up the locked amounts and add to the total
         return total + amountDeployerLocked + amountBuyerLocked;
-      }, 0); // Start with zero
+      }, 0);
 
-    // Return the total winnings as a string
-    console.log(`Total Winnings: ${totalWinnings}`); // Final output before conversion
-    return totalWinnings.toString(); // Convert to string for final output
+    console.log(`Total Winnings: ${totalWinnings}`);
+    return totalWinnings.toString();
   };
+
   const bigNumberToNumber = (bigNumber) => {
     return parseInt(bigNumber._hex, 16);
   };
@@ -429,7 +429,7 @@ export default function PredMarketPageV2() {
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ contractAddress, voteTime }), // Include disagreement text here
+            body: JSON.stringify({ contractAddress, voteTime }),
           }
         );
       } catch (error) {
@@ -453,7 +453,7 @@ export default function PredMarketPageV2() {
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ contractAddress, reason }), // Include disagreement text here
+            body: JSON.stringify({ contractAddress, reason }),
           }
         );
       } catch (error) {
@@ -476,12 +476,10 @@ export default function PredMarketPageV2() {
       return data;
     } catch (error) {
       console.error("Error fetching contract details:", error);
-      // Consider setting state here to display the error on the UI if appropriate
     }
   };
 
   useEffect(() => {
-    // Only attempt to fetch if contractAddress is not undefined
     if (contractAddress) {
       console.log(`Fetching details for contract: ${contractAddress}`);
       fetchContractDetails(contractAddress)
@@ -498,7 +496,7 @@ export default function PredMarketPageV2() {
     } else {
       console.log("contractAddress is undefined, waiting for it to be set");
     }
-  }, [contractAddress, signer]); // Ensure this effect runs whenever contractAddress changes
+  }, [contractAddress, signer]);
 
   const switchNetwork = async (targetChainId) => {
     const chainHex = `0x${targetChainId.toString(16)}`;
@@ -520,7 +518,7 @@ export default function PredMarketPageV2() {
                   chainId: chainHex,
                   chainName: chainDetails.chainName,
                   nativeCurrency: chainDetails.nativeCurrency,
-                  rpcUrls: [chainDetails.rpcUrl], // Ensure this is an array
+                  rpcUrls: [chainDetails.rpcUrl],
                   blockExplorerUrls: chainDetails.blockExplorerUrls,
                 },
               ],
@@ -544,17 +542,13 @@ export default function PredMarketPageV2() {
   };
 
   useEffect(() => {
-    // Ensure that contractInstance is not null and is ready to use
     if (contractInstance && signer) {
-      // Define a list of event names you want to listen to
       const eventNames = ["shithappened", "winnerDeclaredVoting", "userVoted"];
 
-      // Attach the event listener for each event
       eventNames.forEach((eventName) => {
         contractInstance.on(eventName, displayAllBets);
       });
 
-      // Cleanup function to remove the event listeners
       return () => {
         eventNames.forEach((eventName) => {
           contractInstance.off(eventName, displayAllBets);
@@ -564,11 +558,10 @@ export default function PredMarketPageV2() {
   }, [contractInstance, signer]);
 
   const handleSelectBet = (position) => {
-    setSelectedBets(
-      (prevSelectedBets) =>
-        prevSelectedBets.includes(position)
-          ? prevSelectedBets.filter((pos) => pos !== position) // Remove if already selected
-          : [...prevSelectedBets, position] // Add if not already selected
+    setSelectedBets((prevSelectedBets) =>
+      prevSelectedBets.includes(position)
+        ? prevSelectedBets.filter((pos) => pos !== position)
+        : [...prevSelectedBets, position]
     );
   };
 
@@ -585,7 +578,8 @@ export default function PredMarketPageV2() {
         {netWorkMismatch ? (
           <div className="network-switch-modal">
             <p>
-              You are on the wrong network. Please switch to the correct one.
+              You are on the wrong network. This set is deployed on chain:{" "}
+              {contract?.chain?.name}. Please switch to the correct one.
             </p>
             <button onClick={() => switchNetwork(contract.chain.chainId)}>
               Switch Network
@@ -597,6 +591,13 @@ export default function PredMarketPageV2() {
               <div className="contract-details-grid">
                 <div className="contract-detail-item">
                   <h4>
+                    <h4>
+                      <span style={{ color: "red" }}>
+                        {deployerLocked} {""} {chain?.nativeCurrency?.symbol}
+                      </span>{" "}
+                      {""} Is the amount the creator of the set has locked up to
+                      ensure Integrity
+                    </h4>
                     <h4>{contract.NameofMarket}</h4>
                     <h4>{contract.fullName}</h4>
                     <div>
@@ -689,7 +690,10 @@ export default function PredMarketPageV2() {
                         </>
                       ) : isVotingTime ? (
                         <>
-                          <p>The betting is closed or completed.</p>
+                          <p>
+                            The betting is closed you may file a disagreement if
+                            you believe their is a mistake.
+                          </p>
                           <input
                             className="input-field"
                             value={disagreeText}
@@ -766,17 +770,16 @@ export default function PredMarketPageV2() {
                     bets_balance.allbets.length > 0 ? (
                       bets_balance.allbets
                         .filter((bet) => {
-                          // Example filtering conditions, adjust according to your actual data structure
                           switch (filter) {
                             case "forSale":
-                              return bet.selling; // Assuming this is a boolean indicating the bet is for sale
+                              return bet.selling;
                             case "deployedByMe":
-                              return bet.deployer === signerAddress; // You'll need to determine `signerAddress`
+                              return bet.deployer === signerAddress;
                             case "ownedByMe":
-                              return bet.owner === signerAddress; // Adjust based on your data
+                              return bet.owner === signerAddress;
                             case "all":
                             default:
-                              return true; // No filtering, return all bets
+                              return true;
                           }
                         })
                         .map((bet, index) => (
@@ -921,6 +924,155 @@ export default function PredMarketPageV2() {
           </div>
         )}
       </main>
+
+      <style jsx>{`
+        /* Desktop styles */
+        .contract-container {
+          display: flex;
+          flex-direction: column;
+          padding: 20px;
+          max-width: 1200px;
+          margin: 0 auto;
+        }
+
+        .network-switch-modal,
+        .contract-details-grid,
+        .input-container,
+        .vertical-button-group,
+        .bets-container {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+        }
+
+        .contract-details-grid {
+          display: flex;
+          flex-direction: row;
+          align-items: flex-start;
+          justify-content: space-between;
+          width: 100%;
+        }
+
+        .contract-detail-item {
+          text-align: center;
+          margin-bottom: 15px;
+          flex: 1;
+        }
+
+        .input-container {
+          width: 50%;
+          padding: 10px;
+          box-sizing: border-box;
+        }
+
+        .countdown-container {
+          margin-bottom: 10px;
+        }
+
+        .countdown-heading {
+          font-size: 1.2rem;
+          margin-bottom: 5px;
+        }
+
+        .createBetContainer {
+          width: 100%;
+          max-width: 400px;
+        }
+
+        .input-field,
+        .dropdown {
+          width: 100%;
+          padding: 10px;
+          margin-bottom: 10px;
+          font-size: 1rem;
+        }
+
+        .toggle-inputs-btn {
+          width: 100%;
+          padding: 10px;
+          margin-bottom: 10px;
+          font-size: 1rem;
+          background-color: #007bff;
+          color: white;
+          border: none;
+          border-radius: 5px;
+        }
+
+        .bet {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          margin-bottom: 20px;
+          padding: 10px;
+          border: 1px solid #ddd;
+          border-radius: 5px;
+          width: 100%;
+          max-width: 400px;
+          box-sizing: border-box;
+        }
+
+        .bet-info {
+          margin-bottom: 5px;
+        }
+
+        .bet-selection {
+          margin-top: 10px;
+        }
+
+        .vertical-button-group {
+          display: flex;
+          flex-direction: column;
+          width: 100%;
+          max-width: 200px;
+        }
+
+        .vertical-button-group button {
+          margin-bottom: 10px;
+        }
+
+        .bets-container {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 20px;
+          width: 100%;
+        }
+
+        /* Mobile styles */
+        @media (max-width: 768px) {
+          .contract-container {
+            padding: 10px;
+            width: 100%;
+          }
+
+          .contract-details-grid {
+            flex-direction: column;
+          }
+
+          .input-container {
+            width: 100%;
+            padding: 10px;
+          }
+
+          .vertical-button-group {
+            width: 100%;
+            max-width: 400px;
+          }
+
+          .vertical-button-group button {
+            margin-bottom: 5px;
+            padding: 5px;
+            font-size: 0.8rem;
+          }
+
+          .bet {
+            width: 100%;
+          }
+
+          .createBetContainer {
+            max-width: 100%;
+          }
+        }
+      `}</style>
     </>
   );
 }

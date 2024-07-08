@@ -152,9 +152,7 @@ export default function ContractsPage() {
       "Counter-Strike 2": "csgo2.jpg",
       "Counter Strike: Global Offensive": "CSGO-Symbol.jpg",
       "Mortal Kombat 1": "mortalKombat1.jpg",
-
       "League of Legends": "League:.jpg",
-
       Fortnite: "FortniteImg.jpg",
       "Overwatch 2": "overwatch2.jpg", // Add your game images here
     };
@@ -220,6 +218,107 @@ export default function ContractsPage() {
           </div>
         ))}
       </div>
+      <style jsx>{`
+        .page-container {
+          padding: 20px;
+        }
+
+        .search-container {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          justify-content: center;
+          margin-bottom: 20px;
+        }
+
+        .search-input {
+          margin: 10px;
+          padding: 10px;
+          width: 100%;
+          max-width: 300px;
+          font-size: 1rem;
+        }
+
+        .grid-container2 {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 20px;
+        }
+
+        .grid-item {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          background: #f9f9f9;
+          padding: 15px;
+          border-radius: 8px;
+          transition: transform 0.2s;
+        }
+
+        .grid-item:hover {
+          transform: scale(1.05);
+          cursor: pointer;
+        }
+
+        .contract-image {
+          max-width: 100px;
+          max-height: 100px;
+          margin-bottom: 10px;
+        }
+
+        .chain-image {
+          max-width: 30px;
+          max-height: 30px;
+          margin-top: -10px;
+          margin-bottom: 10px;
+        }
+
+        @media (max-width: 768px) {
+          .page-container {
+            padding: 10px;
+          }
+
+          .search-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+          }
+
+          .search-input {
+            max-width: 100%;
+            font-size: 0.9rem;
+            padding: 8px;
+          }
+
+          .search-container button {
+            padding: 8px 12px;
+            font-size: 0.9rem;
+            margin: 5px;
+            width: 100%;
+            max-width: 300px;
+          }
+
+          .grid-container2 {
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+          }
+
+          .grid-item {
+            padding: 10px;
+          }
+
+          .contract-image {
+            max-width: 80px;
+            max-height: 80px;
+          }
+
+          .chain-image {
+            max-width: 20px;
+            max-height: 20px;
+          }
+        }
+      `}</style>
     </div>
   );
 }
