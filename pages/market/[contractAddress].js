@@ -7,6 +7,8 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import CountdownTimer, { timeLeft } from "../../components/CountDownTimer";
 import { resultKeyNameFromField } from "@apollo/client/utilities";
+// import dotenv from "dotenv";
+// dotenv.config();
 
 export default function PredMarketPageV2() {
   const [contractInstance, setContractInstance] = useState(null);
@@ -33,7 +35,7 @@ export default function PredMarketPageV2() {
       blockExplorerUrls: ["https://polygonscan.com"],
     },
     43114: {
-      chainName: "Avalanche Mainnet",
+      chainName: "Avalanche C-Chain",
       rpcUrl: "https://api.avax.network/ext/bc/C/rpc",
       nativeCurrency: {
         name: "Avalanche",
@@ -178,7 +180,7 @@ export default function PredMarketPageV2() {
     try {
       // Correctly construct the URL using template literals
 
-      const url = `http://localhost:3001/api/updateBetterMongoDB`;
+      const url = `${process.env.NEXT_PUBLIC_API_BASE_URL}/updateBetterMongoDB`;
 
       // Make the POST request
       await fetch(url, {
@@ -423,7 +425,7 @@ export default function PredMarketPageV2() {
         await tx.wait();
 
         const response = await fetch(
-          "http://localhost:3001/api/updateMongoDB",
+          `${process.env.NEXT_PUBLIC_API_BASE_URL}/updateMongoDB`,
           {
             method: "POST",
             headers: {
@@ -439,15 +441,15 @@ export default function PredMarketPageV2() {
   };
 
   const voteDisagree = async (reason) => {
-    if (contractInstance) {
+    if (contractInstance && disagreeText) {
       try {
         const value = await contractInstance.creatorLocked();
-        const tx = await contractInstance.disagreeWithOwner({
+        const tx = await contractInstance.disagreeWithOwner(disagreeText, {
           value: value,
         });
         await tx.wait();
         const response = await fetch(
-          "http://localhost:3001/moveToDisagreements",
+          `${process.env.NEXT_PUBLIC_API_BASE_URL}/moveToDisagreements`,
           {
             method: "POST",
             headers: {
@@ -464,8 +466,10 @@ export default function PredMarketPageV2() {
 
   const fetchContractDetails = async (address) => {
     try {
+      console.log(`${process.env.NEXT_PUBLIC_API_BASE_URL}`, "logged .env");
+
       const response = await fetch(
-        `http://localhost:3001/api/contracts/${address}`
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}/contracts/${address}`
       );
       if (!response.ok) {
         throw new Error(
@@ -498,15 +502,60 @@ export default function PredMarketPageV2() {
     }
   }, [contractAddress, signer]);
 
+  // const switchNetwork = async (targetChainId) => {
+  //   const chainHex = `0x${targetChainId.toString(16)}`;
+
+  //   try {
+  //     await window.ethereum.request({
+  //       method: "wallet_switchEthereumChain",
+  //       params: [{ chainId: chainHex }],
+  //     });
+  //   } catch (switchError) {
+  //     if (switchError.code === 4902) {
+  //       try {
+  //         const chainDetails = commonChains[targetChainId];
+  //         if (chainDetails) {
+  //           await window.ethereum.request({
+  //             method: "wallet_addEthereumChain",
+  //             params: [
+  //               {
+  //                 chainId: chainHex,
+  //                 chainName: chainDetails.chainName,
+  //                 nativeCurrency: chainDetails.nativeCurrency,
+  //                 rpcUrls: [chainDetails.rpcUrl],
+  //                 blockExplorerUrls: chainDetails.blockExplorerUrls,
+  //               },
+  //             ],
+  //           });
+  //           window.location.reload();
+  //         } else {
+  //           console.error(
+  //             `No RPC URL available for chain ID: ${targetChainId}. Please add the network manually.`
+  //           );
+  //           alert(
+  //             `Please add the network with chain ID ${targetChainId} manually, as no RPC URL is available.`
+  //           );
+  //         }
+  //       } catch (addError) {
+  //         console.error("Failed to add the network:", addError);
+  //       }
+  //     } else {
+  //       console.error("Failed to switch the network:", switchError);
+  //     }
+  //   }
+  // };
+
   const switchNetwork = async (targetChainId) => {
     const chainHex = `0x${targetChainId.toString(16)}`;
 
     try {
+      // Attempt to switch to the target network
       await window.ethereum.request({
         method: "wallet_switchEthereumChain",
         params: [{ chainId: chainHex }],
       });
     } catch (switchError) {
+      // If the target network is not added, add it
       if (switchError.code === 4902) {
         try {
           const chainDetails = commonChains[targetChainId];
@@ -523,6 +572,7 @@ export default function PredMarketPageV2() {
                 },
               ],
             });
+            // Reload the page to reflect the new network
             window.location.reload();
           } else {
             console.error(
@@ -534,9 +584,13 @@ export default function PredMarketPageV2() {
           }
         } catch (addError) {
           console.error("Failed to add the network:", addError);
+          alert(
+            "Failed to add the network. Please try again or add it manually."
+          );
         }
       } else {
         console.error("Failed to switch the network:", switchError);
+        alert("Failed to switch the network. Please try again.");
       }
     }
   };

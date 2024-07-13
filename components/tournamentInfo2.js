@@ -39,6 +39,9 @@ const TournamentInfo = ({ slug }) => {
   const [currentChainId, setCurrentChainId] = useState(
     signer?.provider?.network?.chainId || null
   );
+  const [currentChainName, setCurrentChainName] = useState(
+    signer?.provider?.network?.name || null
+  );
   const [currentPhaseSets, setCurrentPhaseSets] = useState([]);
   const [videogame, setPhaseVideoGame] = useState("");
   const [isDeploying, setIsDeploying] = useState(false);
@@ -61,9 +64,9 @@ const TournamentInfo = ({ slug }) => {
       if (slug) {
         console.log(slug, "Fetching data for slug");
         try {
-          const url = `http://localhost:3001/api/tournament/${encodeURIComponent(
-            slug
-          )}`;
+          const url = `${
+            process.env.NEXT_PUBLIC_API_BASE_URL
+          }/tournament/${encodeURIComponent(slug)}`;
           const response = await fetch(url);
           if (!response.ok) {
             throw new Error("Failed to fetch tournament data");
@@ -87,7 +90,9 @@ const TournamentInfo = ({ slug }) => {
     const updateChainId = async () => {
       if (signer) {
         const network = await signer.provider.getNetwork();
+
         setCurrentChainId(network.chainId);
+        setCurrentChainName(network.name);
       } else {
         setCurrentChainId(null);
       }
@@ -185,7 +190,7 @@ const TournamentInfo = ({ slug }) => {
       const encodedTags = encodeURIComponent(tags);
 
       const response = await fetch(
-        `http://localhost:3001/check-set-deployment/${encodedTags}`
+        `${process.env.NEXT_PUBLIC_BASE_URL}/check-set-deployment/${encodedTags}`
       );
 
       const { isDeployed } = await response.json();
@@ -218,7 +223,7 @@ const TournamentInfo = ({ slug }) => {
 
         if (userConfirmed) {
           const tokenAmount = prompt(
-            "Enter the amount of tokens you wish to lock up:",
+            `Before deploying a set, you are required to lock up a specified number of tokens from your current chain. These tokens will be returned to you, provided you demonstrate honest and fair decision-making. This process ensures legitimacy and transparency, as all users will be able to view the number of tokens you have locked. Please enter the number of ${currentChainName} tokens you wish to lock up:`,
             "0"
           );
           const tokenAmountNumber = parseFloat(tokenAmount);
@@ -277,7 +282,7 @@ const TournamentInfo = ({ slug }) => {
     console.log(`Fetching sets for phaseId: ${phaseId}`); // Confirm what's being sent
     try {
       const response = await fetch(
-        `http://localhost:3001/api/phase-sets/${phaseId}`
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}/phase-sets/${phaseId}`
       );
       if (!response.ok) {
         throw new Error(`HTTP error, status = ${response.status}`);
@@ -325,6 +330,21 @@ const TournamentInfo = ({ slug }) => {
     return priorityA - priorityB; // Sorts by priority, ascending
   };
 
+  const getChainLogo = (id) => {
+    const chainInfo = {
+      1: "EthLogo.png",
+      56: "BnbLogo.png",
+      137: "PolygonLogo.png",
+      43114: "avalancheLogo.jpg",
+      250: "fantomLogo.png",
+      31337: "hardHatLogo.png", // Assumes local Hardhat testnet uses the same rate as Ethereum
+    };
+
+    const defaultImage = "noPhotoAvail.jpg";
+    const foundImage = chainInfo[id]; // Get the image filename directly from the map using the id
+    return `${process.env.NEXT_PUBLIC_BASE_URL2}/${foundImage || defaultImage}`; // Use the foundImage if available, otherwise use defaultImage
+  };
+
   function renderPhaseSets() {
     return (
       <div className="phase">
@@ -363,7 +383,10 @@ const TournamentInfo = ({ slug }) => {
   return (
     <div className="tournament-info">
       <div className="controls">
-        <div>Current Chain ID: {currentChainId}</div>
+        <div>
+          Current Chain:{" "}
+          <img src={getChainLogo(currentChainId)} className="chain-image2" />{" "}
+        </div>
 
         <h2 style={{ color: "#0056b3" /* White text for high contrast */ }}>
           Tournament: {tournamentData?.name}

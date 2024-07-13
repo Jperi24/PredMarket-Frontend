@@ -16,7 +16,10 @@ export default function ContractsPage() {
 
   useEffect(() => {
     async function fetchInitialContracts() {
-      const response = await fetch("http://localhost:3001/getContracts");
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_BASE_URL}/getContracts`
+      );
+
       if (!response.ok) {
         throw new Error("Network response was not ok");
       }
@@ -62,7 +65,7 @@ export default function ContractsPage() {
 
     const defaultImage = "noPhotoAvail.jpg";
     const foundImage = chainInfo[id]; // Get the image filename directly from the map using the id
-    return `http://localhost:3000/${foundImage || defaultImage}`; // Use the foundImage if available, otherwise use defaultImage
+    return `${process.env.NEXT_PUBLIC_BASE_URL2}/${foundImage || defaultImage}`; // Use the foundImage if available, otherwise use defaultImage
   };
 
   const handleTagFilter = (filterType) => {
@@ -159,7 +162,13 @@ export default function ContractsPage() {
 
     const defaultImage = "noPhotoAvail.jpg";
     const foundTag = tags.split(",").find((tag) => tagMap[tag.trim()]);
-    return `http://localhost:3000/${tagMap[foundTag] || defaultImage}`;
+    console.log(`http://localhost:3000/${tagMap[foundTag] || defaultImage}`);
+
+    //NEXT_PUBLIC_BASE_URL=http://localhost:3001
+
+    return `${process.env.NEXT_PUBLIC_BASE_URL2}/${
+      tagMap[foundTag] || defaultImage
+    }`;
   };
 
   if (isLoading) {
@@ -187,7 +196,7 @@ export default function ContractsPage() {
 
         <input
           type="text"
-          placeholder="Search by tags..."
+          placeholder="Search..."
           value={searchQuery}
           onChange={handleSearchChange}
           className="search-input"

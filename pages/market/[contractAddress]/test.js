@@ -7,7 +7,6 @@ import CountdownTimer, { timeLeft } from "../../../components/CountDownTimer";
 import Header from "../../../components/Header";
 import { getContractDetails, getContracts } from "../../../data/contractStore";
 import { useSigner } from "@thirdweb-dev/react";
-import styles from "../../../styles/[contractAddress].module.css";
 
 import { convertWeiToUsd } from "../../../components/currencyConversionUtils";
 

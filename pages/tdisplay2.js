@@ -54,7 +54,7 @@ function App() {
     const fetchTournaments = async () => {
       try {
         const response = await fetch(
-          "http://localhost:3001/api/tournament-details"
+          `${process.env.NEXT_PUBLIC_API_BASE_URL}/tournament-details`
         );
         const data = await response.json();
         setTournaments(data);
