@@ -12,7 +12,9 @@ export default function ContractsPage() {
   const [currentFilter, setCurrentFilter] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const signer = useAddress();
+
   const router = useRouter();
+  const currentTime = Math.floor(Date.now() / 1000);
 
   useEffect(() => {
     async function fetchInitialContracts() {
@@ -102,6 +104,12 @@ export default function ContractsPage() {
               contract.collectionName === "Disagreements")
         );
         break;
+      case "voteTimeExists":
+        filtered = filtered.filter(
+          (contract) => contract.voteTime && currentTime < contract.voteTime
+        );
+        break;
+
       default:
         filtered = filtered.filter(
           (contract) =>
@@ -175,7 +183,7 @@ export default function ContractsPage() {
     return (
       <div className="page-container">
         <Header />
-        <h2>Deployed Contracts</h2>
+        <h2>Sets</h2>
         <div className="spinner"></div>
       </div>
     );
@@ -184,7 +192,7 @@ export default function ContractsPage() {
   return (
     <div className="page-container">
       <Header />
-      <h2>Deployed Contracts</h2>
+      <h2>Sets</h2>
       <div className="search-container">
         <VideoGameSelector onFilterSelect={handleTagFilter} />
         <button onClick={() => handleTagFilter("userBets")}>
@@ -193,12 +201,16 @@ export default function ContractsPage() {
         <button onClick={() => handleTagFilter("ownerDeployed")}>
           Bets I Deployed
         </button>
+        <button onClick={() => handleTagFilter("voteTimeExists")}>
+          Vote Time Exists
+        </button>
 
         <input
           type="text"
           placeholder="Search..."
           value={searchQuery}
           onChange={handleSearchChange}
+          maxLength={100}
           className="search-input"
         />
       </div>

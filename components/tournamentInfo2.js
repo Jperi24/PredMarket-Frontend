@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { deployPredMarket } from "./DeployPredMarketV2"; // Adjust path as necessary
 import { ethers } from "ethers";
 import { useSigner } from "@thirdweb-dev/react";
+import Modal from "./Modal";
 
 import { debounce } from "lodash"; // Import debounce from lodash
 
@@ -11,6 +12,9 @@ const TournamentInfo = ({ slug }) => {
   const [selectedPhaseId, setSelectedPhaseId] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [isLoadingSets, setIsLoadingSets] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [modalContent, setModalContent] = useState("");
+  const [modalAction, setModalAction] = useState(null);
   const [phases, setPhases] = useState([]);
   const commonChains = {
     56: {
@@ -85,6 +89,17 @@ const TournamentInfo = ({ slug }) => {
 
     fetchTournamentData();
   }, [slug]);
+
+  const handleConfirm = async () => {
+    setShowModal(false);
+    if (modalAction) {
+      await modalAction();
+    }
+  };
+
+  const handleClose = () => {
+    setShowModal(false);
+  };
 
   useEffect(() => {
     const updateChainId = async () => {
@@ -217,50 +232,55 @@ const TournamentInfo = ({ slug }) => {
 
       if (!isDeployed && chainId) {
         console.log(signer);
-        const userConfirmed = confirm(
-          `You are about to deploy a Bet that involves ${eventA} and ${eventB}... on chain: ${signer.provider.network.name}`
-        );
 
-        if (userConfirmed) {
-          const tokenAmount = prompt(
-            `Before deploying a set, you are required to lock up a specified number of tokens from your current chain. These tokens will be returned to you, provided you demonstrate honest and fair decision-making. This process ensures legitimacy and transparency, as all users will be able to view the number of tokens you have locked. Please enter the number of ${currentChainName} tokens you wish to lock up:`,
-            "0"
+        setModalContent(
+          `<p>You are about to deploy a Bet that involves <strong>${eventA}</strong> and <strong>${eventB}</strong> on chain: <strong>${signer.provider.network.name}</strong>.</p>`
+        );
+        setModalAction(() => async () => {
+          // Show second modal for token amount
+          setModalContent(
+            `<p>Before deploying a set, you are required to lock up a specified number of tokens from your current chain. These tokens will be returned to you, provided you demonstrate honest and fair decision-making. This process ensures legitimacy and transparency, as all users will be able to view the number of tokens you have locked. Please enter the number of <strong>${currentChainName}</strong> tokens you wish to lock up:</p>
+    <input type="number" id="tokenAmountInput" placeholder="0" />`
           );
-          const tokenAmountNumber = parseFloat(tokenAmount);
-          if (!isNaN(tokenAmountNumber) && tokenAmountNumber > 0) {
-            const tokenAmountInWei = ethers.utils.parseEther(
-              tokenAmount.toString()
-            );
-            try {
-              const contractAddress = await deployPredMarket(
-                eventA,
-                eventB,
-                tags,
-                NameofMarket,
-                signer,
-                fullName,
-                endsAt,
-                tokenAmountInWei
+          setModalAction(() => async () => {
+            const tokenAmount =
+              document.getElementById("tokenAmountInput").value;
+            const tokenAmountNumber = parseFloat(tokenAmount);
+            if (!isNaN(tokenAmountNumber) && tokenAmountNumber > 0) {
+              const tokenAmountInWei = ethers.utils.parseEther(
+                tokenAmount.toString()
               );
-            } catch (deployError) {
-              console.error("Failed to deploy contract:", deployError);
+              try {
+                const contractAddress = await deployPredMarket(
+                  eventA,
+                  eventB,
+                  tags,
+                  NameofMarket,
+                  signer,
+                  fullName,
+                  endsAt,
+                  tokenAmountInWei
+                );
+              } catch (deployError) {
+                console.error("Failed to deploy contract:", deployError);
+                alert("Failed to complete the transaction. Please try again.");
+              }
+            } else {
+              alert("Invalid token amount entered.");
             }
-          } else {
-            alert("Invalid token amount entered.");
-          }
-        } else {
-          if (chainId) {
-            alert("Contract Already Deployed");
-          } else {
-            alert("Can Not Confirm Chain");
-          }
-        }
+            setShowModal(false); // Hide the modal after action is taken
+          });
+          setShowModal(true); // Show the second modal
+        });
+        setShowModal(true);
 
         // Here, you could update your local state to include the contractAddress for this set
         // And also send this information to your backend for persistence
+      } else {
+        alert("Contract Already Deployed Or Wallet Not Connected");
       }
     } catch (error) {
-      console.error("Failed to deploy contract:", error);
+      console.log(error);
     } finally {
       setIsDeploying(false); // Re-enable the button
     }
@@ -387,6 +407,12 @@ const TournamentInfo = ({ slug }) => {
           Current Chain:{" "}
           <img src={getChainLogo(currentChainId)} className="chain-image2" />{" "}
         </div>
+        <Modal
+          show={showModal}
+          handleClose={handleClose}
+          handleConfirm={handleConfirm}
+          content={modalContent}
+        />
 
         <h2 style={{ color: "#0056b3" /* White text for high contrast */ }}>
           Tournament: {tournamentData?.name}

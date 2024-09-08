@@ -87,7 +87,7 @@ export default function PredMarketPageV2() {
   const [chain, setChain] = useState(null);
   const [netWorkMismatch, setNetworkMismatch] = useState(true);
   const [disagreeText, setDisagreeText] = useState("");
-  const [selectedOutcome, setSelectedOutcome] = useState("");
+
   const [selectedOutcome2, setSelectedOutcome2] = useState("0");
   const [deployerLocked, setDeployerLocked] = useState("");
 
@@ -207,10 +207,19 @@ export default function PredMarketPageV2() {
 
   const convertCryptoToUSD = (numberInCrypto) => {};
 
-  const sellANewBet = async (myBet, buyIn, selectedOutcome) => {
+  const [selectedOutcome, setSelectedOutcome] = useState("");
+  const [optionalOutcome, setOptionalOutcome] = useState("");
+
+  const sellANewBet = async (
+    myBet,
+    buyIn,
+    selectedOutcome,
+    optionalOutcome
+  ) => {
     console.log(myBet);
     console.log(buyIn);
     console.log(selectedOutcome);
+
     if (contractInstance) {
       try {
         // Convert myBet from ether to wei and ensure it's a BigNumber
@@ -220,6 +229,8 @@ export default function PredMarketPageV2() {
           selectedOutcome === "1" ? contract.eventA : contract.eventB;
         const valueInWei = ethers.utils.parseEther(myBet.toString());
         const valueInWeiBuyIn = ethers.utils.parseEther(buyIn.toString());
+        const specificSet =
+          optionalOutcome != [0, 0, 0] ? optionalOutcome : [0, 0, 0];
 
         // Display the alert-style message to the user and get their response
         const userConfirmed = confirm(
@@ -234,6 +245,8 @@ export default function PredMarketPageV2() {
         const tx = await contractInstance.sellANewBet(
           valueInWeiBuyIn,
           reverseSelected,
+          specificSet,
+
           {
             value: valueInWei,
           }
@@ -580,7 +593,7 @@ export default function PredMarketPageV2() {
   };
 
   const handleEndBet = () => {
-    const outcomeValue = parseInt(selectedOutcome, 10);
+    const outcomeValue = parseInt(winnerOfSet, 10);
     const outcomeValue2 = parseInt(selectedOutcome2, 10);
     declareWinner(outcomeValue, outcomeValue2);
   };
@@ -688,12 +701,27 @@ export default function PredMarketPageV2() {
                                 <option value="1">{contract.eventA}</option>
                                 <option value="2">{contract.eventB}</option>
                               </select>
+
+                              <select
+                                className="dropdown"
+                                value={selectedOutcome}
+                                onChange={(e) =>
+                                  setOptionalOutcome(e.target.value)
+                                }
+                              >
+                                <option value="" disabled>
+                                  Dictate Specific Set
+                                </option>
+                                <input value="1">{contract.eventA}</input>
+                                <input value="2">{contract.eventB}</input>
+                              </select>
                               <button
                                 onClick={() =>
                                   sellANewBet(
                                     myLocked,
                                     buyInIChoose,
-                                    selectedOutcome
+                                    selectedOutcome,
+                                    optionalOutcome
                                   )
                                 }
                               >

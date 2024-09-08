@@ -2,18 +2,13 @@ const { gql } = require("@apollo/client");
 
 const GET_FEATURED_TOURNAMENTS_QUERY = gql`
   query FeaturedTournamentsQuery(
-    $afterDate: Timestamp
-    $beforeDate: Timestamp
     $page: Int
     $perPage: Int
+    $afterDate30: Timestamp
   ) {
     tournaments(
       query: {
-        filter: {
-          isFeatured: true
-          afterDate: $afterDate
-          beforeDate: $beforeDate
-        }
+        filter: { afterDate: $afterDate30, isFeatured: true }
         page: $page
         perPage: $perPage
       }
@@ -30,23 +25,27 @@ const GET_FEATURED_TOURNAMENTS_QUERY = gql`
 
 const GET_ALL_TOURNAMENTS_QUERY = gql`
   query TournamentQuery(
-    $todayDate: Timestamp
-    $tomorrowDate: Timestamp
+    $afterDate3: Timestamp
+    $beforeDate5: Timestamp
     $page: Int
     $perPage: Int
   ) {
     tournaments(
       query: {
-        filter: { afterDate: $todayDate, beforeDate: $tomorrowDate }
+        filter: { afterDate: $afterDate3, beforeDate: $beforeDate5 }
         page: $page
         perPage: $perPage
       }
     ) {
+      pageInfo {
+        total
+      }
       nodes {
         name
         startAt
         endAt
         slug
+        numAttendees
       }
     }
   }

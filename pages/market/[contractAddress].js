@@ -1,9 +1,9 @@
 import { ethers } from "ethers";
 import predMarketArtifact from "../../predMarketV2.json"; // path to the ABI and Bytecode
-
+import Modal from "../../components/Modal";
 import { useSigner } from "@thirdweb-dev/react";
 import Header from "../../components/Header";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/router";
 import CountdownTimer, { timeLeft } from "../../components/CountDownTimer";
 import { resultKeyNameFromField } from "@apollo/client/utilities";
@@ -84,8 +84,19 @@ export default function PredMarketPageV2() {
   const [netWorkMismatch, setNetworkMismatch] = useState(true);
   const [disagreeText, setDisagreeText] = useState("");
   const [selectedOutcome, setSelectedOutcome] = useState("");
+  const [winnerOfSet, setWinnerOfSet] = useState("0");
   const [selectedOutcome2, setSelectedOutcome2] = useState("0");
   const [deployerLocked, setDeployerLocked] = useState("");
+  const [isBettingOpen, setIsBettingOpen] = useState("");
+  const [isVotingTime, setIsVotingTime] = useState("");
+  const [isBettingClosed, setIsBettingClosed] = useState("");
+  const [showModal, setShowModal] = useState(false);
+  const [modalContent, setModalContent] = useState("");
+  const [modalAction, setModalAction] = useState(null);
+  const [isDisagreementState, setIsDisagreementState] = useState("");
+  const [contractBalance, setContractBalance] = useState("");
+  const [newDeployedPrice, setNewDeployedPrice] = useState("");
+  const [newAskingPrice, setNewAskingPrice] = useState("");
 
   const [bets_balance, setbetsbalance] = useState({
     allbets: [],
@@ -96,6 +107,13 @@ export default function PredMarketPageV2() {
     winnings: 0,
   });
   const [filter, setFilter] = useState("forSale");
+  const betsContainerRef = useRef(null);
+
+  useEffect(() => {
+    if (betsContainerRef.current) {
+      betsContainerRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [filter]);
 
   const [currentTime, setCurrentTime] = useState(Math.floor(Date.now() / 1000));
 
@@ -107,6 +125,7 @@ export default function PredMarketPageV2() {
       console.log(
         isBettingOpen,
         isVotingTime,
+        "-< Is voting time",
         isBettingClosed,
         isDisagreementState,
         bets_balance.voteTime
@@ -116,14 +135,24 @@ export default function PredMarketPageV2() {
     return () => clearInterval(interval); // Clean up the interval
   }, []);
 
-  const isBettingOpen =
-    bets_balance.state === 0 && currentTime < bets_balance.endTime;
-  const isVotingTime =
-    (bets_balance.state === 1 && currentTime < contract.voteTime) ||
-    (bets_balance.state === 0 && currentTime > bets_balance.endTime);
-  const isBettingClosed =
-    bets_balance.state === 0 && currentTime > bets_balance.endTime;
-  const isDisagreementState = bets_balance.state === 2;
+  useEffect(() => {
+    const updateStates = () => {
+      console.log(bets_balance.state);
+      setIsBettingOpen(
+        bets_balance.state === 0 && currentTime < bets_balance.endTime
+      );
+      setIsVotingTime(
+        (bets_balance.state === 1 && currentTime < contract.voteTime) ||
+          (bets_balance.state === 0 && currentTime > bets_balance.endTime)
+      );
+      setIsBettingClosed(
+        bets_balance.state === 0 && currentTime > bets_balance.endTime
+      );
+      setIsDisagreementState(bets_balance.state === 2);
+    };
+
+    updateStates();
+  }, [bets_balance, currentTime, contract]);
 
   useEffect(() => {
     const deployContract = async () => {
@@ -163,6 +192,12 @@ export default function PredMarketPageV2() {
               displayAllBets();
 
               setChain(commonChains[network.chainId]);
+
+              const balance = await signer.provider.getBalance(contractAddress);
+
+              // ethers.js uses BigNumber to handle large numbers; convert the balance from Wei to Ether
+              const balanceInEther = ethers.utils.formatEther(balance);
+              setContractBalance(balanceInEther);
             }
           } else {
             console.error("Contract or contract.chain.chainId is not defined");
@@ -198,10 +233,19 @@ export default function PredMarketPageV2() {
     }
   };
 
+  const handleConfirm = async () => {
+    setShowModal(false);
+    if (modalAction) {
+      await modalAction();
+    }
+  };
+
+  const handleClose = () => {
+    setShowModal(false);
+  };
+
   const bigNumberToString = (bigNumber) =>
     parseInt(bigNumber._hex, 16).toString();
-
-  const convertCryptoToUSD = (numberInCrypto) => {};
 
   const sellANewBet = async (myBet, buyIn, selectedOutcome) => {
     console.log(myBet);
@@ -216,24 +260,31 @@ export default function PredMarketPageV2() {
         const valueInWei = ethers.utils.parseEther(myBet.toString());
         const valueInWeiBuyIn = ethers.utils.parseEther(buyIn.toString());
 
-        const userConfirmed = confirm(
-          `You are depositing ${myBet} ETH. If ${selectedName} wins and another user buys this bet for ${buyIn} ETH, you will be rewarded ${total} ETH. If another user does not buy in by the time the deployer of the bet declares a winner, you will be refunded ${myBet} ETH. You are eligible to unlist this bet at any time. Do you accept the terms?`
+        setModalContent(
+          `<p>You are depositing <strong>${myBet} ETH</strong>. If <strong>${selectedName}</strong> wins and another user buys this bet for <strong>${buyIn} ETH</strong>, you will be rewarded <strong>${total} ETH</strong>. If another user does not buy in by the time the deployer of the bet declares a winner, you will be refunded <strong>${myBet} ETH</strong>. You are eligible to unlist this bet at any time. Do you accept the terms?</p>`
         );
+        setModalAction(() => async () => {
+          try {
+            // Attempt to execute the smart contract function
+            const tx = await contractInstance.sellANewBet(
+              valueInWeiBuyIn,
+              reverseSelected,
+              {
+                value: valueInWei,
+              }
+            );
+            await tx.wait(); // Wait for the transaction to be mined
 
-        if (!userConfirmed) {
-          alert("You declined the terms. The bet was not placed.");
-          return;
-        }
-
-        const tx = await contractInstance.sellANewBet(
-          valueInWeiBuyIn,
-          reverseSelected,
-          {
-            value: valueInWei,
+            // Update the database after the transaction is successful
+            await updateBetterMongoDB(contractAddress, signerAddress);
+          } catch (error) {
+            // Log the error or handle it as needed
+            console.error("Error occurred:", error);
+            alert("Failed to complete the transaction. Please try again.");
           }
-        );
-        await tx.wait();
-        updateBetterMongoDB(contractAddress, signerAddress);
+        });
+
+        setShowModal(true);
       } catch (error) {
         console.log("Can't send new bet, this whyyyy");
         console.log(error);
@@ -279,20 +330,23 @@ export default function PredMarketPageV2() {
 
       const purchasePriceString = ethers.utils.formatEther(purchasePrice);
 
-      const userConfirmed = confirm(
-        `You are spending ${purchasePriceString} to buy into a bet that states: if ${selectedName} wins you will be rewarded ${winnings}`
+      setModalContent(
+        `<p>You are spending <strong>${purchasePriceString} ${chain.nativeCurrency.symbol}</strong> to buy into a bet that states: if <strong>${selectedName}</strong> wins, you will be rewarded <strong>${winnings} ${chain.nativeCurrency.symbol}</strong>.</p>`
       );
-
-      if (!userConfirmed) {
-        alert("You declined the terms. The bet was not placed.");
-        return;
-      }
-
-      const tx = await contractInstance.buyABet(positionInArray, {
-        value: purchasePrice,
+      setModalAction(() => async () => {
+        try {
+          const tx = await contractInstance.buyABet(positionInArray, {
+            value: purchasePrice,
+          });
+          await tx.wait();
+          updateBetterMongoDB(contractAddress, signerAddress);
+        } catch (error) {
+          // Log the error or handle it as needed
+          console.error("Error occurred:", error);
+          alert("Failed to complete the transaction. Please try again.");
+        }
       });
-      await tx.wait();
-      updateBetterMongoDB(contractAddress, signerAddress);
+      setShowModal(true);
     } catch (error) {
       console.log(error);
     }
@@ -302,29 +356,88 @@ export default function PredMarketPageV2() {
     try {
       const valueInWei = ethers.utils.parseEther(askingPrice.toString());
 
-      const userConfirmed = confirm(
-        `You are selling this bet for ${askingPrice} ETH and will no longer be participating. Do you agree?`
+      setModalContent(
+        `<p>You are selling this bet for <strong>${askingPrice} ETH</strong> and will no longer be participating. Do you agree?</p>`
       );
-
-      if (!userConfirmed) {
-        alert("You declined the terms. The bet was not placed.");
-        return;
-      }
-
-      const tx = await contractInstance.sellAnExistingBet(
-        positionInArray,
-        valueInWei
-      );
-      await tx.wait();
+      setModalAction(() => async () => {
+        try {
+          const tx = await contractInstance.sellAnExistingBet(
+            positionInArray,
+            valueInWei
+          );
+          await tx.wait();
+        } catch (error) {
+          // Log the error or handle it as needed
+          console.error("Error occurred:", error);
+          alert("Failed to complete the transaction. Please try again.");
+        }
+      });
+      setShowModal(true);
     } catch (error) {
       console.log("Can't sell bet, this whyyyy");
       console.log(error);
     }
   };
 
+  const editADeployedBet = async (
+    positionInArray,
+    newDeployedPrice,
+    newAskingPrice
+  ) => {
+    try {
+      const currentBet = await contractInstance.arrayOfBets(positionInArray);
+      console.log(currentBet);
+      let valueInWei = 0;
+
+      if (currentBet.amountDeployerLocked < newDeployedPrice) {
+        valueInWei = newDeployedPrice - currentBet.amountDeployerLocked;
+      }
+      console.log(valueInWei);
+
+      setModalContent(
+        `<p>The new amount that you will have locked up is <strong>${ethers.utils.formatEther(
+          newDeployedPrice
+        )} ETH</strong> and the new purchase price for this bet is <strong>${ethers.utils.formatEther(
+          newAskingPrice
+        )} ETH</strong>. Do you agree?</p>`
+      );
+
+      setModalAction(() => async () => {
+        try {
+          const tx = await contractInstance.editADeployedBet(
+            positionInArray,
+            newDeployedPrice,
+            newAskingPrice,
+            {
+              value: valueInWei.toString(),
+            }
+          );
+          await tx.wait();
+          alert("Bet updated successfully!");
+        } catch (error) {
+          console.error("Error occurred:", error);
+          alert("Failed to complete the transaction. Please try again.");
+        }
+      });
+
+      setShowModal(true);
+    } catch (error) {
+      console.error("Can't edit bet:", error);
+    }
+  };
+
   const withdrawBet = async () => {
     try {
       const tx = await contractInstance.withdraw();
+      await tx.wait;
+    } catch (error) {
+      console.log(error);
+    }
+  };
+
+  const ownerWithdraw = async () => {
+    try {
+      const tx = await contractInstance.transferOwnerAmount();
       await tx.wait;
     } catch (error) {
       console.log(error);
@@ -339,6 +452,15 @@ export default function PredMarketPageV2() {
   }
 
   const BigNumber = require("bignumber.js");
+
+  const transferStaffAmount = async () => {
+    try {
+      const tx = await contractInstance.transferStaffAmount();
+      await tx.wait;
+    } catch (error) {
+      console.log(error);
+    }
+  };
 
   const calculateTotalWinnings = (allbets) => {
     if (!Array.isArray(allbets)) {
@@ -444,7 +566,9 @@ export default function PredMarketPageV2() {
     if (contractInstance && disagreeText) {
       try {
         const value = await contractInstance.creatorLocked();
-        const tx = await contractInstance.disagreeWithOwner(disagreeText, {
+
+        console.log(Newvalue);
+        const tx = await contractInstance.disagreeWithOwner({
           value: value,
         });
         await tx.wait();
@@ -597,7 +721,15 @@ export default function PredMarketPageV2() {
 
   useEffect(() => {
     if (contractInstance && signer) {
-      const eventNames = ["shithappened", "winnerDeclaredVoting", "userVoted"];
+      const eventNames = [
+        "userCreatedABet",
+        "BetUnlisted",
+        "userBoughtBet",
+        "userReListedBet",
+        "winnerDeclaredVoting",
+        "userVoted",
+        "userWithdrew",
+      ];
 
       eventNames.forEach((eventName) => {
         contractInstance.on(eventName, displayAllBets);
@@ -620,8 +752,11 @@ export default function PredMarketPageV2() {
   };
 
   const handleEndBet = () => {
-    const outcomeValue = parseInt(selectedOutcome, 10);
+    const outcomeValue = parseInt(winnerOfSet, 10);
     const outcomeValue2 = parseInt(selectedOutcome2, 10);
+    console.log("outcome Val1", outcomeValue);
+    console.log("outcome Val2", outcomeValue2);
+
     declareWinner(outcomeValue, outcomeValue2);
   };
 
@@ -652,6 +787,7 @@ export default function PredMarketPageV2() {
                       {""} Is the amount the creator of the set has locked up to
                       ensure Integrity
                     </h4>
+                    <h4>{contractBalance} The Amount of Eth In contract</h4>
                     <h4>{contract.NameofMarket}</h4>
                     <h4>{contract.fullName}</h4>
                     <div>
@@ -659,10 +795,12 @@ export default function PredMarketPageV2() {
                       {contract.eventB}
                     </div>
                     {bets_balance.state === 0 ? (
-                      <p>
-                        Total Potential Winnings: {totalWinnings}{" "}
-                        {chain?.nativeCurrency?.symbol}
-                      </p>
+                      <>
+                        <p>
+                          Total Potential Winnings: {totalWinnings}{" "}
+                          {chain?.nativeCurrency?.symbol}
+                        </p>
+                      </>
                     ) : (
                       <h4>
                         <div>
@@ -677,6 +815,12 @@ export default function PredMarketPageV2() {
                     )}
                   </h4>
                 </div>
+                <Modal
+                  show={showModal}
+                  handleClose={handleClose}
+                  handleConfirm={handleConfirm}
+                  content={modalContent}
+                />
 
                 <div className="input-container">
                   <div>
@@ -706,6 +850,7 @@ export default function PredMarketPageV2() {
                                 value={myLocked}
                                 onChange={(e) => setmyLocked(e.target.value)}
                                 placeholder={`My Bet In ${chain?.nativeCurrency?.symbol}`}
+                                maxLength={20}
                               />
                               <input
                                 className="input-field"
@@ -714,6 +859,7 @@ export default function PredMarketPageV2() {
                                   setbuyInIChoose(e.target.value)
                                 }
                                 placeholder={`Opponent's Bet In ${chain?.nativeCurrency?.symbol}`}
+                                maxLength={20}
                               />
                               <select
                                 className="dropdown"
@@ -753,6 +899,7 @@ export default function PredMarketPageV2() {
                             value={disagreeText}
                             onChange={(e) => setDisagreeText(e.target.value)}
                             placeholder={`Disagreement Reason`}
+                            maxLength={1000}
                           />
                           <p>
                             <CountdownTimer
@@ -791,6 +938,18 @@ export default function PredMarketPageV2() {
                           <button onClick={() => withdrawBet()}>
                             Withdraw Balance
                           </button>
+                          {contract && contractInstance && isAuthorizedUser && (
+                            <>
+                              <button onClick={() => ownerWithdraw()}>
+                                Owner Withdraw Collected Comission & Locked
+                                Amounts
+                              </button>
+
+                              <button onClick={() => transferStaffAmount()}>
+                                Staff Withdrawl
+                              </button>
+                            </>
+                          )}
                         </>
                       )}
                     </div>
@@ -813,7 +972,7 @@ export default function PredMarketPageV2() {
 
             <div>
               <ul>
-                <div className="bets-container">
+                <div ref={betsContainerRef} className="bets-container">
                   {selectedBets.length > 0 && (
                     <button onClick={() => unlistBet(selectedBets)}>
                       Unlist All Selected
@@ -836,95 +995,190 @@ export default function PredMarketPageV2() {
                               return true;
                           }
                         })
-                        .map((bet, index) => (
-                          <div key={index} className="bet">
-                            <h3>Bet {index + 1}</h3>
-                            <div className="bet-info">
-                              Amount To Win:{" "}
-                              {ethers.utils.formatEther(
-                                ethers.BigNumber.from(
-                                  bet.amountDeployerLocked
-                                ).add(
-                                  ethers.BigNumber.from(
-                                    bet.amountBuyerLocked > 0
-                                      ? bet.amountBuyerLocked
-                                      : bet.amountToBuyFor
-                                  )
-                                )
-                              )}{" "}
-                              {chain?.nativeCurrency?.symbol}
-                            </div>
-                            {bet.selling && (
+                        .map((bet, index) => {
+                          return (
+                            <div key={index} className="bet">
+                              <h3>Bet {index + 1}</h3>
                               <div className="bet-info">
-                                Cost To Purchase:{" "}
+                                Amount To Win:{" "}
                                 {ethers.utils.formatEther(
-                                  bigNumberToString(bet.amountToBuyFor)
+                                  ethers.BigNumber.from(
+                                    bet.amountDeployerLocked
+                                  ).add(
+                                    ethers.BigNumber.from(
+                                      bet.amountBuyerLocked > 0
+                                        ? bet.amountBuyerLocked
+                                        : bet.amountToBuyFor
+                                    )
+                                  )
                                 )}{" "}
                                 {chain?.nativeCurrency?.symbol}
                               </div>
-                            )}
-                            <div className="bet-info">
-                              Owner Of Bet Wins If:{" "}
-                              {bet.conditionForBuyerToWin === 1
-                                ? contract.eventA
-                                : contract.eventB}{" "}
-                              Wins
-                            </div>
-                            {bet.selling ? (
-                              bet.owner === signerAddress ? (
-                                <div className="bet-selection">
-                                  <input
-                                    type="checkbox"
-                                    value={bet.positionInArray}
-                                    onChange={(e) =>
-                                      handleSelectBet(e.target.value)
-                                    }
-                                  />
-                                  Select To Unlist
+                              {bet.selling && (
+                                <div className="bet-info">
+                                  Cost To Purchase:{" "}
+                                  {ethers.utils.formatEther(bet.amountToBuyFor)}{" "}
+                                  {chain?.nativeCurrency?.symbol}
                                 </div>
-                              ) : (
-                                <button
-                                  onClick={() =>
-                                    buyBet(
-                                      bet.positionInArray,
-                                      bet.amountToBuyFor
-                                    )
-                                  }
-                                >
-                                  Buy Bet
-                                </button>
-                              )
-                            ) : !bet.selling && bet.owner === signerAddress ? (
-                              <>
-                                <input
-                                  style={{
-                                    width: "50%",
-                                    padding: "6px 10px",
-                                    border: "1px solid #ccc",
-                                    borderRadius: "4px",
-                                    textAlign: "center",
-                                    fontSize: "14px",
-                                  }}
-                                  value={betPrices[index] || ""}
-                                  onChange={(e) =>
-                                    handleChangePrice(e.target.value, index)
-                                  }
-                                  placeholder={`ReSell Price In ${chain?.nativeCurrency?.symbol}`}
-                                />
-                                <button
-                                  onClick={() =>
-                                    listBetForSale(
-                                      bet.positionInArray,
-                                      betPrices[index] || ""
-                                    )
-                                  }
-                                >
-                                  Re-List Bet
-                                </button>
-                              </>
-                            ) : null}
-                          </div>
-                        ))
+                              )}
+                              <div className="bet-info">
+                                Owner Of Bet Wins If:{" "}
+                                {bet.conditionForBuyerToWin === 1
+                                  ? contract.eventA
+                                  : contract.eventB}{" "}
+                                Wins
+                              </div>
+                              {bet.selling ? (
+                                bet.owner === signerAddress ? (
+                                  <div className="bet-selection">
+                                    <input
+                                      type="checkbox"
+                                      value={bet.positionInArray}
+                                      onChange={(e) =>
+                                        handleSelectBet(e.target.value)
+                                      }
+                                    />
+                                    Select To Unlist
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() =>
+                                      buyBet(
+                                        bet.positionInArray,
+                                        bet.amountToBuyFor
+                                      )
+                                    }
+                                  >
+                                    Buy Bet
+                                  </button>
+                                )
+                              ) : !bet.selling &&
+                                bet.owner === signerAddress &&
+                                bet.deployer != signerAddress ? (
+                                <>
+                                  <input
+                                    style={{
+                                      width: "50%",
+                                      padding: "6px 10px",
+                                      border: "1px solid #ccc",
+                                      borderRadius: "4px",
+                                      textAlign: "center",
+                                      fontSize: "14px",
+                                    }}
+                                    value={betPrices[index] || ""}
+                                    onChange={(e) =>
+                                      handleChangePrice(e.target.value, index)
+                                    }
+                                    placeholder={`ReSell Price In ${chain?.nativeCurrency?.symbol}`}
+                                    maxLength={100}
+                                  />
+                                  <button
+                                    onClick={() =>
+                                      listBetForSale(
+                                        bet.positionInArray,
+                                        betPrices[index] || ""
+                                      )
+                                    }
+                                  >
+                                    Re-List Bet
+                                  </button>
+                                </>
+                              ) : null}
+
+                              {bet.deployer === signerAddress &&
+                                bet.owner === signerAddress && (
+                                  <div className="edit-bet-section">
+                                    <h4>Edit Your Deployed Bet</h4>
+                                    <div className="current-values">
+                                      <p>
+                                        <strong>Current Deployed Price:</strong>{" "}
+                                        {ethers.utils.formatEther(
+                                          bet.amountDeployerLocked
+                                        )}{" "}
+                                        {chain?.nativeCurrency?.symbol}
+                                      </p>
+                                      <p>
+                                        <strong>Current Asking Price:</strong>{" "}
+                                        {ethers.utils.formatEther(
+                                          bet.amountToBuyFor
+                                        )}{" "}
+                                        {chain?.nativeCurrency?.symbol}
+                                      </p>
+                                    </div>
+                                    <div className="edit-inputs">
+                                      <label>
+                                        Amount You Locked Up{" "}
+                                        <input
+                                          style={{
+                                            width: "100%",
+                                            padding: "8px",
+                                            border: "1px solid #ccc",
+                                            borderRadius: "4px",
+                                            textAlign: "center",
+                                            fontSize: "14px",
+                                            marginTop: "5px",
+                                          }}
+                                          value={newDeployedPrice || ""}
+                                          onChange={(e) =>
+                                            setNewDeployedPrice(e.target.value)
+                                          }
+                                          placeholder={`Enter new price in ${chain?.nativeCurrency?.symbol}`}
+                                        />
+                                      </label>
+                                      <label>
+                                        New Buying Price
+                                        <input
+                                          style={{
+                                            width: "100%",
+                                            padding: "8px",
+                                            border: "1px solid #ccc",
+                                            borderRadius: "4px",
+                                            textAlign: "center",
+                                            fontSize: "14px",
+                                            marginTop: "5px",
+                                          }}
+                                          value={newAskingPrice || ""}
+                                          onChange={(e) =>
+                                            setNewAskingPrice(e.target.value)
+                                          }
+                                          placeholder={`Enter new price in ${chain?.nativeCurrency?.symbol}`}
+                                          maxLength={100}
+                                        />
+                                      </label>
+                                    </div>
+                                    <button
+                                      style={{
+                                        marginTop: "10px",
+                                        padding: "10px 15px",
+                                        backgroundColor: "#007bff",
+                                        color: "#fff",
+                                        border: "none",
+                                        borderRadius: "4px",
+                                        cursor: "pointer",
+                                      }}
+                                      onClick={() =>
+                                        editADeployedBet(
+                                          bet.positionInArray,
+                                          newDeployedPrice
+                                            ? ethers.utils.parseEther(
+                                                newDeployedPrice
+                                              )
+                                            : bet.amountDeployerLocked,
+                                          newAskingPrice
+                                            ? ethers.utils.parseEther(
+                                                newAskingPrice
+                                              )
+                                            : bet.amountToBuyFor
+                                        )
+                                      }
+                                    >
+                                      Save Changes
+                                    </button>
+                                  </div>
+                                )}
+                            </div>
+                          );
+                        })
                     ) : (
                       <div>No Bets Available</div>
                     )
@@ -943,8 +1197,8 @@ export default function PredMarketPageV2() {
                   <select
                     id="outcomeSelect"
                     className="dropdown"
-                    value={selectedOutcome}
-                    onChange={(e) => setSelectedOutcome(e.target.value)}
+                    value={winnerOfSet}
+                    onChange={(e) => setWinnerOfSet(e.target.value)}
                   >
                     <option value="1">Set Winner As {contract.eventA}</option>
                     <option value="2">Set Winner As {contract.eventB}</option>

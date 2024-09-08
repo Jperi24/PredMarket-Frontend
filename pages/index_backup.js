@@ -168,7 +168,7 @@ export default function ContractsPage() {
     return (
       <div className="page-container">
         <Header />
-        <h2>Deployed Contracts</h2>
+        <h2>Sets</h2>
         <div className="spinner"></div>
       </div>
     );
