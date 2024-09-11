@@ -1,0 +1,160 @@
+/* TournamentForm.css */
+
+/* Container for the form */
+.tournament-form-container {
+  max-width: 600px; /* Adjust width */
+  margin: 0 auto; /* Center the form */
+  padding: 20px;
+  background-color: #fff;
+  border-radius: 10px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  border: 1px solid #ddd;
+}
+
+/* Form header styling */
+.form-header {
+  margin-bottom: 20px;
+  font-size: 24px;
+  font-weight: bold;
+  color: #333;
+  text-align: center;
+}
+
+/* Input field styling */
+.tournament-input,
+.tournament-select {
+  margin: 10px 0;
+  padding: 10px;
+  width: 100%;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  font-size: 16px;
+  box-sizing: border-box;
+  background-color: #f9f9f9;
+}
+
+/* Dropdown for selecting the videogame */
+.tournament-select {
+  appearance: none;
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M7 10l5 5 5-5z" fill="rgba(0, 0, 0, 0.54)"/></svg>');
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 16px 16px;
+}
+.date-range-picker-container {
+  margin: 20px 0;
+}
+
+/* Date range picker label styling */
+.date-range-label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: bold;
+  font-size: 14px;
+  color: #333;
+}
+
+/* Custom date range picker styling */
+.custom-date-range-picker {
+  width: 100%;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  font-size: 16px;
+  padding: 10px;
+  background-color: white;
+}
+
+/* Calendar wrapper styling */
+.custom-date-range-picker .react-daterange-picker__wrapper {
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  padding: 5px;
+}
+
+/* DateRangePicker button styling */
+.custom-date-range-picker .react-calendar__navigation button {
+  min-width: 40px; /* Reduce button width */
+  background-color: #007bff; /* Button background color */
+  border: none; /* Remove default border */
+  color: #fff; /* Button text color */
+  padding: 8px 12px; /* Button padding */
+  border-radius: 5px; /* Rounded corners */
+  font-size: 14px; /* Font size */
+  cursor: pointer; /* Pointer cursor */
+  transition: background-color 0.3s ease; /* Hover transition */
+  margin: 2px; /* Add slight margin between buttons */
+}
+
+.custom-date-range-picker .react-calendar__navigation button:hover {
+  background-color: #0056b3; /* Hover background color */
+}
+
+/* Month and Year Selector Styling */
+.custom-date-range-picker
+  .react-calendar__navigation
+  button.react-calendar__navigation__arrow {
+  padding: 5px; /* Adjust padding for arrow buttons */
+  min-width: 30px; /* Make arrow buttons smaller */
+}
+
+/* Calendar Days Styling */
+.custom-date-range-picker .react-calendar__tile {
+  border-radius: 5px; /* Rounded corners */
+  padding: 10px 0; /* Adjust padding */
+  font-size: 14px; /* Font size */
+  margin: 2px; /* Space between dates */
+  background-color: #f9f9f9; /* Background color for dates */
+  border: 1px solid transparent; /* Initial border */
+  transition: background-color 0.3s ease, border-color 0.3s ease; /* Transition effects */
+}
+
+/* Selected Day Styling */
+.custom-date-range-picker .react-calendar__tile--active {
+  background-color: #007bff !important; /* Selected background color */
+  color: #fff !important; /* Selected text color */
+  border-color: #0056b3; /* Border color on select */
+}
+
+/* Hover effect for calendar days */
+.custom-date-range-picker .react-calendar__tile:hover {
+  background-color: #e6f7ff; /* Hover background color */
+  border-color: #0056b3; /* Hover border color */
+}
+
+/* Disabled button styling */
+.custom-date-range-picker .react-calendar__tile:disabled {
+  background-color: #e9ecef; /* Disabled background color */
+  color: #6c757d; /* Disabled text color */
+  cursor: not-allowed; /* Disabled cursor */
+}
+
+/* Button styling */
+.deploy-button {
+  margin-top: 20px;
+  padding: 12px 20px;
+  width: 100%;
+  background-color: #007bff;
+  border: none;
+  border-radius: 5px;
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+.deploy-button:hover {
+  background-color: #0056b3;
+}
+
+.deploy-button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+/* Deploying message styling */
+.deploying-message {
+  font-size: 16px;
+  color: #888;
+  text-align: center;
+  margin-top: 10px;
+}

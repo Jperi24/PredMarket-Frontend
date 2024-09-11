@@ -8,6 +8,7 @@ const CustomTournamentForm = ({ onSubmit }) => {
   const [customTournamentData, setCustomTournamentData] = useState({
     name: "",
     videogame: "",
+
     phase: "",
     startAt: "",
     endAt: "",
@@ -47,44 +48,7 @@ const CustomTournamentForm = ({ onSubmit }) => {
     });
   };
 
-  const validateForm = () => {
-    const { name, videogame, phase, startAt, endAt, participants } =
-      customTournamentData;
-
-    // Check if all fields are filled
-    if (
-      !name ||
-      !videogame ||
-      !phase ||
-      !startAt ||
-      !endAt ||
-      participants.some((p) => !p)
-    ) {
-      alert("Please fill in all custom fields.");
-      return false;
-    }
-
-    // Check if 'startAt' is a future date
-    const currentDate = new Date().getTime() / 1000; // Current timestamp in seconds
-    if (startAt <= currentDate) {
-      alert("Start date must be in the future.");
-      return false;
-    }
-
-    // Check if 'endAt' is after 'startAt'
-    if (endAt <= startAt) {
-      alert("End date must be after the start date.");
-      return false;
-    }
-
-    return true;
-  };
-
   const deployContractForSet = async (tournamentData) => {
-    if (!validateForm()) {
-      return; // Stop execution if the form is not valid
-    }
-
     setIsDeploying(true);
     console.log("Deploying contract for set...");
 
@@ -190,6 +154,8 @@ const CustomTournamentForm = ({ onSubmit }) => {
     };
 
   const handleFormSubmit = () => {
+    console.log("signer:", signer);
+    console.log("Custom Tournament Data:", customTournamentData);
     deployContractForSet(customTournamentData);
   };
 
@@ -219,7 +185,6 @@ const CustomTournamentForm = ({ onSubmit }) => {
             type="text"
             name="name"
             placeholder="Tournament Name"
-            maxLength={100}
             value={customTournamentData.name}
             onChange={handleCustomInputChange}
             style={{ margin: "10px 0", padding: "5px", width: "100%" }}
@@ -261,7 +226,6 @@ const CustomTournamentForm = ({ onSubmit }) => {
               type="text"
               name="videogame"
               placeholder="Enter custom videogame"
-              maxLength={100}
               value={customTournamentData.videogame}
               onChange={handleCustomInputChange}
               style={{ margin: "10px 0", padding: "5px", width: "100%" }}
@@ -272,7 +236,6 @@ const CustomTournamentForm = ({ onSubmit }) => {
             type="text"
             name="participant1"
             placeholder="Enter Participant 1"
-            maxLength={100}
             value={customTournamentData.participants[0]}
             onChange={(e) => handleParticipantChange(0, e.target.value)}
             style={{ margin: "10px 0", padding: "5px", width: "100%" }}
@@ -281,7 +244,6 @@ const CustomTournamentForm = ({ onSubmit }) => {
             type="text"
             name="participant2"
             placeholder="Enter Participant 2"
-            maxLength={100}
             value={customTournamentData.participants[1]}
             onChange={(e) => handleParticipantChange(1, e.target.value)}
             style={{ margin: "10px 0", padding: "5px", width: "100%" }}
@@ -429,7 +391,6 @@ const CustomTournamentForm = ({ onSubmit }) => {
                 name="phase"
                 id="phase"
                 placeholder="Enter Phase"
-                maxLength={100}
                 value={customTournamentData.phase || ""}
                 onChange={handleCustomInputChange}
                 list="phases"

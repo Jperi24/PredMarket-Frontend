@@ -26,6 +26,7 @@ client
       console.log(`Server running on port ${PORT}`);
       scheduleTasks();
       fetchAllTournamentDetails();
+      moveExpiredContracts();
     });
   })
   .catch((err) => {
@@ -35,22 +36,40 @@ client
 async function moveExpiredContracts() {
   try {
     const sourceCollection = db.collection("Contracts");
+    const targetCollection = db.collection("ExpiredContracts");
 
     // Get the current time and subtract 7 days (7 days * 24 hours * 60 minutes * 60 seconds * 1000 milliseconds)
     const sevenDaysAgo = new Date().getTime() - 7 * 24 * 60 * 60 * 1000;
     // Convert milliseconds back to seconds for the timestamp comparison in MongoDB
+    // const threshold = Math.floor(sevenDaysAgo / 1000);
     const threshold = Math.floor(sevenDaysAgo / 1000);
 
-    // Delete contracts that ended more than 7 days ago directly
-    const result = await sourceCollection.deleteMany({
-      endTime: { $lt: threshold },
-    });
+    // Find contracts that ended more than 7 days ago
+    const expiredContracts = await sourceCollection
+      .find({
+        endsAt: { $lt: threshold },
+      })
+      .toArray();
 
-    console.log(
-      `${result.deletedCount} expired contracts deleted successfully`
-    );
+    if (expiredContracts.length > 0) {
+      // Insert expired contracts into the target collection
+      const insertResult = await targetCollection.insertMany(expiredContracts);
+      console.log(
+        `${insertResult.insertedCount} contracts moved to ExpiredContracts collection successfully`
+      );
+
+      // Delete the moved contracts from the source collection
+      const deleteResult = await sourceCollection.deleteMany({
+        endsAt: { $lt: threshold },
+      });
+      console.log(
+        `${deleteResult.deletedCount} expired contracts deleted from Contracts collection successfully`
+      );
+    } else {
+      console.log("No expired contracts found to move");
+    }
   } catch (err) {
-    console.error("Error deleting expired contracts:", err);
+    console.error("Error moving expired contracts:", err);
   }
 }
 
@@ -94,21 +113,20 @@ async function updateAllRates() {
   console.log("All rates updated");
 }
 
+app.get("/api/rates", async (req, res) => {
+  let rates = {};
+  // Assuming 'rateCache' is a Map or similar structure
+  rateCache.forEach((value, key) => {
+    rates[key] = value;
+  });
+  res.json(rates);
+});
+
 // Initial fetch and setup periodic update
 updateAllRates();
 setInterval(updateAllRates, FETCH_INTERVAL);
 
 // Endpoint to get ETH to USD rate from the cache
-app.get("/ethToUsdRate", (req, res) => {
-  const rate = rateCache.get(RATE_KEY);
-  if (rate) {
-    res.json({ rate });
-  } else {
-    res.status(503).json({
-      error: "Rate is currently unavailable, please try again later.",
-    });
-  }
-});
 
 // Endpoint to check if a set has already been deployed
 app.get(`/check-set-deployment/:tags`, async (req, res) => {
@@ -161,8 +179,8 @@ app.post("/addContract", async (req, res) => {
 
 app.post("/moveToDisagreements", async (req, res) => {
   try {
-    const { contractAddress, disagreementText } = req.body;
-    let sourceCollection = db.collection("ExpiredContracts");
+    const { contractAddress, reason } = req.body;
+    let sourceCollection = db.collection("Contracts");
     const targetCollection = db.collection("Disagreements");
 
     // Find the contract in the source collection
@@ -170,7 +188,7 @@ app.post("/moveToDisagreements", async (req, res) => {
 
     // If not found in ExpiredContracts, search in Contracts collection
     if (!contract) {
-      sourceCollection = db.collection("Contracts");
+      sourceCollection = db.collection("ExpiredContracts");
       contract = await sourceCollection.findOne({ address: contractAddress });
 
       // If still not found, respond with an error
@@ -183,7 +201,7 @@ app.post("/moveToDisagreements", async (req, res) => {
     // Include the disagreementText and update the lastModified field
     const updatedContract = {
       ...contract,
-      disagreementText: disagreementText,
+      disagreementText: reason,
       lastModified: new Date(),
     };
 
@@ -202,11 +220,107 @@ app.post("/moveToDisagreements", async (req, res) => {
   }
 });
 
+app.post("/moveFromDisagreementsToContracts", async (req, res) => {
+  try {
+    const { contractAddress } = req.body;
+    const targetCollection = db.collection("Contracts");
+    let sourceCollection = db.collection("Disagreements");
+
+    // Find the contract in the source collection
+    let contract = await sourceCollection.findOne({ address: contractAddress });
+
+    if (!contract) {
+      sourceCollection = db.collection("ExpiredContracts");
+      contract = await sourceCollection.findOne({ address: contractAddress });
+      if (!contract) {
+        return res.status(404).send("Contract not found in collections");
+      }
+    }
+
+    // Prepare the document to be inserted into the Contracts collection
+    // Removing the disagreementText field
+    const updatedContract = {
+      ...contract,
+      lastModified: new Date(),
+    };
+    delete updatedContract.disagreementText; // Deletes the disagreementText field
+
+    // Insert the updated document into the Contracts collection
+    await targetCollection.insertOne(updatedContract);
+
+    // Remove the original document from its source collection
+    await sourceCollection.deleteOne({ address: contractAddress });
+
+    res.status(200).send("Contract moved to Contracts collection successfully");
+  } catch (error) {
+    console.error("Error moving contract to Contracts:", error);
+    res.status(500).send("Error moving contract");
+  }
+});
+
+// app.get("/getContracts", async (req, res) => {
+//   try {
+//     const collection = db.collection("Contracts");
+//     const contracts = await collection.find({}).toArray();
+//     res.status(200).json(contracts);
+//   } catch (error) {
+//     console.error("Error fetching contracts from MongoDB:", error);
+//     res.status(500).send("Error fetching contracts");
+//   }
+// });
+
+// const contractsCache = new NodeCache(); // This will store the contracts
+
+// async function updateContractsCache() {
+//   const collections = ["Contracts", "ExpiredContracts", "Disagreements"];
+//   let allContracts = [];
+
+//   try {
+//     for (const collectionName of collections) {
+//       const collection = db.collection(collectionName);
+//       const contracts = await collection.find({}).toArray();
+
+//       // Append the collectionName to each contract
+//       const augmentedContracts = contracts.map((contract) => ({
+//         ...contract,
+//         collectionName: collectionName, // Adding collection name to each document
+//       }));
+
+//       allContracts = allContracts.concat(augmentedContracts);
+//     }
+
+//     // Cache the combined list of contracts with augmented collection name
+//     contractsCache.set("allContracts", allContracts, 600); // Set TTL for 10 minutes
+//     console.log("Contracts cache updated successfully.");
+//   } catch (error) {
+//     console.error("Failed to update contracts cache:", error);
+//   }
+// }
+
 app.get("/getContracts", async (req, res) => {
   try {
-    const collection = db.collection("Contracts");
-    const contracts = await collection.find({}).toArray();
-    res.status(200).json(contracts);
+    // List of collections to query from
+    const collectionNames = ["Contracts", "ExpiredContracts", "Disagreements"];
+
+    // Function to fetch documents from a collection and add the collection name
+    const fetchFromCollection = async (collectionName) => {
+      const collection = db.collection(collectionName);
+      const documents = await collection.find({}).toArray();
+      // Adding collection name to each document
+      return documents.map((doc) => ({ ...doc, collectionName }));
+    };
+
+    // Execute queries for all collections concurrently
+    const contractsPromises = collectionNames.map((collectionName) =>
+      fetchFromCollection(collectionName)
+    );
+    const results = await Promise.all(contractsPromises);
+
+    // Flatten the results array (since each promise returns an array of documents)
+    const allContracts = results.flat();
+
+    // Return the combined results
+    res.status(200).json(allContracts);
   } catch (error) {
     console.error("Error fetching contracts from MongoDB:", error);
     res.status(500).send("Error fetching contracts");
@@ -217,16 +331,27 @@ app.get("/api/contracts/:address", async (req, res) => {
   try {
     const address = req.params.address;
     const contractsCollection = db.collection("Contracts");
+    const disagreementsCollection = db.collection("Disagreements");
+    const expiredContractsCollection = db.collection("ExpiredContracts");
 
     // First try to find the contract in the Contracts collection
     let contract = await contractsCollection.findOne({ address: address });
 
-    // If not found in Contracts, try the ExpiredContracts collection
+    // If not found in Contracts, try the Disagreements collection
+    if (!contract) {
+      contract = await disagreementsCollection.findOne({ address: address });
+    }
 
+    // If not found in Disagreements, try the ExpiredContracts collection
+    if (!contract) {
+      contract = await expiredContractsCollection.findOne({ address: address });
+    }
+
+    // Return the contract if found
     if (contract) {
       res.status(200).json(contract);
     } else {
-      // If the contract is not found in both collections
+      // If the contract is not found in any of the collections
       res.status(404).send("Contract not found");
     }
   } catch (error) {
@@ -283,7 +408,6 @@ app.post("/api/updateBetterMongoDB", async (req, res) => {
     res.status(500).send("Error updating MongoDB");
   }
 });
-
 const {
   GET_ALL_TOURNAMENTS_QUERY,
   GET_FEATURED_TOURNAMENTS_QUERY,
@@ -300,193 +424,13 @@ function sleep(ms) {
 
 let isFetchingTournaments = false;
 
-// async function fetchAllTournamentDetails() {
-//   if (isFetchingTournaments) {
-//     console.log("fetchAllTournamentDetails is already running. Exiting.");
-//     return;
-//   }
-
-//   // Set the lock
-//   isFetchingTournaments = true;
-//   console.log("Updating daily cache...");
-
-//   let allTournaments = [];
-//   let page = 1;
-//   const perPage = 100;
-//   let hasMore = true;
-
-//   const todayDate = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
-
-//   const afterDate3 = Math.floor(
-//     new Date(Date.now() - 3 * 24 * 3600 * 1000).getTime() / 1000
-//   );
-
-//   const afterDate30 = Math.floor(
-//     new Date(Date.now() - 30 * 24 * 3600 * 1000).getTime() / 1000
-//   );
-
-//   const beforeDate5 = Math.floor(
-//     new Date(Date.now() + 5 * 24 * 3600 * 1000).getTime() / 1000
-//   );
-
-//   // Fetch Featured Tournaments
-//   while (hasMore) {
-//     await sleep(10);
-//     try {
-//       const { data } = await apolloClient.query({
-//         query: GET_FEATURED_TOURNAMENTS_QUERY,
-//         variables: {
-//           afterDate30,
-//           page,
-//           perPage,
-//         },
-//       });
-//       const filteredTournaments = data.tournaments.nodes.filter(
-//         (tournament) => tournament.endAt >= todayDate
-//       );
-//       allTournaments = [...allTournaments, ...filteredTournaments];
-//       hasMore = data.tournaments.nodes.length === perPage;
-//       page += 1;
-//     } catch (error) {
-//       console.error("Failed to fetch featured tournaments page:", page, error);
-//       hasMore = false;
-//     }
-//   }
-
-//   console.log("Finished Querying featured Tourneys");
-
-//   // Fetch Regular Tournaments if the total is less than 50
-//   if (allTournaments.length < 50) {
-//     // Fetch the total number of tournaments to calculate the last page
-//     try {
-//       const { data } = await apolloClient.query({
-//         query: GET_ALL_TOURNAMENTS_QUERY,
-//         variables: {
-//           afterDate3,
-//           beforeDate5,
-//           page: 1,
-//           perPage: 1,
-//         },
-//       });
-
-//       const totalTournaments = data.tournaments.pageInfo.total;
-//       const totalPages = Math.ceil(totalTournaments / perPage);
-//       page = totalPages; // Start on the last page
-//       console.log("Total Pages of Tourneys: ", totalPages);
-//     } catch (error) {
-//       console.error("Failed to fetch total tournaments for pagination", error);
-//       return;
-//     }
-
-//     hasMore = true;
-//     while (hasMore && allTournaments.length < 50) {
-//       await sleep(10);
-//       try {
-//         const { data } = await apolloClient.query({
-//           query: GET_ALL_TOURNAMENTS_QUERY,
-//           variables: {
-//             afterDate3,
-//             beforeDate5,
-//             page,
-//             perPage,
-//           },
-//         });
-
-//         console.log("Queried Tourneys non Featured", data);
-//         const filteredTournaments = data.tournaments.nodes.filter(
-//           (tournament) =>
-//             tournament.endAt >= todayDate && tournament.numAttendees > 50
-//         );
-//         allTournaments = [...allTournaments, ...filteredTournaments];
-//         hasMore = page >= 1;
-//         page -= 1; // Decrement to move to the previous page
-//         console.log("Finished adding Non Feaures on Page:", page + 1);
-//       } catch (error) {
-//         console.error("Failed to fetch tournaments page:", page, error);
-//         hasMore = false;
-//       }
-//     }
-//   }
-
-//   // Limit the total number of tournaments to 50
-//   allTournaments = allTournaments.slice(0, 50);
-
-//   const temporaryCache = new NodeCache({ stdTTL: 86400 }); // Create a temporary cache for daily cache updates
-
-//   console.log(
-//     "Final Length Of ALl Tournaments Will Be: ",
-//     allTournaments.length
-//   );
-
-//   for (const tournament of allTournaments) {
-//     await sleep(10);
-//     try {
-//       const tournamentDetailResponse = await apolloClient.query({
-//         query: GET_TOURNAMENT_QUERY,
-//         variables: { slug: tournament.slug },
-//       });
-//       const detailedTournament = tournamentDetailResponse.data.tournament;
-//       temporaryCache.set(tournament.slug.toLowerCase(), detailedTournament);
-
-//       if (detailedTournament.events) {
-//         for (const event of detailedTournament.events) {
-//           if (event.phases) {
-//             for (const phase of event.phases) {
-//               await sleep(10);
-//               let allSets = [];
-//               let page2 = 1;
-//               let hasMore2 = true;
-//               const phaseId = phase.id;
-
-//               while (hasMore2) {
-//                 await sleep(10);
-//                 try {
-//                   const { data: phaseData } = await apolloClient.query({
-//                     query: GET_SETS_BY_PHASE_QUERY,
-//                     variables: { phaseId, page: page2, perPage },
-//                   });
-//                   allSets = [...allSets, ...phaseData.phase.sets.nodes];
-//                   hasMore2 = phaseData.phase.sets.nodes.length === perPage;
-//                   page2 += 1;
-//                 } catch (error) {
-//                   console.error(
-//                     "Error fetching sets for phase:",
-//                     phase.id,
-//                     error
-//                   );
-//                   hasMore2 = false;
-//                 }
-//               }
-
-//               // Debug logging
-//               console.log(`Caching sets for phaseId: ${phase.id}`);
-//               frequentCache.set(phase.id, allSets);
-//             }
-//           }
-//         }
-//       }
-//     } catch (error) {
-//       console.error("Error handling tournament:", tournament.slug, error);
-//     }
-//     console.log("Completed tournament:", tournament);
-//   }
-
-//   // Replace the old daily cache with the new one
-//   dailyCache.flushAll();
-//   dailyCache.mset(
-//     temporaryCache.keys().map((key) => ({ key, val: temporaryCache.get(key) }))
-//   );
-
-//   console.log("Daily cache updated.");
-//   isFetchingTournaments = false;
-// }
-
 async function fetchWithRetry(query, variables, retries = 3, delay = 1000) {
   for (let i = 0; i < retries; i++) {
     try {
       const { data } = await apolloClient.query({
         query: query,
         variables: variables,
+        fetchPolicy: "network-only", // Ensure fresh data is fetched every time
       });
       return data;
     } catch (error) {
@@ -553,7 +497,7 @@ async function fetchAllTournamentDetails() {
   console.log("Finished Querying featured Tourneys");
 
   // Fetch Regular Tournaments if the total is less than 50
-  if (allTournaments.length < 1) {
+  if (allTournaments.length < 50) {
     try {
       const data = await fetchWithRetry(GET_ALL_TOURNAMENTS_QUERY, {
         afterDate3,
@@ -606,6 +550,7 @@ async function fetchAllTournamentDetails() {
     "Final Length Of All Tournaments Will Be: ",
     allTournaments.length
   );
+  frequentCache.flushAll(); // Completely clear the frequent cache
 
   for (const tournament of allTournaments) {
     await sleep(100); // Updated sleep from 10 to 100
@@ -680,359 +625,221 @@ async function fetchAllTournamentDetails() {
 
 let isUpdatingFrequentCache = false;
 
+// async function updateFrequentCache() {
+//   if (isFetchingTournaments || isUpdatingFrequentCache) {
+//     console.log("updateFrequentCache is already running. Exiting.");
+//     return;
+//   }
+
+//   isFetchingTournaments = true;
+//   console.log("Updating frequent cache for ongoing tournaments...");
+
+//   const temporaryFrequentCache = new NodeCache({ stdTTL: 0 });
+//   const todayDate = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
+//   let ongoingTournaments = [];
+
+//   // Fetch ongoing tournaments from the daily cache
+//   const keysToCheck = dailyCache.keys();
+//   for (const key of keysToCheck) {
+//     const tournament = dailyCache.get(key);
+//     if (
+//       tournament &&
+//       tournament.startAt <= todayDate &&
+//       tournament.endAt >= todayDate
+//     ) {
+//       ongoingTournaments.push(tournament);
+//     }
+//   }
+
+//   console.log("Ongoing tournaments to update:", ongoingTournaments.length);
+
+//   for (const tournament of ongoingTournaments) {
+//     await sleep(100); // Updated sleep from 10 to 100
+//     try {
+//       // Fetch the updated tournament details
+//       const tournamentDetailResponse = await fetchWithRetry(
+//         GET_TOURNAMENT_QUERY,
+//         {
+//           slug: tournament.slug,
+//         }
+//       );
+//       const detailedTournament = tournamentDetailResponse.tournament;
+//       temporaryFrequentCache.set(
+//         tournament.slug.toLowerCase(),
+//         detailedTournament
+//       );
+
+//       if (detailedTournament.events) {
+//         for (const event of detailedTournament.events) {
+//           if (event.phases) {
+//             for (const phase of event.phases) {
+//               await sleep(100); // Updated sleep from 10 to 100
+//               let allSets = [];
+//               let page2 = 1;
+//               let hasMore2 = true;
+//               const phaseId = phase.id;
+
+//               while (hasMore2) {
+//                 await sleep(100); // Updated sleep from 10 to 100
+//                 try {
+//                   const phaseData = await fetchWithRetry(
+//                     GET_SETS_BY_PHASE_QUERY,
+//                     {
+//                       phaseId,
+//                       page: page2,
+//                       perPage: 100, // Assuming 100 per page
+//                     }
+//                   );
+//                   allSets = [...allSets, ...phaseData.phase.sets.nodes];
+//                   hasMore2 = phaseData.phase.sets.nodes.length === 100; // Adjust this based on perPage setting
+//                   page2 += 1;
+//                   if (phaseId === "1571426" || phaseId === 1571426) {
+//                     console.log("Smash Ult Top 8:", phaseData);
+//                   }
+//                 } catch (error) {
+//                   console.error(
+//                     "Error fetching sets for phase:",
+//                     phase.id,
+//                     error
+//                   );
+//                   hasMore2 = false;
+//                 }
+//               }
+
+//               console.log(`Caching sets for phaseId: ${phase.id}`);
+//               temporaryFrequentCache.set(phase.id, allSets);
+//             }
+//           }
+//         }
+//       }
+//     } catch (error) {
+//       console.error("Error handling tournament:", tournament.slug, error);
+//     }
+//     console.log("Updated tournament:", tournament.slug);
+//   }
+
+//   // Clear the entire frequentCache and then replace it with new entries
+//   frequentCache.flushAll(); // Completely clear the frequent cache
+
+//   // Replace with new entries from the temporaryFrequentCache using mset
+//   const keysToUpdate = temporaryFrequentCache.keys();
+//   frequentCache.mset(
+//     keysToUpdate.map((key) => ({ key, val: temporaryFrequentCache.get(key) }))
+//   );
+
+//   console.log("Frequent cache updated with ongoing tournaments.");
+//   isFetchingTournaments = false;
+// }
+
 async function updateFrequentCache() {
   if (isFetchingTournaments || isUpdatingFrequentCache) {
-    console.log(
-      "fetchAllTournamentDetails or updateFrequentCache is already running. Skipping this run."
-    );
+    console.log("updateFrequentCache is already running. Exiting.");
     return;
   }
-  console.log("Updating frequent cache...");
-  isUpdatingFrequentCache = true;
 
-  const temporaryCache = new NodeCache({ stdTTL: 0 }); // Use temporary cache to store updates
-  const slugs = dailyCache.keys();
-  console.log("Slugs", slugs);
-  const currentTime = Date.now(); // Current time in milliseconds
+  isFetchingTournaments = true;
+  console.log("Updating frequent cache for ongoing tournaments...");
 
-  for (const slug of slugs) {
-    await sleep(100); // Adjusted sleep to avoid rate limits
+  const temporaryFrequentCache = new NodeCache({ stdTTL: 0 });
+  const todayDate = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
+  let ongoingTournaments = [];
+
+  // Fetch ongoing tournaments from the daily cache
+  const keysToCheck = dailyCache.keys();
+  for (const key of keysToCheck) {
+    const tournament = dailyCache.get(key);
+    if (
+      tournament &&
+      tournament.startAt <= todayDate &&
+      tournament.endAt >= todayDate
+    ) {
+      ongoingTournaments.push(tournament);
+    }
+  }
+
+  console.log("Ongoing tournaments to update:", ongoingTournaments.length);
+
+  for (const tournament of ongoingTournaments) {
+    await sleep(100); // Updated sleep from 10 to 100
     try {
-      const tournament = dailyCache.get(slug);
-      if (
-        tournament &&
-        tournament.startAt &&
-        tournament.endAt &&
-        tournament.events
-      ) {
-        const startAtDate = new Date(tournament.startAt * 1000); // Convert to milliseconds
-        const endAtDate = new Date(tournament.endAt * 1000); // Convert to milliseconds
+      // Fetch the updated tournament details
+      const tournamentDetailResponse = await fetchWithRetry(
+        GET_TOURNAMENT_QUERY,
+        {
+          slug: tournament.slug,
+        }
+      );
+      const detailedTournament = tournamentDetailResponse.tournament;
+      temporaryFrequentCache.set(
+        tournament.slug.toLowerCase(),
+        detailedTournament
+      );
 
-        console.log(
-          `Tournament: ${slug}, Start At: ${startAtDate}, End At: ${endAtDate}, Current Time: ${new Date(
-            currentTime
-          )}`
-        );
-
-        // Check if the tournament is ongoing
-        if (
-          startAtDate.getTime() <= currentTime &&
-          endAtDate.getTime() >= currentTime
-        ) {
-          console.log(`Processing ongoing tournament: ${slug}`);
-
-          for (const event of tournament.events) {
-            if (!event.phases || event.phases.length === 0) continue; // Skip if no phases
-
+      if (detailedTournament.events) {
+        for (const event of detailedTournament.events) {
+          if (event.phases) {
             for (const phase of event.phases) {
+              await sleep(100); // Updated sleep from 10 to 100
               let allSets = [];
-              let page = 1;
-              let hasMore = true;
+              let page2 = 1;
+              let hasMore2 = true;
+              const phaseId = phase.id;
 
-              // Fetch all sets for each phase
-              while (hasMore) {
-                await sleep(100); // Adjusted sleep from 1000 to 100 for consistency
+              while (hasMore2) {
+                await sleep(100); // Updated sleep from 10 to 100
                 try {
-                  const phaseSetsResponse = await fetchWithRetry(
+                  const phaseData = await fetchWithRetry(
                     GET_SETS_BY_PHASE_QUERY,
-                    { phaseId: phase.id, page, perPage: 100 }
+                    {
+                      phaseId,
+                      page: page2,
+                      perPage: 100, // Assuming 100 per page
+                    }
                   );
-                  allSets = [...allSets, ...phaseSetsResponse.phase.sets.nodes];
-                  hasMore = phaseSetsResponse.phase.sets.nodes.length === 100;
-                  page += 1;
+                  allSets = [...allSets, ...phaseData.phase.sets.nodes];
+                  hasMore2 = phaseData.phase.sets.nodes.length === 100; // Adjust this based on perPage setting
+                  page2 += 1;
+                  if (phaseId === "1571426" || phaseId === 1571426) {
+                    console.log("Smash Ult Top 8:", phaseData);
+                  }
                 } catch (error) {
                   console.error(
                     "Error fetching sets for phase:",
                     phase.id,
                     error
                   );
-                  hasMore = false;
+                  hasMore2 = false;
                 }
               }
 
-              // Initialize the tournament in the temporary cache if not already present
-              if (!temporaryCache.has(slug)) {
-                temporaryCache.set(slug, { ...tournament, events: [] });
-              }
-
-              // Update the phase sets in the tournament
-              const updatedTournament = temporaryCache.get(slug);
-              if (!updatedTournament) {
-                console.error(
-                  `Tournament data not found in cache for slug: ${slug}`
-                );
-                continue; // Skip if not properly initialized
-              }
-
-              // Ensure events array exists in updatedTournament
-              updatedTournament.events = updatedTournament.events || [];
-
-              const eventIndex = updatedTournament.events.findIndex(
-                (e) => e.id === event.id
-              );
-
-              if (eventIndex === -1) {
-                // Ensure events array exists and add new event with its phase and sets
-                updatedTournament.events.push({
-                  ...event,
-                  phases: [{ ...phase, sets: allSets }],
-                });
-              } else {
-                const eventToUpdate = updatedTournament.events[eventIndex];
-                eventToUpdate.phases = eventToUpdate.phases || []; // Ensure phases array exists
-
-                const phaseIndex = eventToUpdate.phases.findIndex(
-                  (p) => p.id === phase.id
-                );
-
-                if (phaseIndex === -1) {
-                  // Add new phase if it does not exist
-                  eventToUpdate.phases.push({
-                    ...phase,
-                    sets: allSets,
-                  });
-                } else {
-                  // Update existing phase with new sets
-                  eventToUpdate.phases[phaseIndex] = {
-                    ...eventToUpdate.phases[phaseIndex],
-                    sets: allSets,
-                  };
-                }
-              }
-
-              // Ensure that `updatedTournament` is updated back in the cache
-              temporaryCache.set(slug, updatedTournament);
-
-              // Safely access and log updated sets
-              const cachedPhase = updatedTournament.events[
-                eventIndex
-              ]?.phases?.find((p) => p.id === phase.id);
-              if (
-                cachedPhase === null ||
-                updatedTournament.events[eventIndex] === null
-              ) {
-                console.log("problem here");
-                if (cachedPhase === null) {
-                  console.log("cachedPhase Null");
-                } else {
-                  console.log("updated Tournament event null");
-                }
-              }
+              console.log(`Caching sets for phaseId: ${phase.id}`);
+              temporaryFrequentCache.set(phase.id, allSets);
             }
           }
-        } else {
-          console.log(`Tournament ${slug} is not ongoing.`);
         }
       }
     } catch (error) {
-      console.error(
-        "Error updating temporary cache for tournament:",
-        slug,
-        error
-      );
+      console.error("Error handling tournament:", tournament.slug, error);
     }
+    console.log("Updated tournament:", tournament.slug);
   }
 
-  // Update or add new keys from temporaryCache to frequentCache
-  const keysToUpdate = temporaryCache.keys();
+  // Remove only the keys corresponding to ongoing tournaments in the frequentCache
+  for (const tournament of ongoingTournaments) {
+    frequentCache.del(tournament.slug.toLowerCase());
+  }
 
-  keysToUpdate.forEach((key) => {
-    const newTournamentData = temporaryCache.get(key);
-    if (frequentCache.has(key)) {
-      // Merge existing data with updated data, ensuring deep merge for nested structures
-      const existingData = frequentCache.get(key);
+  // Replace with new entries from the temporaryFrequentCache using mset
+  const keysToUpdate = temporaryFrequentCache.keys();
+  frequentCache.mset(
+    keysToUpdate.map((key) => ({ key, val: temporaryFrequentCache.get(key) }))
+  );
 
-      // Deep merge to preserve existing nested data and update as needed
-      const mergedData = {
-        ...existingData,
-        ...newTournamentData,
-        events: existingData.events.map((existingEvent) => {
-          const updatedEvent = newTournamentData.events.find(
-            (newEvent) => newEvent.id === existingEvent.id
-          );
-
-          if (!updatedEvent) return existingEvent; // Keep existing if no update
-
-          // Merge phases
-          return {
-            ...existingEvent,
-            ...updatedEvent,
-            phases: existingEvent.phases.map((existingPhase) => {
-              const updatedPhase = updatedEvent.phases.find(
-                (newPhase) => newPhase.id === existingPhase.id
-              );
-
-              if (!updatedPhase) return existingPhase; // Keep existing phase if no update
-
-              // Merge sets in each phase, updating existing and adding new sets
-              const mergedSets = existingPhase.sets.map((existingSet) => {
-                const updatedSet = updatedPhase.sets.find(
-                  (newSet) => newSet.id === existingSet.id
-                );
-
-                // If set exists in both, update it; otherwise, keep existing
-                return updatedSet
-                  ? { ...existingSet, ...updatedSet }
-                  : existingSet;
-              });
-
-              // Add any new sets that do not exist in the current phase
-              const newSets = updatedPhase.sets.filter(
-                (newSet) =>
-                  !existingPhase.sets.some(
-                    (existingSet) => existingSet.id === newSet.id
-                  )
-              );
-
-              return {
-                ...existingPhase,
-                ...updatedPhase,
-                sets: [...mergedSets, ...newSets], // Combine updated and new sets
-              };
-            }),
-          };
-        }),
-      };
-
-      frequentCache.set(key, mergedData);
-    } else {
-      // Add new key to the cache if it doesn't exist
-      frequentCache.set(key, newTournamentData);
-    }
-  });
-
-  console.log("Frequent cache updated.");
-  isUpdatingFrequentCache = false;
+  console.log("Frequent cache updated with ongoing tournaments.");
+  isFetchingTournaments = false;
 }
 
-// async function updateFrequentCache() {
-//   if (isFetchingTournaments || isUpdatingFrequentCache) {
-//     console.log(
-//       "fetchAllTournamentDetails or updateFrequentCache is already running. Skipping this run."
-//     );
-//     return;
-//   }
-//   console.log("Updating frequent cache...");
-//   isUpdatingFrequentCache = true;
-
-//   const temporaryCache = new NodeCache({ stdTTL: 0 }); // Use temporary cache to store updates
-//   const slugs = dailyCache.keys();
-//   const currentTime = Date.now(); // Current time in milliseconds
-
-//   for (const slug of slugs) {
-//     await sleep(100); // Adjusted sleep to avoid rate limits
-//     try {
-//       const tournament = dailyCache.get(slug);
-//       if (
-//         tournament &&
-//         tournament.startAt &&
-//         tournament.endAt &&
-//         tournament.events
-//       ) {
-//         const startAtDate = new Date(tournament.startAt * 1000); // Convert to milliseconds
-//         const endAtDate = new Date(tournament.endAt * 1000); // Convert to milliseconds
-
-//         // Log tournament information for debugging
-//         console.log(
-//           `Tournament: ${slug}, Start At: ${startAtDate}, End At: ${endAtDate}, Current Time: ${new Date(
-//             currentTime
-//           )}`
-//         );
-
-//         // Check if the tournament is ongoing
-//         if (
-//           startAtDate.getTime() <= currentTime &&
-//           endAtDate.getTime() >= currentTime
-//         ) {
-//           console.log(`Processing ongoing tournament: ${slug}`);
-
-//           for (const event of tournament.events) {
-//             if (event.phases) {
-//               for (const phase of event.phases) {
-//                 let allSets = [];
-//                 let page = 1;
-//                 let hasMore = true;
-
-//                 while (hasMore) {
-//                   await sleep(100); // Adjusted sleep from 1000 to 100 for consistency
-//                   try {
-//                     const phaseSetsResponse = await fetchWithRetry(
-//                       GET_SETS_BY_PHASE_QUERY,
-//                       { phaseId: phase.id, page, perPage: 100 }
-//                     );
-//                     allSets = [
-//                       ...allSets,
-//                       ...phaseSetsResponse.phase.sets.nodes,
-//                     ];
-//                     hasMore = phaseSetsResponse.phase.sets.nodes.length === 100;
-//                     page += 1;
-//                   } catch (error) {
-//                     console.error(
-//                       "Error fetching sets for phase:",
-//                       phase.id,
-//                       error
-//                     );
-//                     hasMore = false;
-//                   }
-//                 }
-
-//                 // Store updated sets in the temporary cache
-//                 if (!temporaryCache.has(slug)) {
-//                   // Initialize the tournament in the temporary cache if not already present
-//                   temporaryCache.set(slug, { ...tournament });
-//                 }
-
-//                 // Update the phase sets in the tournament
-//                 const updatedTournament = temporaryCache.get(slug);
-//                 const phaseIndex = updatedTournament.events
-//                   .find((e) => e.id === event.id)
-//                   .phases.findIndex((p) => p.id === phase.id);
-//                 updatedTournament.events
-//                   .find((e) => e.id === event.id)
-//                   .phases.splice(phaseIndex, 1, { ...phase, sets: allSets });
-
-//                 temporaryCache.set(slug, updatedTournament);
-
-//                 // Debug logging
-//                 console.log(`Caching sets for phaseId: ${phase.id}`);
-//               }
-//             }
-//           }
-//         } else {
-//           console.log(`Tournament ${slug} is not ongoing.`);
-//         }
-//       }
-//     } catch (error) {
-//       console.error(
-//         "Error updating temporary cache for tournament:",
-//         slug,
-//         error
-//       );
-//     }
-//   }
-
-//   // Update or add new keys from temporaryCache to frequentCache
-//   const keysToUpdate = temporaryCache.keys();
-
-//   keysToUpdate.forEach((key) => {
-//     const newTournamentData = temporaryCache.get(key);
-//     if (frequentCache.has(key)) {
-//       // Merge existing data with updated data
-//       const existingData = frequentCache.get(key);
-//       const mergedData = { ...existingData, ...newTournamentData };
-//       frequentCache.set(key, mergedData);
-//     } else {
-//       // Add new key to the cache
-//       frequentCache.set(key, newTournamentData);
-//     }
-//   });
-
-//   console.log("Frequent cache updated.");
-//   isUpdatingFrequentCache = false;
-// }
-
-// Schedule tasks to update caches
-cron.schedule("0 */10 * * * *", updateFrequentCache); // Update frequent cache every 20 minutes
+cron.schedule("0 */15 * * * *", updateFrequentCache); // Update frequent cache every 20 minutes
 cron.schedule("0 0 */24 * * *", fetchAllTournamentDetails);
 
 app.get("/api/tournament/:slug", (req, res) => {

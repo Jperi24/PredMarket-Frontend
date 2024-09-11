@@ -83,6 +83,10 @@ export default function ContractsPage() {
         filtered = filtered.filter(
           (contract) => contract.collectionName === "Contracts"
         );
+        for (const contract of allContracts) {
+          console.log("collection Name");
+          console.log(contract.collectionName);
+        }
         console.log("Filtered for allBets:", filtered);
         break;
       case "userBets":
