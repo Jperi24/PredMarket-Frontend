@@ -52,15 +52,28 @@ const CustomTournamentForm = ({ onSubmit }) => {
       customTournamentData;
 
     // Check if all fields are filled
-    if (
-      !name ||
-      !videogame ||
-      !phase ||
-      !startAt ||
-      !endAt ||
-      participants.some((p) => !p)
-    ) {
-      alert("Please fill in all custom fields.");
+    if (!name) {
+      alert("Please fill in the 'Name' field.");
+      return false;
+    }
+    if (!videogame) {
+      alert("Please fill in the 'Videogame' field.");
+      return false;
+    }
+    if (!phase) {
+      alert("Please fill in the 'Phase' field.");
+      return false;
+    }
+    if (!startAt) {
+      alert("Please fill in the 'Start At' field.");
+      return false;
+    }
+    if (!endAt) {
+      alert("Please fill in the 'End At' field.");
+      return false;
+    }
+    if (participants.some((p) => !p)) {
+      alert("Please fill in all 'Participants' fields.");
       return false;
     }
 

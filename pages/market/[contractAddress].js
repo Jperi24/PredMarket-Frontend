@@ -95,8 +95,8 @@ export default function PredMarketPageV2() {
   const [modalAction, setModalAction] = useState(null);
   const [isDisagreementState, setIsDisagreementState] = useState("");
   const [contractBalance, setContractBalance] = useState("");
-  const [newDeployedPrice, setNewDeployedPrice] = useState("");
-  const [newAskingPrice, setNewAskingPrice] = useState("");
+  const [newDeployedPrices, setNewDeployedPrices] = useState({});
+  const [newAskingPrices, setNewAskingPrices] = useState({});
 
   const [bets_balance, setbetsbalance] = useState({
     allbets: [],
@@ -321,6 +321,9 @@ export default function PredMarketPageV2() {
           ? bets_balance.allbets[positionInArray].amountBuyerLocked
           : bets_balance.allbets[positionInArray].amountToBuyFor;
 
+      // Assuming you already have a web3 instance initialized
+      const buyerPriceEth = ethers.utils.formatEther(buyerPrice, "ether");
+
       const winnings =
         parseFloat(
           ethers.utils.formatEther(
@@ -331,7 +334,7 @@ export default function PredMarketPageV2() {
       const purchasePriceString = ethers.utils.formatEther(purchasePrice);
 
       setModalContent(
-        `<p>You are spending <strong>${purchasePriceString} ${chain.nativeCurrency.symbol}</strong> to buy into a bet that states: if <strong>${selectedName}</strong> wins, you will be rewarded <strong>${winnings} ${chain.nativeCurrency.symbol}</strong>.</p>`
+        `<p>You are spending <strong>${purchasePriceString} ${chain.nativeCurrency.symbol}</strong> to buy into a bet that states: if <strong>${selectedName}</strong> wins, you will be rewarded <strong>${winnings} ${chain.nativeCurrency.symbol}</strong>. If the set is a tie or DQ you will be refunded <strong>${buyerPriceEth} ${chain.nativeCurrency.symbol}</strong></p>`
       );
       setModalAction(() => async () => {
         try {
@@ -381,50 +384,112 @@ export default function PredMarketPageV2() {
 
   const editADeployedBet = async (
     positionInArray,
-    newDeployedPrice,
-    newAskingPrice
+    newDeployedPriceInEth, // Expecting input in ETH
+    newAskingPriceInEth // Expecting input in ETH
   ) => {
     try {
-      const currentBet = await contractInstance.arrayOfBets(positionInArray);
-      console.log(currentBet);
-      let valueInWei = 0;
-
-      if (currentBet.amountDeployerLocked < newDeployedPrice) {
-        valueInWei = newDeployedPrice - currentBet.amountDeployerLocked;
-      }
-      console.log(valueInWei);
-
-      setModalContent(
-        `<p>The new amount that you will have locked up is <strong>${ethers.utils.formatEther(
-          newDeployedPrice
-        )} ETH</strong> and the new purchase price for this bet is <strong>${ethers.utils.formatEther(
-          newAskingPrice
-        )} ETH</strong>. Do you agree?</p>`
+      // Convert new prices to Wei (smallest unit of Ether)
+      const newDeployedPrice = ethers.utils.parseEther(
+        newDeployedPriceInEth.toString()
+      );
+      const newAskingPrice = ethers.utils.parseEther(
+        newAskingPriceInEth.toString()
       );
 
+      // Fetch the current bet details
+      const currentBet = await contractInstance.arrayOfBets(positionInArray);
+      console.log("Current Bet:", currentBet);
+
+      // Calculate the difference needed to cover the new deploy price
+      const currentLockedAmount = ethers.BigNumber.from(
+        currentBet.amountDeployerLocked.toString()
+      );
+      let valueInWei = ethers.BigNumber.from("0"); // Default to 0 if no additional value is needed
+
+      if (currentLockedAmount.lt(newDeployedPrice)) {
+        valueInWei = newDeployedPrice.sub(currentLockedAmount); // Difference needed in Wei
+      }
+
+      console.log("Additional Value in Wei:", valueInWei.toString());
+
+      // Prepare modal content for user confirmation
+      setModalContent(
+        `<p>The new amount that you will have locked up is <strong>${newDeployedPriceInEth} ETH</strong> and the new purchase price for this bet is <strong>${newAskingPriceInEth} ETH</strong>. Do you agree?</p>`
+      );
+
+      // Define action for the modal confirmation
       setModalAction(() => async () => {
         try {
+          // Call the smart contract function
           const tx = await contractInstance.editADeployedBet(
             positionInArray,
             newDeployedPrice,
             newAskingPrice,
             {
-              value: valueInWei.toString(),
+              value: valueInWei.toString(), // Pass additional value in Wei
             }
           );
-          await tx.wait();
+          await tx.wait(); // Wait for transaction to be mined
           alert("Bet updated successfully!");
         } catch (error) {
-          console.error("Error occurred:", error);
+          console.error("Transaction Error:", error);
           alert("Failed to complete the transaction. Please try again.");
         }
       });
 
+      // Show the modal for user confirmation
       setShowModal(true);
     } catch (error) {
-      console.error("Can't edit bet:", error);
+      console.error("Error while editing bet:", error);
     }
   };
+
+  // const editADeployedBet = async (
+  //   positionInArray,
+  //   newDeployedPrice,
+  //   newAskingPrice
+  // ) => {
+  //   try {
+  //     const currentBet = await contractInstance.arrayOfBets(positionInArray);
+  //     console.log(currentBet);
+  //     let valueInWei = 0;
+
+  //     if (currentBet.amountDeployerLocked < newDeployedPrice) {
+  //       valueInWei = newDeployedPrice - currentBet.amountDeployerLocked;
+  //     }
+  //     console.log(valueInWei);
+
+  //     setModalContent(
+  //       `<p>The new amount that you will have locked up is <strong>${ethers.utils.formatEther(
+  //         newDeployedPrice
+  //       )} ETH</strong> and the new purchase price for this bet is <strong>${ethers.utils.formatEther(
+  //         newAskingPrice
+  //       )} ETH</strong>. Do you agree?</p>`
+  //     );
+
+  //     setModalAction(() => async () => {
+  //       try {
+  //         const tx = await contractInstance.editADeployedBet(
+  //           positionInArray,
+  //           newDeployedPrice,
+  //           newAskingPrice,
+  //           {
+  //             value: valueInWei.toString(),
+  //           }
+  //         );
+  //         await tx.wait();
+  //         alert("Bet updated successfully!");
+  //       } catch (error) {
+  //         console.error("Error occurred:", error);
+  //         alert("Failed to complete the transaction. Please try again.");
+  //       }
+  //     });
+
+  //     setShowModal(true);
+  //   } catch (error) {
+  //     console.error("Can't edit bet:", error);
+  //   }
+  // };
 
   const withdrawBet = async () => {
     try {
@@ -567,7 +632,6 @@ export default function PredMarketPageV2() {
       try {
         const value = await contractInstance.creatorLocked();
 
-        console.log(Newvalue);
         const tx = await contractInstance.disagreeWithOwner({
           value: value,
         });
@@ -1118,9 +1182,17 @@ export default function PredMarketPageV2() {
                                             fontSize: "14px",
                                             marginTop: "5px",
                                           }}
-                                          value={newDeployedPrice || ""}
+                                          value={
+                                            newDeployedPrices[
+                                              bet.positionInArray
+                                            ] || ""
+                                          } // Use specific bet's value
                                           onChange={(e) =>
-                                            setNewDeployedPrice(e.target.value)
+                                            setNewDeployedPrices({
+                                              ...newDeployedPrices,
+                                              [bet.positionInArray]:
+                                                e.target.value, // Update only this bet's value
+                                            })
                                           }
                                           placeholder={`Enter new price in ${chain?.nativeCurrency?.symbol}`}
                                         />
@@ -1137,9 +1209,17 @@ export default function PredMarketPageV2() {
                                             fontSize: "14px",
                                             marginTop: "5px",
                                           }}
-                                          value={newAskingPrice || ""}
+                                          value={
+                                            newAskingPrices[
+                                              bet.positionInArray
+                                            ] || ""
+                                          } // Use specific bet's value
                                           onChange={(e) =>
-                                            setNewAskingPrice(e.target.value)
+                                            setNewAskingPrices({
+                                              ...newAskingPrices,
+                                              [bet.positionInArray]:
+                                                e.target.value, // Update only this bet's value
+                                            })
                                           }
                                           placeholder={`Enter new price in ${chain?.nativeCurrency?.symbol}`}
                                           maxLength={100}
@@ -1159,16 +1239,15 @@ export default function PredMarketPageV2() {
                                       onClick={() =>
                                         editADeployedBet(
                                           bet.positionInArray,
-                                          newDeployedPrice
-                                            ? ethers.utils.parseEther(
-                                                newDeployedPrice
-                                              )
-                                            : bet.amountDeployerLocked,
-                                          newAskingPrice
-                                            ? ethers.utils.parseEther(
-                                                newAskingPrice
-                                              )
-                                            : bet.amountToBuyFor
+                                          newDeployedPrices[
+                                            bet.positionInArray
+                                          ] || bet.amountDeployerLocked,
+                                          newAskingPrices[
+                                            bet.positionInArray
+                                          ] ||
+                                            ethers.utils.formatEther(
+                                              bet.amountToBuyFor
+                                            )
                                         )
                                       }
                                     >
