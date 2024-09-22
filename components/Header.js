@@ -14,6 +14,7 @@ const Header = ({}) => {
         </Link>{" "}
         {/* Link to FAQ Page */}
         <Link href="/tdisplay2">Create A Bet</Link>{" "}
+        <Link href="/myAccount">My Account</Link>{" "}
         {/* Link to Deployed Contracts Page */}
       </div>
 

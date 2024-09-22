@@ -85,8 +85,8 @@ const CustomTournamentForm = ({ onSubmit }) => {
     }
 
     // Check if 'endAt' is after 'startAt'
-    if (endAt <= startAt) {
-      alert("End date must be after the start date.");
+    if (endAt < startAt) {
+      alert("End date must be after or equal to the start date.");
       return false;
     }
 

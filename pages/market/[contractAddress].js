@@ -600,29 +600,107 @@ export default function PredMarketPageV2() {
     (signerAddress === contract.deployerAddress ||
       signerAddress === "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
 
+  // const declareWinner = async (winner, isDeclaredCorrect) => {
+  //   if (contractInstance) {
+  //     try {
+  //       const voteTime = Math.floor(Date.now() / 1000) + 7200;
+  //       console.log(voteTime);
+  //       const tx = await contractInstance.declareWinner(
+  //         winner,
+  //         isDeclaredCorrect
+  //       );
+  //       await tx.wait();
+
+  //       const response = await fetch(
+  //         `${process.env.NEXT_PUBLIC_API_BASE_URL}/updateMongoDB`,
+  //         {
+  //           method: "POST",
+  //           headers: {
+  //             "Content-Type": "application/json",
+  //           },
+  //           body: JSON.stringify({ contractAddress, voteTime }),
+  //         }
+  //       );
+  //     } catch (error) {
+  //       console.log(error);
+  //     }
+  //   }
+  // };
+
+  // const voteDisagree = async (reason) => {
+  //   if (contractInstance && disagreeText) {
+  //     try {
+  //       const value = await contractInstance.creatorLocked();
+
+  //       const tx = await contractInstance.disagreeWithOwner({
+  //         value: value,
+  //       });
+  //       await tx.wait();
+  //       const response = await fetch(
+  //         `${process.env.NEXT_PUBLIC_API_BASE_URL}/moveToDisagreements`,
+  //         {
+  //           method: "POST",
+  //           headers: {
+  //             "Content-Type": "application/json",
+  //           },
+  //           body: JSON.stringify({ contractAddress, reason }),
+  //         }
+  //       );
+  //     } catch (error) {
+  //       console.log(error);
+  //     }
+  //   }
+  // };
+
   const declareWinner = async (winner, isDeclaredCorrect) => {
     if (contractInstance) {
       try {
         const voteTime = Math.floor(Date.now() / 1000) + 7200;
         console.log(voteTime);
-        const tx = await contractInstance.declareWinner(
-          winner,
-          isDeclaredCorrect
-        );
-        await tx.wait();
+        const winnerName =
+          winner === 1
+            ? contract.eventA
+            : winner === 2
+            ? contract.eventB
+            : winner === 3
+            ? "As A Tie/No Contest and Refund?"
+            : "";
 
-        const response = await fetch(
-          `${process.env.NEXT_PUBLIC_API_BASE_URL}/updateMongoDB`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ contractAddress, voteTime }),
-          }
+        // Prepare modal content for user confirmation
+        setModalContent(
+          `<p>Are you sure you want to declare <strong>${winnerName}</strong> as the winner? This action cannot be undone.</p>`
         );
+
+        // Define action for the modal confirmation
+        setModalAction(() => async () => {
+          try {
+            const tx = await contractInstance.declareWinner(
+              winner,
+              isDeclaredCorrect
+            );
+            await tx.wait();
+
+            const response = await fetch(
+              `${process.env.NEXT_PUBLIC_API_BASE_URL}/updateMongoDB`,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ contractAddress, voteTime }),
+              }
+            );
+            alert("Winner declared successfully!");
+          } catch (error) {
+            console.error("Transaction Error:", error);
+            alert("Failed to declare the winner. Please try again.");
+          }
+        });
+
+        // Show the modal for user confirmation
+        setShowModal(true);
       } catch (error) {
-        console.log(error);
+        console.error("Error while declaring winner:", error);
       }
     }
   };
@@ -631,23 +709,42 @@ export default function PredMarketPageV2() {
     if (contractInstance && disagreeText) {
       try {
         const value = await contractInstance.creatorLocked();
+        const valueString = ethers.utils.formatEther(value);
 
-        const tx = await contractInstance.disagreeWithOwner({
-          value: value,
-        });
-        await tx.wait();
-        const response = await fetch(
-          `${process.env.NEXT_PUBLIC_API_BASE_URL}/moveToDisagreements`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ contractAddress, reason }),
-          }
+        // Prepare modal content for user confirmation
+        setModalContent(
+          `<p>Are you sure you want to disagree with the owner for the following reason: <strong>${reason}</strong>? This will lock ${valueString} ETH. You will recieve this and the amount the creator has locked if the deployer of the set has made an incorrect decision and you are correct with your disagreement reason.</p>`
         );
+
+        // Define action for the modal confirmation
+        setModalAction(() => async () => {
+          try {
+            const tx = await contractInstance.disagreeWithOwner({
+              value: value,
+            });
+            await tx.wait();
+
+            const response = await fetch(
+              `${process.env.NEXT_PUBLIC_API_BASE_URL}/moveToDisagreements`,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ contractAddress, reason }),
+              }
+            );
+            alert("Disagreement vote submitted successfully!");
+          } catch (error) {
+            console.error("Transaction Error:", error);
+            alert("Failed to submit the disagreement vote. Please try again.");
+          }
+        });
+
+        // Show the modal for user confirmation
+        setShowModal(true);
       } catch (error) {
-        console.log(error);
+        console.error("Error while voting to disagree:", error);
       }
     }
   };
@@ -1279,6 +1376,7 @@ export default function PredMarketPageV2() {
                     value={winnerOfSet}
                     onChange={(e) => setWinnerOfSet(e.target.value)}
                   >
+                    <option value="0">Set Winner As ...</option>
                     <option value="1">Set Winner As {contract.eventA}</option>
                     <option value="2">Set Winner As {contract.eventB}</option>
                     <option value="3">Cancel Refund</option>
