@@ -26,6 +26,7 @@ client
       console.log(`Server running on port ${PORT}`);
       scheduleTasks();
       fetchAllTournamentDetails();
+      moveExpiredContracts();
     });
   })
   .catch((err) => {
@@ -35,22 +36,40 @@ client
 async function moveExpiredContracts() {
   try {
     const sourceCollection = db.collection("Contracts");
+    const targetCollection = db.collection("ExpiredContracts");
 
     // Get the current time and subtract 7 days (7 days * 24 hours * 60 minutes * 60 seconds * 1000 milliseconds)
     const sevenDaysAgo = new Date().getTime() - 7 * 24 * 60 * 60 * 1000;
     // Convert milliseconds back to seconds for the timestamp comparison in MongoDB
+    // const threshold = Math.floor(sevenDaysAgo / 1000);
     const threshold = Math.floor(sevenDaysAgo / 1000);
 
-    // Delete contracts that ended more than 7 days ago directly
-    const result = await sourceCollection.deleteMany({
-      endTime: { $lt: threshold },
-    });
+    // Find contracts that ended more than 7 days ago
+    const expiredContracts = await sourceCollection
+      .find({
+        endsAt: { $lt: threshold },
+      })
+      .toArray();
 
-    console.log(
-      `${result.deletedCount} expired contracts deleted successfully`
-    );
+    if (expiredContracts.length > 0) {
+      // Insert expired contracts into the target collection
+      const insertResult = await targetCollection.insertMany(expiredContracts);
+      console.log(
+        `${insertResult.insertedCount} contracts moved to ExpiredContracts collection successfully`
+      );
+
+      // Delete the moved contracts from the source collection
+      const deleteResult = await sourceCollection.deleteMany({
+        endsAt: { $lt: threshold },
+      });
+      console.log(
+        `${deleteResult.deletedCount} expired contracts deleted from Contracts collection successfully`
+      );
+    } else {
+      console.log("No expired contracts found to move");
+    }
   } catch (err) {
-    console.error("Error deleting expired contracts:", err);
+    console.error("Error moving expired contracts:", err);
   }
 }
 
@@ -94,21 +113,20 @@ async function updateAllRates() {
   console.log("All rates updated");
 }
 
+app.get("/api/rates", async (req, res) => {
+  let rates = {};
+  // Assuming 'rateCache' is a Map or similar structure
+  rateCache.forEach((value, key) => {
+    rates[key] = value;
+  });
+  res.json(rates);
+});
+
 // Initial fetch and setup periodic update
 updateAllRates();
 setInterval(updateAllRates, FETCH_INTERVAL);
 
 // Endpoint to get ETH to USD rate from the cache
-app.get("/ethToUsdRate", (req, res) => {
-  const rate = rateCache.get(RATE_KEY);
-  if (rate) {
-    res.json({ rate });
-  } else {
-    res.status(503).json({
-      error: "Rate is currently unavailable, please try again later.",
-    });
-  }
-});
 
 // Endpoint to check if a set has already been deployed
 app.get(`/check-set-deployment/:tags`, async (req, res) => {
@@ -161,8 +179,8 @@ app.post("/addContract", async (req, res) => {
 
 app.post("/moveToDisagreements", async (req, res) => {
   try {
-    const { contractAddress, disagreementText } = req.body;
-    let sourceCollection = db.collection("ExpiredContracts");
+    const { contractAddress, reason } = req.body;
+    let sourceCollection = db.collection("Contracts");
     const targetCollection = db.collection("Disagreements");
 
     // Find the contract in the source collection
@@ -170,7 +188,7 @@ app.post("/moveToDisagreements", async (req, res) => {
 
     // If not found in ExpiredContracts, search in Contracts collection
     if (!contract) {
-      sourceCollection = db.collection("Contracts");
+      sourceCollection = db.collection("ExpiredContracts");
       contract = await sourceCollection.findOne({ address: contractAddress });
 
       // If still not found, respond with an error
@@ -183,7 +201,7 @@ app.post("/moveToDisagreements", async (req, res) => {
     // Include the disagreementText and update the lastModified field
     const updatedContract = {
       ...contract,
-      disagreementText: disagreementText,
+      disagreementText: reason,
       lastModified: new Date(),
     };
 
@@ -201,6 +219,83 @@ app.post("/moveToDisagreements", async (req, res) => {
     res.status(500).send("Error moving contract");
   }
 });
+
+app.post("/moveFromDisagreementsToContracts", async (req, res) => {
+  try {
+    const { contractAddress } = req.body;
+    const targetCollection = db.collection("Contracts");
+    let sourceCollection = db.collection("Disagreements");
+
+    // Find the contract in the source collection
+    let contract = await sourceCollection.findOne({ address: contractAddress });
+
+    if (!contract) {
+      sourceCollection = db.collection("ExpiredContracts");
+      contract = await sourceCollection.findOne({ address: contractAddress });
+      if (!contract) {
+        return res.status(404).send("Contract not found in collections");
+      }
+    }
+
+    // Prepare the document to be inserted into the Contracts collection
+    // Removing the disagreementText field
+    const updatedContract = {
+      ...contract,
+      lastModified: new Date(),
+    };
+    delete updatedContract.disagreementText; // Deletes the disagreementText field
+
+    // Insert the updated document into the Contracts collection
+    await targetCollection.insertOne(updatedContract);
+
+    // Remove the original document from its source collection
+    await sourceCollection.deleteOne({ address: contractAddress });
+
+    res.status(200).send("Contract moved to Contracts collection successfully");
+  } catch (error) {
+    console.error("Error moving contract to Contracts:", error);
+    res.status(500).send("Error moving contract");
+  }
+});
+
+// app.get("/getContracts", async (req, res) => {
+//   try {
+//     const collection = db.collection("Contracts");
+//     const contracts = await collection.find({}).toArray();
+//     res.status(200).json(contracts);
+//   } catch (error) {
+//     console.error("Error fetching contracts from MongoDB:", error);
+//     res.status(500).send("Error fetching contracts");
+//   }
+// });
+
+// const contractsCache = new NodeCache(); // This will store the contracts
+
+// async function updateContractsCache() {
+//   const collections = ["Contracts", "ExpiredContracts", "Disagreements"];
+//   let allContracts = [];
+
+//   try {
+//     for (const collectionName of collections) {
+//       const collection = db.collection(collectionName);
+//       const contracts = await collection.find({}).toArray();
+
+//       // Append the collectionName to each contract
+//       const augmentedContracts = contracts.map((contract) => ({
+//         ...contract,
+//         collectionName: collectionName, // Adding collection name to each document
+//       }));
+
+//       allContracts = allContracts.concat(augmentedContracts);
+//     }
+
+//     // Cache the combined list of contracts with augmented collection name
+//     contractsCache.set("allContracts", allContracts, 600); // Set TTL for 10 minutes
+//     console.log("Contracts cache updated successfully.");
+//   } catch (error) {
+//     console.error("Failed to update contracts cache:", error);
+//   }
+// }
 
 app.get("/getContracts", async (req, res) => {
   try {
@@ -236,16 +331,27 @@ app.get("/api/contracts/:address", async (req, res) => {
   try {
     const address = req.params.address;
     const contractsCollection = db.collection("Contracts");
+    const disagreementsCollection = db.collection("Disagreements");
+    const expiredContractsCollection = db.collection("ExpiredContracts");
 
     // First try to find the contract in the Contracts collection
     let contract = await contractsCollection.findOne({ address: address });
 
-    // If not found in Contracts, try the ExpiredContracts collection
+    // If not found in Contracts, try the Disagreements collection
+    if (!contract) {
+      contract = await disagreementsCollection.findOne({ address: address });
+    }
 
+    // If not found in Disagreements, try the ExpiredContracts collection
+    if (!contract) {
+      contract = await expiredContractsCollection.findOne({ address: address });
+    }
+
+    // Return the contract if found
     if (contract) {
       res.status(200).json(contract);
     } else {
-      // If the contract is not found in both collections
+      // If the contract is not found in any of the collections
       res.status(404).send("Contract not found");
     }
   } catch (error) {
@@ -302,7 +408,6 @@ app.post("/api/updateBetterMongoDB", async (req, res) => {
     res.status(500).send("Error updating MongoDB");
   }
 });
-
 const {
   GET_ALL_TOURNAMENTS_QUERY,
   GET_FEATURED_TOURNAMENTS_QUERY,

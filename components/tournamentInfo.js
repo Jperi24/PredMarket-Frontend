@@ -3,6 +3,9 @@ import React, { useState, useEffect, useCallback } from "react";
 import { deployPredMarket } from "./DeployPredMarketV2"; // Adjust path as necessary
 import { ethers } from "ethers";
 import { useSigner } from "@thirdweb-dev/react";
+import Modal from "./Modal";
+import Image from "next/image";
+
 import { debounce } from "lodash"; // Import debounce from lodash
 
 const TournamentInfo = ({ slug }) => {
@@ -10,9 +13,40 @@ const TournamentInfo = ({ slug }) => {
   const [selectedPhaseId, setSelectedPhaseId] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [isLoadingSets, setIsLoadingSets] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [modalContent, setModalContent] = useState("");
+  const [modalAction, setModalAction] = useState(null);
   const [phases, setPhases] = useState([]);
+  const commonChains = {
+    56: {
+      // Binance Smart Chain
+      chainName: "Binance Smart Chain",
+    },
+    137: {
+      // Polygon
+      chainName: "Polygon Mainnet",
+    },
+    43114: {
+      // Avalanche
+      chainName: "Avalanche Mainnet",
+    },
+    250: {
+      // Fantom
+      chainName: "Fantom Opera",
+    },
+    31337: {
+      // Hardhat Localhost
+      chainName: "Hardhat Localhost",
+    },
+  };
 
   const signer = useSigner();
+  const [currentChainId, setCurrentChainId] = useState(
+    signer?.provider?.network?.chainId || null
+  );
+  const [currentChainName, setCurrentChainName] = useState(
+    signer?.provider?.network?.name || null
+  );
   const [currentPhaseSets, setCurrentPhaseSets] = useState([]);
   const [videogame, setPhaseVideoGame] = useState("");
   const [isDeploying, setIsDeploying] = useState(false);
@@ -35,9 +69,9 @@ const TournamentInfo = ({ slug }) => {
       if (slug) {
         console.log(slug, "Fetching data for slug");
         try {
-          const url = `http://localhost:3001/api/tournament/${encodeURIComponent(
-            slug
-          )}`;
+          const url = `${
+            process.env.NEXT_PUBLIC_API_BASE_URL
+          }/tournament/${encodeURIComponent(slug)}`;
           const response = await fetch(url);
           if (!response.ok) {
             throw new Error("Failed to fetch tournament data");
@@ -45,8 +79,6 @@ const TournamentInfo = ({ slug }) => {
           const json = await response.json();
           setTournamentData(json);
           console.log(json, "this is the tourney check this out");
-          setPhases(json.events[0]?.phases || []);
-          setSelectedEventId(json.events[0]?.id || "");
         } catch (error) {
           console.error("Error fetching tournament data:", error);
           setTournamentData(null);
@@ -59,12 +91,53 @@ const TournamentInfo = ({ slug }) => {
     fetchTournamentData();
   }, [slug]);
 
+  const handleConfirm = async () => {
+    setShowModal(false);
+    if (modalAction) {
+      await modalAction();
+    }
+  };
+
+  const handleClose = () => {
+    setShowModal(false);
+  };
+
+  useEffect(() => {
+    const updateChainId = async () => {
+      if (signer) {
+        const network = await signer.provider.getNetwork();
+
+        setCurrentChainId(network.chainId);
+        setCurrentChainName(network.name);
+      } else {
+        setCurrentChainId(null);
+      }
+    };
+
+    updateChainId();
+
+    // Optional: Listen for network changes if your environment supports it
+    // This part depends on the Ethereum provider (e.g., MetaMask) used in your project
+    const provider = signer?.provider;
+    provider?.on("network", (newNetwork, oldNetwork) => {
+      if (oldNetwork) {
+        updateChainId();
+      }
+    });
+
+    // Cleanup function to remove the listener when the component unmounts or signer changes
+    return () => {
+      provider?.removeListener("network", updateChainId);
+    };
+  }, [signer]); // Depend on signer to re-run when it changes
+
   useEffect(() => {
     if (tournamentData && selectedEventId) {
       const selectedEvent = tournamentData.events.find(
-        (e) => e.id === selectedEventId
+        (e) => e.id.toString() === selectedEventId.toString()
       );
 
+      console.log(selectedEvent, "eventID");
       setPhases(selectedEvent?.phases || []);
       console.log(phases, "phases");
 
@@ -89,7 +162,7 @@ const TournamentInfo = ({ slug }) => {
 
       // Find the selected event using selectedEventId
       const selectedEvent = tournamentData.events.find(
-        (event) => event.id === selectedEventId
+        (e) => e.id.toString() === selectedEventId.toString()
       );
 
       // Check if the selected event is found
@@ -104,7 +177,7 @@ const TournamentInfo = ({ slug }) => {
 
       // Now find the phase within the selected event
       currentPhaseObj = selectedEvent.phases.find(
-        (phase) => phase.id === selectedPhaseId
+        (phase) => phase.id.toString() === selectedPhaseId.toString()
       );
 
       // Check if the phase was found
@@ -125,7 +198,7 @@ const TournamentInfo = ({ slug }) => {
       // Example parameters, adjust as necessary for your contract
       const eventA = set.slots[0].entrant.name;
       const eventB = set.slots[1].entrant.name;
-      const NameofMarket = `${tournamentData.name} - ${videogame}- ${currentPhaseObj}`;
+      const NameofMarket = `${tournamentData.name} - ${videogame}- ${currentPhaseObj.name}`;
       const fullName = set.fullRoundText;
 
       const tags = `${videogame},${tournamentData.name},${currentPhaseObj.name},${set.slots[0].entrant.name},${set.slots[1].entrant.name},${fullName}`;
@@ -133,10 +206,11 @@ const TournamentInfo = ({ slug }) => {
       const encodedTags = encodeURIComponent(tags);
 
       const response = await fetch(
-        `http://localhost:3001/check-set-deployment/${encodedTags}`
+        `${process.env.NEXT_PUBLIC_BASE_URL}/check-set-deployment/${encodedTags}`
       );
 
       const { isDeployed } = await response.json();
+
       const now = Math.floor(Date.now() / 1000); // Current time in seconds
       const twelveHoursInSeconds = 12 * 60 * 60; // 12 hours in seconds
 
@@ -145,31 +219,63 @@ const TournamentInfo = ({ slug }) => {
         ? tournamentData.endAt - now
         : null;
 
+      console.log(tournamentData.endAt, "---", now, "tourneyends new");
+
       // Conditionally set endsAt
       const endsAt =
         !tournamentData.endAt ||
         (timeDifference && timeDifference < twelveHoursInSeconds)
-          ? 43200
+          ? now + 43200
           : tournamentData.endAt;
 
-      if (!isDeployed) {
-        const contractAddress = await deployPredMarket(
-          eventA,
-          eventB,
-          tags,
-          NameofMarket,
-          signer,
-          fullName,
-          endsAt
-        );
-      } else {
-        alert("Contract Already Deployed");
-      }
+      const chainId = signer?.provider?.network?.chainId;
+      console.log(chainId);
 
-      // Here, you could update your local state to include the contractAddress for this set
-      // And also send this information to your backend for persistence
+      if (!isDeployed && chainId) {
+        console.log(signer);
+
+        setModalContent(
+          `<p>You are about to deploy a Bet that involves <strong>${eventA}</strong> and <strong>${eventB}</strong> on chain: <strong>${signer.provider.network.name}</strong>.</p>`
+        );
+
+        // Show second modal for token amount
+
+        setModalAction(() => async () => {
+          const tokenAmount = document.getElementById("tokenAmountInput").value;
+          const tokenAmountNumber = parseFloat(tokenAmount);
+          if (!isNaN(tokenAmountNumber) && tokenAmountNumber > 0) {
+            const tokenAmountInWei = ethers.utils.parseEther(
+              tokenAmount.toString()
+            );
+            try {
+              const contractAddress = await deployPredMarket(
+                eventA,
+                eventB,
+                tags,
+                NameofMarket,
+                signer,
+                fullName,
+                endsAt,
+                tokenAmountInWei
+              );
+            } catch (deployError) {
+              console.error("Failed to deploy contract:", deployError);
+              alert("Failed to complete the transaction. Please try again.");
+            }
+          } else {
+            alert("Invalid token amount entered.");
+          }
+          setShowModal(false); // Hide the modal after action is taken
+        });
+        setShowModal(true); // Show the second modal
+
+        // Here, you could update your local state to include the contractAddress for this set
+        // And also send this information to your backend for persistence
+      } else {
+        alert("Contract Already Deployed Or Wallet Not Connected");
+      }
     } catch (error) {
-      console.error("Failed to deploy contract:", error);
+      console.log(error);
     } finally {
       setIsDeploying(false); // Re-enable the button
     }
@@ -191,7 +297,7 @@ const TournamentInfo = ({ slug }) => {
     console.log(`Fetching sets for phaseId: ${phaseId}`); // Confirm what's being sent
     try {
       const response = await fetch(
-        `http://localhost:3001/api/phase-sets/${phaseId}`
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}/phase-sets/${phaseId}`
       );
       if (!response.ok) {
         throw new Error(`HTTP error, status = ${response.status}`);
@@ -218,6 +324,7 @@ const TournamentInfo = ({ slug }) => {
     if (!inGame && !hasWinner && !hasUnknownEntrant) return "Pending";
     return "Other";
   };
+
   const sortSets = (a, b) => {
     const getStatusPriority = (status) => {
       switch (status) {
@@ -225,8 +332,10 @@ const TournamentInfo = ({ slug }) => {
           return 1; // Highest priority
         case "In Game":
           return 2; // Second highest priority
+        case "Other":
+          return 3;
         default:
-          return 3; // Lowest priority for all other statuses
+          return 4; // Lowest priority for all other statuses
       }
     };
 
@@ -234,6 +343,21 @@ const TournamentInfo = ({ slug }) => {
     const priorityB = getStatusPriority(getStatus(b));
 
     return priorityA - priorityB; // Sorts by priority, ascending
+  };
+
+  const getChainLogo = (id) => {
+    const chainInfo = {
+      1: "EthLogo.png",
+      56: "BnbLogo.png",
+      137: "PolygonLogo.png",
+      43114: "avalancheLogo.jpg",
+      250: "fantomLogo.png",
+      31337: "hardHatLogo.png", // Assumes local Hardhat testnet uses the same rate as Ethereum
+    };
+
+    const defaultImage = "noPhotoAvail.jpg";
+    const foundImage = chainInfo[id]; // Get the image filename directly from the map using the id
+    return `${process.env.NEXT_PUBLIC_BASE_URL2}/${foundImage || defaultImage}`; // Use the foundImage if available, otherwise use defaultImage
   };
 
   function renderPhaseSets() {
@@ -246,6 +370,7 @@ const TournamentInfo = ({ slug }) => {
                 slot.entrant?.name.toLowerCase().includes(searchInput)
               )
             )
+            .sort(sortSets)
             .map((set, setIndex) => (
               <SetBox
                 key={`${set.id}-${setIndex}`}
@@ -273,9 +398,21 @@ const TournamentInfo = ({ slug }) => {
   return (
     <div className="tournament-info">
       <div className="controls">
+        <div>
+          Current Chain:{" "}
+          <img src={getChainLogo(currentChainId)} className="chain-image2" />{" "}
+        </div>
+        <Modal
+          show={showModal}
+          handleClose={handleClose}
+          handleConfirm={handleConfirm}
+          content={modalContent}
+        />
+
         <h2 style={{ color: "#0056b3" /* White text for high contrast */ }}>
           Tournament: {tournamentData?.name}
         </h2>
+
         <select
           onChange={(e) => setSelectedEventId(e.target.value)}
           value={selectedEventId}

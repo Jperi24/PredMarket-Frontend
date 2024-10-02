@@ -78,11 +78,6 @@ const CustomTournamentForm = ({ onSubmit }) => {
     }
 
     // Check if 'startAt' is a future date
-    const currentDate = new Date().getTime() / 1000; // Current timestamp in seconds
-    if (startAt <= currentDate) {
-      alert("Start date must be in the future.");
-      return false;
-    }
 
     // Check if 'endAt' is after 'startAt'
     if (endAt < startAt) {

@@ -17,6 +17,7 @@ const client = new MongoClient(uri);
 
 let db;
 const PORT = process.env.PORT || 3001;
+const setStatuses = new Map();
 
 client
   .connect()
@@ -257,75 +258,63 @@ app.post("/moveFromDisagreementsToContracts", async (req, res) => {
     res.status(500).send("Error moving contract");
   }
 });
-
-// app.get("/getContracts", async (req, res) => {
-//   try {
-//     const collection = db.collection("Contracts");
-//     const contracts = await collection.find({}).toArray();
-//     res.status(200).json(contracts);
-//   } catch (error) {
-//     console.error("Error fetching contracts from MongoDB:", error);
-//     res.status(500).send("Error fetching contracts");
-//   }
-// });
-
-// const contractsCache = new NodeCache(); // This will store the contracts
-
-// async function updateContractsCache() {
-//   const collections = ["Contracts", "ExpiredContracts", "Disagreements"];
-//   let allContracts = [];
-
-//   try {
-//     for (const collectionName of collections) {
-//       const collection = db.collection(collectionName);
-//       const contracts = await collection.find({}).toArray();
-
-//       // Append the collectionName to each contract
-//       const augmentedContracts = contracts.map((contract) => ({
-//         ...contract,
-//         collectionName: collectionName, // Adding collection name to each document
-//       }));
-
-//       allContracts = allContracts.concat(augmentedContracts);
-//     }
-
-//     // Cache the combined list of contracts with augmented collection name
-//     contractsCache.set("allContracts", allContracts, 600); // Set TTL for 10 minutes
-//     console.log("Contracts cache updated successfully.");
-//   } catch (error) {
-//     console.error("Failed to update contracts cache:", error);
-//   }
-// }
-
 app.get("/getContracts", async (req, res) => {
   try {
-    // List of collections to query from
     const collectionNames = ["Contracts", "ExpiredContracts", "Disagreements"];
 
-    // Function to fetch documents from a collection and add the collection name
     const fetchFromCollection = async (collectionName) => {
       const collection = db.collection(collectionName);
       const documents = await collection.find({}).toArray();
-      // Adding collection name to each document
-      return documents.map((doc) => ({ ...doc, collectionName }));
+      return documents.map((doc) => {
+        // Assuming doc.tags contains the tournament slug, event id, and set id
+        const status = setStatuses.get(doc.tags) || "upcoming";
+        return { ...doc, collectionName, status };
+      });
     };
 
-    // Execute queries for all collections concurrently
     const contractsPromises = collectionNames.map((collectionName) =>
       fetchFromCollection(collectionName)
     );
     const results = await Promise.all(contractsPromises);
 
-    // Flatten the results array (since each promise returns an array of documents)
     const allContracts = results.flat();
 
-    // Return the combined results
     res.status(200).json(allContracts);
   } catch (error) {
     console.error("Error fetching contracts from MongoDB:", error);
     res.status(500).send("Error fetching contracts");
   }
 });
+
+// app.get("/getContracts", async (req, res) => {
+//   try {
+//     // List of collections to query from
+//     const collectionNames = ["Contracts", "ExpiredContracts", "Disagreements"];
+
+//     // Function to fetch documents from a collection and add the collection name
+//     const fetchFromCollection = async (collectionName) => {
+//       const collection = db.collection(collectionName);
+//       const documents = await collection.find({}).toArray();
+//       // Adding collection name to each document
+//       return documents.map((doc) => ({ ...doc, collectionName }));
+//     };
+
+//     // Execute queries for all collections concurrently
+//     const contractsPromises = collectionNames.map((collectionName) =>
+//       fetchFromCollection(collectionName)
+//     );
+//     const results = await Promise.all(contractsPromises);
+
+//     // Flatten the results array (since each promise returns an array of documents)
+//     const allContracts = results.flat();
+
+//     // Return the combined results
+//     res.status(200).json(allContracts);
+//   } catch (error) {
+//     console.error("Error fetching contracts from MongoDB:", error);
+//     res.status(500).send("Error fetching contracts");
+//   }
+// });
 
 app.get("/api/contracts/:address", async (req, res) => {
   try {
@@ -455,6 +444,7 @@ async function fetchAllTournamentDetails() {
   }
 
   isFetchingTournaments = true;
+  setStatuses.clear();
   console.log("Updating daily cache...");
 
   let allTournaments = [];
@@ -625,112 +615,6 @@ async function fetchAllTournamentDetails() {
 
 let isUpdatingFrequentCache = false;
 
-// async function updateFrequentCache() {
-//   if (isFetchingTournaments || isUpdatingFrequentCache) {
-//     console.log("updateFrequentCache is already running. Exiting.");
-//     return;
-//   }
-
-//   isFetchingTournaments = true;
-//   console.log("Updating frequent cache for ongoing tournaments...");
-
-//   const temporaryFrequentCache = new NodeCache({ stdTTL: 0 });
-//   const todayDate = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
-//   let ongoingTournaments = [];
-
-//   // Fetch ongoing tournaments from the daily cache
-//   const keysToCheck = dailyCache.keys();
-//   for (const key of keysToCheck) {
-//     const tournament = dailyCache.get(key);
-//     if (
-//       tournament &&
-//       tournament.startAt <= todayDate &&
-//       tournament.endAt >= todayDate
-//     ) {
-//       ongoingTournaments.push(tournament);
-//     }
-//   }
-
-//   console.log("Ongoing tournaments to update:", ongoingTournaments.length);
-
-//   for (const tournament of ongoingTournaments) {
-//     await sleep(100); // Updated sleep from 10 to 100
-//     try {
-//       // Fetch the updated tournament details
-//       const tournamentDetailResponse = await fetchWithRetry(
-//         GET_TOURNAMENT_QUERY,
-//         {
-//           slug: tournament.slug,
-//         }
-//       );
-//       const detailedTournament = tournamentDetailResponse.tournament;
-//       temporaryFrequentCache.set(
-//         tournament.slug.toLowerCase(),
-//         detailedTournament
-//       );
-
-//       if (detailedTournament.events) {
-//         for (const event of detailedTournament.events) {
-//           if (event.phases) {
-//             for (const phase of event.phases) {
-//               await sleep(100); // Updated sleep from 10 to 100
-//               let allSets = [];
-//               let page2 = 1;
-//               let hasMore2 = true;
-//               const phaseId = phase.id;
-
-//               while (hasMore2) {
-//                 await sleep(100); // Updated sleep from 10 to 100
-//                 try {
-//                   const phaseData = await fetchWithRetry(
-//                     GET_SETS_BY_PHASE_QUERY,
-//                     {
-//                       phaseId,
-//                       page: page2,
-//                       perPage: 100, // Assuming 100 per page
-//                     }
-//                   );
-//                   allSets = [...allSets, ...phaseData.phase.sets.nodes];
-//                   hasMore2 = phaseData.phase.sets.nodes.length === 100; // Adjust this based on perPage setting
-//                   page2 += 1;
-//                   if (phaseId === "1571426" || phaseId === 1571426) {
-//                     console.log("Smash Ult Top 8:", phaseData);
-//                   }
-//                 } catch (error) {
-//                   console.error(
-//                     "Error fetching sets for phase:",
-//                     phase.id,
-//                     error
-//                   );
-//                   hasMore2 = false;
-//                 }
-//               }
-
-//               console.log(`Caching sets for phaseId: ${phase.id}`);
-//               temporaryFrequentCache.set(phase.id, allSets);
-//             }
-//           }
-//         }
-//       }
-//     } catch (error) {
-//       console.error("Error handling tournament:", tournament.slug, error);
-//     }
-//     console.log("Updated tournament:", tournament.slug);
-//   }
-
-//   // Clear the entire frequentCache and then replace it with new entries
-//   frequentCache.flushAll(); // Completely clear the frequent cache
-
-//   // Replace with new entries from the temporaryFrequentCache using mset
-//   const keysToUpdate = temporaryFrequentCache.keys();
-//   frequentCache.mset(
-//     keysToUpdate.map((key) => ({ key, val: temporaryFrequentCache.get(key) }))
-//   );
-
-//   console.log("Frequent cache updated with ongoing tournaments.");
-//   isFetchingTournaments = false;
-// }
-
 async function updateFrequentCache() {
   if (isFetchingTournaments || isUpdatingFrequentCache) {
     console.log("updateFrequentCache is already running. Exiting.");
@@ -814,6 +698,16 @@ async function updateFrequentCache() {
 
               console.log(`Caching sets for phaseId: ${phase.id}`);
               temporaryFrequentCache.set(phase.id, allSets);
+              for (const set of allSets) {
+                const setKey = `${tournament.slug}-${event.id}-${set.id}`;
+                if (set.winnerId) {
+                  setStatuses.set(setKey, "completed");
+                } else if (set.state === "IN_PROGRESS") {
+                  setStatuses.set(setKey, "ongoing");
+                } else {
+                  setStatuses.set(setKey, "upcoming");
+                }
+              }
             }
           }
         }

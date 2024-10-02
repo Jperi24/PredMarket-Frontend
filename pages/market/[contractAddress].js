@@ -444,53 +444,6 @@ export default function PredMarketPageV2() {
     }
   };
 
-  // const editADeployedBet = async (
-  //   positionInArray,
-  //   newDeployedPrice,
-  //   newAskingPrice
-  // ) => {
-  //   try {
-  //     const currentBet = await contractInstance.arrayOfBets(positionInArray);
-  //     console.log(currentBet);
-  //     let valueInWei = 0;
-
-  //     if (currentBet.amountDeployerLocked < newDeployedPrice) {
-  //       valueInWei = newDeployedPrice - currentBet.amountDeployerLocked;
-  //     }
-  //     console.log(valueInWei);
-
-  //     setModalContent(
-  //       `<p>The new amount that you will have locked up is <strong>${ethers.utils.formatEther(
-  //         newDeployedPrice
-  //       )} ETH</strong> and the new purchase price for this bet is <strong>${ethers.utils.formatEther(
-  //         newAskingPrice
-  //       )} ETH</strong>. Do you agree?</p>`
-  //     );
-
-  //     setModalAction(() => async () => {
-  //       try {
-  //         const tx = await contractInstance.editADeployedBet(
-  //           positionInArray,
-  //           newDeployedPrice,
-  //           newAskingPrice,
-  //           {
-  //             value: valueInWei.toString(),
-  //           }
-  //         );
-  //         await tx.wait();
-  //         alert("Bet updated successfully!");
-  //       } catch (error) {
-  //         console.error("Error occurred:", error);
-  //         alert("Failed to complete the transaction. Please try again.");
-  //       }
-  //     });
-
-  //     setShowModal(true);
-  //   } catch (error) {
-  //     console.error("Can't edit bet:", error);
-  //   }
-  // };
-
   const withdrawBet = async () => {
     try {
       const tx = await contractInstance.withdraw();
@@ -594,65 +547,18 @@ export default function PredMarketPageV2() {
       }
     }
   };
-  const isAuthorizedUser =
+
+  const isAuthorizedUserStaff =
     signerAddress &&
     contract?.deployerAddress &&
-    (signerAddress === contract.deployerAddress ||
-      signerAddress === "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
+    signerAddress === "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 
-  // const declareWinner = async (winner, isDeclaredCorrect) => {
-  //   if (contractInstance) {
-  //     try {
-  //       const voteTime = Math.floor(Date.now() / 1000) + 7200;
-  //       console.log(voteTime);
-  //       const tx = await contractInstance.declareWinner(
-  //         winner,
-  //         isDeclaredCorrect
-  //       );
-  //       await tx.wait();
+  const isAuthorizedUserOwner =
+    signerAddress &&
+    contract?.deployerAddress &&
+    signerAddress === contract.deployerAddress;
 
-  //       const response = await fetch(
-  //         `${process.env.NEXT_PUBLIC_API_BASE_URL}/updateMongoDB`,
-  //         {
-  //           method: "POST",
-  //           headers: {
-  //             "Content-Type": "application/json",
-  //           },
-  //           body: JSON.stringify({ contractAddress, voteTime }),
-  //         }
-  //       );
-  //     } catch (error) {
-  //       console.log(error);
-  //     }
-  //   }
-  // };
-
-  // const voteDisagree = async (reason) => {
-  //   if (contractInstance && disagreeText) {
-  //     try {
-  //       const value = await contractInstance.creatorLocked();
-
-  //       const tx = await contractInstance.disagreeWithOwner({
-  //         value: value,
-  //       });
-  //       await tx.wait();
-  //       const response = await fetch(
-  //         `${process.env.NEXT_PUBLIC_API_BASE_URL}/moveToDisagreements`,
-  //         {
-  //           method: "POST",
-  //           headers: {
-  //             "Content-Type": "application/json",
-  //           },
-  //           body: JSON.stringify({ contractAddress, reason }),
-  //         }
-  //       );
-  //     } catch (error) {
-  //       console.log(error);
-  //     }
-  //   }
-  // };
-
-  const declareWinner = async (winner, isDeclaredCorrect) => {
+  const declareWinner = async (winner) => {
     if (contractInstance) {
       try {
         const voteTime = Math.floor(Date.now() / 1000) + 7200;
@@ -674,10 +580,7 @@ export default function PredMarketPageV2() {
         // Define action for the modal confirmation
         setModalAction(() => async () => {
           try {
-            const tx = await contractInstance.declareWinner(
-              winner,
-              isDeclaredCorrect
-            );
+            const tx = await contractInstance.declareWinner(winner);
             await tx.wait();
 
             const response = await fetch(
@@ -708,20 +611,15 @@ export default function PredMarketPageV2() {
   const voteDisagree = async (reason) => {
     if (contractInstance && disagreeText) {
       try {
-        const value = await contractInstance.creatorLocked();
-        const valueString = ethers.utils.formatEther(value);
-
         // Prepare modal content for user confirmation
         setModalContent(
-          `<p>Are you sure you want to disagree with the owner for the following reason: <strong>${reason}</strong>? This will lock ${valueString} ETH. You will recieve this and the amount the creator has locked if the deployer of the set has made an incorrect decision and you are correct with your disagreement reason.</p>`
+          `<p>Are you sure you want to disagree with the owner for the following reason: <strong>${reason}</strong>? </p>`
         );
 
         // Define action for the modal confirmation
         setModalAction(() => async () => {
           try {
-            const tx = await contractInstance.disagreeWithOwner({
-              value: value,
-            });
+            const tx = await contractInstance.disagreeWithOwner();
             await tx.wait();
 
             const response = await fetch(
@@ -786,49 +684,6 @@ export default function PredMarketPageV2() {
       console.log("contractAddress is undefined, waiting for it to be set");
     }
   }, [contractAddress, signer]);
-
-  // const switchNetwork = async (targetChainId) => {
-  //   const chainHex = `0x${targetChainId.toString(16)}`;
-
-  //   try {
-  //     await window.ethereum.request({
-  //       method: "wallet_switchEthereumChain",
-  //       params: [{ chainId: chainHex }],
-  //     });
-  //   } catch (switchError) {
-  //     if (switchError.code === 4902) {
-  //       try {
-  //         const chainDetails = commonChains[targetChainId];
-  //         if (chainDetails) {
-  //           await window.ethereum.request({
-  //             method: "wallet_addEthereumChain",
-  //             params: [
-  //               {
-  //                 chainId: chainHex,
-  //                 chainName: chainDetails.chainName,
-  //                 nativeCurrency: chainDetails.nativeCurrency,
-  //                 rpcUrls: [chainDetails.rpcUrl],
-  //                 blockExplorerUrls: chainDetails.blockExplorerUrls,
-  //               },
-  //             ],
-  //           });
-  //           window.location.reload();
-  //         } else {
-  //           console.error(
-  //             `No RPC URL available for chain ID: ${targetChainId}. Please add the network manually.`
-  //           );
-  //           alert(
-  //             `Please add the network with chain ID ${targetChainId} manually, as no RPC URL is available.`
-  //           );
-  //         }
-  //       } catch (addError) {
-  //         console.error("Failed to add the network:", addError);
-  //       }
-  //     } else {
-  //       console.error("Failed to switch the network:", switchError);
-  //     }
-  //   }
-  // };
 
   const switchNetwork = async (targetChainId) => {
     const chainHex = `0x${targetChainId.toString(16)}`;
@@ -941,13 +796,6 @@ export default function PredMarketPageV2() {
               <div className="contract-details-grid">
                 <div className="contract-detail-item">
                   <h4>
-                    <h4>
-                      <span style={{ color: "red" }}>
-                        {deployerLocked} {""} {chain?.nativeCurrency?.symbol}
-                      </span>{" "}
-                      {""} Is the amount the creator of the set has locked up to
-                      ensure Integrity
-                    </h4>
                     <h4>{contractBalance} The Amount of Eth In contract</h4>
                     <h4>{contract.NameofMarket}</h4>
                     <h4>{contract.fullName}</h4>
@@ -1099,16 +947,18 @@ export default function PredMarketPageV2() {
                           <button onClick={() => withdrawBet()}>
                             Withdraw Balance
                           </button>
-                          {contract && contractInstance && isAuthorizedUser && (
+                          {contract && contractInstance && (
                             <>
-                              <button onClick={() => ownerWithdraw()}>
-                                Owner Withdraw Collected Comission & Locked
-                                Amounts
-                              </button>
-
-                              <button onClick={() => transferStaffAmount()}>
-                                Staff Withdrawl
-                              </button>
+                              {isAuthorizedUserOwner ? (
+                                <button onClick={() => ownerWithdraw()}>
+                                  Owner Withdraw Collected Commission & Locked
+                                  Amounts
+                                </button>
+                              ) : isAuthorizedUserStaff ? (
+                                <button onClick={() => transferStaffAmount()}>
+                                  Staff Withdrawal
+                                </button>
+                              ) : null}
                             </>
                           )}
                         </>
@@ -1367,7 +1217,7 @@ export default function PredMarketPageV2() {
 
             {contract &&
               contractInstance &&
-              isAuthorizedUser &&
+              isAuthorizedUserStaff &&
               bets_balance.state < 4 && (
                 <div>
                   <select
@@ -1382,35 +1232,24 @@ export default function PredMarketPageV2() {
                     <option value="3">Cancel Refund</option>
                   </select>
 
-                  {bets_balance.state === 2 && (
-                    <select
-                      id="outcomeSelect2"
-                      className="dropdown"
-                      value={selectedOutcome2}
-                      onChange={(e) => setSelectedOutcome2(e.target.value)}
-                    >
-                      <option value="1">
-                        The User That Disagreed Was Correct And Owner Was Wrong
-                      </option>
-                      <option value="2">
-                        The User That Disagreed Was Not Correct And Owner Was
-                        Right
-                      </option>
-                      <option value="3">
-                        The User That Disagreed Was Not Correct And Owner Was
-                        Not Correct
-                      </option>
-                    </select>
-                  )}
-
                   <button onClick={handleEndBet}>End Bet</button>
                 </div>
               )}
           </div>
         )}
       </main>
-
+      // ... (previous code remains unchanged)
       <style jsx>{`
+        /* Global styles */
+        :root {
+          --primary-color: #6200ee;
+          --secondary-color: #03dac6;
+          --background-color: #121212;
+          --surface-color: #1e1e1e;
+          --on-surface-color: #ffffff;
+          --error-color: #cf6679;
+        }
+
         /* Desktop styles */
         .contract-container {
           display: flex;
@@ -1418,6 +1257,9 @@ export default function PredMarketPageV2() {
           padding: 20px;
           max-width: 1200px;
           margin: 0 auto;
+          background-color: var(--background-color);
+          color: var(--on-surface-color);
+          font-family: "Roboto", sans-serif;
         }
 
         .network-switch-modal,
@@ -1428,6 +1270,11 @@ export default function PredMarketPageV2() {
           display: flex;
           flex-direction: column;
           align-items: center;
+          background-color: var(--surface-color);
+          border-radius: 8px;
+          padding: 20px;
+          margin-bottom: 20px;
+          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
 
         .contract-details-grid {
@@ -1442,21 +1289,31 @@ export default function PredMarketPageV2() {
           text-align: center;
           margin-bottom: 15px;
           flex: 1;
+          padding: 15px;
+          background-color: rgba(255, 255, 255, 0.05);
+          border-radius: 8px;
+          transition: transform 0.3s ease;
+        }
+
+        .contract-detail-item:hover {
+          transform: translateY(-5px);
         }
 
         .input-container {
           width: 50%;
-          padding: 10px;
+          padding: 20px;
           box-sizing: border-box;
         }
 
         .countdown-container {
-          margin-bottom: 10px;
+          margin-bottom: 20px;
+          text-align: center;
         }
 
         .countdown-heading {
-          font-size: 1.2rem;
-          margin-bottom: 5px;
+          font-size: 1.4rem;
+          margin-bottom: 10px;
+          color: var(--secondary-color);
         }
 
         .createBetContainer {
@@ -1467,20 +1324,30 @@ export default function PredMarketPageV2() {
         .input-field,
         .dropdown {
           width: 100%;
-          padding: 10px;
-          margin-bottom: 10px;
+          padding: 12px;
+          margin-bottom: 15px;
           font-size: 1rem;
+          background-color: rgba(255, 255, 255, 0.1);
+          border: none;
+          border-radius: 4px;
+          color: var(--on-surface-color);
         }
 
         .toggle-inputs-btn {
           width: 100%;
-          padding: 10px;
-          margin-bottom: 10px;
+          padding: 12px;
+          margin-bottom: 15px;
           font-size: 1rem;
-          background-color: #007bff;
+          background-color: var(--primary-color);
           color: white;
           border: none;
-          border-radius: 5px;
+          border-radius: 4px;
+          cursor: pointer;
+          transition: background-color 0.3s ease;
+        }
+
+        .toggle-inputs-btn:hover {
+          background-color: #7c4dff;
         }
 
         .bet {
@@ -1488,20 +1355,27 @@ export default function PredMarketPageV2() {
           flex-direction: column;
           align-items: center;
           margin-bottom: 20px;
-          padding: 10px;
-          border: 1px solid #ddd;
-          border-radius: 5px;
+          padding: 20px;
+          background-color: rgba(255, 255, 255, 0.05);
+          border-radius: 8px;
           width: 100%;
           max-width: 400px;
           box-sizing: border-box;
+          transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .bet:hover {
+          transform: translateY(-5px);
+          box-shadow: 0 6px 12px rgba(0, 0, 0, 0.2);
         }
 
         .bet-info {
-          margin-bottom: 5px;
+          margin-bottom: 10px;
+          font-size: 1.1rem;
         }
 
         .bet-selection {
-          margin-top: 10px;
+          margin-top: 15px;
         }
 
         .vertical-button-group {
@@ -1513,11 +1387,23 @@ export default function PredMarketPageV2() {
 
         .vertical-button-group button {
           margin-bottom: 10px;
+          padding: 12px;
+          font-size: 1rem;
+          background-color: var(--primary-color);
+          color: white;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+          transition: background-color 0.3s ease;
+        }
+
+        .vertical-button-group button:hover {
+          background-color: #7c4dff;
         }
 
         .bets-container {
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
           gap: 20px;
           width: 100%;
         }
@@ -1544,9 +1430,9 @@ export default function PredMarketPageV2() {
           }
 
           .vertical-button-group button {
-            margin-bottom: 5px;
-            padding: 5px;
-            font-size: 0.8rem;
+            margin-bottom: 10px;
+            padding: 10px;
+            font-size: 0.9rem;
           }
 
           .bet {
@@ -1558,6 +1444,7 @@ export default function PredMarketPageV2() {
           }
         }
       `}</style>
+      // ... (rest of the code remains unchanged)
     </>
   );
 }

@@ -4,6 +4,7 @@ import { deployPredMarket } from "./DeployPredMarketV2"; // Adjust path as neces
 import { ethers } from "ethers";
 import { useSigner } from "@thirdweb-dev/react";
 import Modal from "./Modal";
+import Image from "next/image";
 
 import { debounce } from "lodash"; // Import debounce from lodash
 
@@ -236,43 +237,28 @@ const TournamentInfo = ({ slug }) => {
         setModalContent(
           `<p>You are about to deploy a Bet that involves <strong>${eventA}</strong> and <strong>${eventB}</strong> on chain: <strong>${signer.provider.network.name}</strong>.</p>`
         );
+
+        // Show second modal for token amount
+
         setModalAction(() => async () => {
-          // Show second modal for token amount
-          setModalContent(
-            `<p>Before deploying a set, you are required to lock up a specified number of tokens from your current chain. These tokens will be returned to you, provided you demonstrate honest and fair decision-making. This process ensures legitimacy and transparency, as all users will be able to view the number of tokens you have locked. Please enter the number of <strong>${currentChainName}</strong> tokens you wish to lock up:</p>
-    <input type="number" id="tokenAmountInput" placeholder="0" />`
-          );
-          setModalAction(() => async () => {
-            const tokenAmount =
-              document.getElementById("tokenAmountInput").value;
-            const tokenAmountNumber = parseFloat(tokenAmount);
-            if (!isNaN(tokenAmountNumber) && tokenAmountNumber > 0) {
-              const tokenAmountInWei = ethers.utils.parseEther(
-                tokenAmount.toString()
-              );
-              try {
-                const contractAddress = await deployPredMarket(
-                  eventA,
-                  eventB,
-                  tags,
-                  NameofMarket,
-                  signer,
-                  fullName,
-                  endsAt,
-                  tokenAmountInWei
-                );
-              } catch (deployError) {
-                console.error("Failed to deploy contract:", deployError);
-                alert("Failed to complete the transaction. Please try again.");
-              }
-            } else {
-              alert("Invalid token amount entered.");
-            }
-            setShowModal(false); // Hide the modal after action is taken
-          });
-          setShowModal(true); // Show the second modal
+          try {
+            const contractAddress = await deployPredMarket(
+              eventA,
+              eventB,
+              tags,
+              NameofMarket,
+              signer,
+              fullName,
+              endsAt
+            );
+          } catch (deployError) {
+            console.error("Failed to deploy contract:", deployError);
+            alert("Failed to complete the transaction. Please try again.");
+          }
+
+          setShowModal(false); // Hide the modal after action is taken
         });
-        setShowModal(true);
+        setShowModal(true); // Show the second modal
 
         // Here, you could update your local state to include the contractAddress for this set
         // And also send this information to your backend for persistence
@@ -417,6 +403,7 @@ const TournamentInfo = ({ slug }) => {
         <h2 style={{ color: "#0056b3" /* White text for high contrast */ }}>
           Tournament: {tournamentData?.name}
         </h2>
+
         <select
           onChange={(e) => setSelectedEventId(e.target.value)}
           value={selectedEventId}

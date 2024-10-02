@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { useApolloClient } from "@apollo/client";
 import gql from "graphql-tag";
+import Image from "next/image";
 import TournamentInfo from "../components/tournamentInfo2";
 import Header from "../components/Header";
 import CustomTournamentForm from "../components/CustomTournamentForm"; // Import the new component
@@ -21,7 +22,8 @@ function App() {
         );
         const data = await response.json();
         setTournaments(data);
-        console.log(data);
+
+        console.log("this is all of the tourney data", data);
         setIsFormVisible(true);
       } catch (error) {
         console.error("Failed to fetch tournaments:", error);
@@ -131,10 +133,21 @@ function App() {
                 }}
               >
                 <h3>{tournament.name}</h3>
+                {tournament.images && tournament.images.length > 0 ? (
+                  <Image
+                    src={tournament.images[0].url}
+                    alt={tournament.name || "Tournament image"}
+                    width={200} // adjust as needed
+                    height={170} // adjust as needed
+                  />
+                ) : (
+                  <div>No image available</div>
+                )}
                 <p>
                   Start:{" "}
                   {new Date(tournament.startAt * 1000).toLocaleDateString()}
                 </p>
+
                 <p>
                   End: {new Date(tournament.endAt * 1000).toLocaleDateString()}
                 </p>

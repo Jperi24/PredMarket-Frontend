@@ -1,8 +1,10 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { useApolloClient } from "@apollo/client";
 import gql from "graphql-tag";
+import Image from "next/image";
 import TournamentInfo from "../components/tournamentInfo2";
 import Header from "../components/Header";
+import CustomTournamentForm from "../components/CustomTournamentForm"; // Import the new component
 
 function App() {
   const [tournaments, setTournaments] = useState([]);
@@ -10,6 +12,7 @@ function App() {
   const [searchTerm, setSearchTerm] = useState("");
   const [slugInput, setSlugInput] = useState("");
   const apolloClient = useApolloClient();
+  const [isFormVisible, setIsFormVisible] = useState(false);
 
   useEffect(() => {
     const fetchTournaments = async () => {
@@ -19,7 +22,9 @@ function App() {
         );
         const data = await response.json();
         setTournaments(data);
-        console.log(data);
+
+        console.log("this is all of the tourney data", data);
+        setIsFormVisible(true);
       } catch (error) {
         console.error("Failed to fetch tournaments:", error);
       }
@@ -59,10 +64,7 @@ function App() {
   };
 
   const handleTournamentClick = (tournament) => {
-    // Ensure we are getting the full tournament data before setting it
-    // fetchTournamentBySlug(tournament);
     setSelectedTournament(tournament);
-
     console.log(tournament.slug, "this is the slug");
   };
 
@@ -116,6 +118,10 @@ function App() {
               padding: "20px",
             }}
           >
+            {/* New Component for Custom Input */}
+
+            {isFormVisible && <CustomTournamentForm />}
+
             {filteredTournaments.map((tournament, index) => (
               <div
                 key={`${tournament.slug}-${index}`}
@@ -127,10 +133,21 @@ function App() {
                 }}
               >
                 <h3>{tournament.name}</h3>
+                {tournament.images && tournament.images.length > 0 ? (
+                  <Image
+                    src={tournament.images[0].url}
+                    alt={tournament.name || "Tournament image"}
+                    width={200} // adjust as needed
+                    height={170} // adjust as needed
+                  />
+                ) : (
+                  <div>No image available</div>
+                )}
                 <p>
                   Start:{" "}
                   {new Date(tournament.startAt * 1000).toLocaleDateString()}
                 </p>
+
                 <p>
                   End: {new Date(tournament.endAt * 1000).toLocaleDateString()}
                 </p>

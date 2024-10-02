@@ -57,6 +57,9 @@ const GET_TOURNAMENT_QUERY = gql`
       slug
       id
       name
+      images {
+        url
+      }
       startAt
       endAt
       events {

@@ -1,19 +1,20 @@
 import { ethers } from "ethers";
 import predMarketArtifact from "../../predMarketV2.json"; // path to the ABI and Bytecode
-
+import Modal from "../../components/Modal";
 import { useSigner } from "@thirdweb-dev/react";
 import Header from "../../components/Header";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/router";
 import CountdownTimer, { timeLeft } from "../../components/CountDownTimer";
 import { resultKeyNameFromField } from "@apollo/client/utilities";
+// import dotenv from "dotenv";
+// dotenv.config();
 
 export default function PredMarketPageV2() {
   const [contractInstance, setContractInstance] = useState(null);
   const signer = useSigner();
   const commonChains = {
     56: {
-      // Binance Smart Chain
       chainName: "Binance Smart Chain",
       rpcUrl: "https://bsc-dataseed.binance.org/",
       nativeCurrency: {
@@ -24,7 +25,6 @@ export default function PredMarketPageV2() {
       blockExplorerUrls: ["https://bscscan.com"],
     },
     137: {
-      // Polygon
       chainName: "Polygon Mainnet",
       rpcUrl: "https://polygon-rpc.com/",
       nativeCurrency: {
@@ -35,8 +35,7 @@ export default function PredMarketPageV2() {
       blockExplorerUrls: ["https://polygonscan.com"],
     },
     43114: {
-      // Avalanche
-      chainName: "Avalanche Mainnet",
+      chainName: "Avalanche C-Chain",
       rpcUrl: "https://api.avax.network/ext/bc/C/rpc",
       nativeCurrency: {
         name: "Avalanche",
@@ -46,7 +45,6 @@ export default function PredMarketPageV2() {
       blockExplorerUrls: ["https://snowtrace.io"],
     },
     250: {
-      // Fantom
       chainName: "Fantom Opera",
       rpcUrl: "https://rpc.ftm.tools/",
       nativeCurrency: {
@@ -57,7 +55,6 @@ export default function PredMarketPageV2() {
       blockExplorerUrls: ["https://ftmscan.com"],
     },
     31337: {
-      // Hardhat Localhost
       chainName: "Hardhat Localhost",
       rpcUrl: "http://127.0.0.1:8545/",
       nativeCurrency: {
@@ -65,7 +62,6 @@ export default function PredMarketPageV2() {
         symbol: "ETH",
         decimals: 18,
       },
-      // Typically, there is no block explorer for localhost networks
       blockExplorerUrls: [],
     },
   };
@@ -87,9 +83,20 @@ export default function PredMarketPageV2() {
   const [chain, setChain] = useState(null);
   const [netWorkMismatch, setNetworkMismatch] = useState(true);
   const [disagreeText, setDisagreeText] = useState("");
-
+  const [selectedOutcome, setSelectedOutcome] = useState("");
+  const [winnerOfSet, setWinnerOfSet] = useState("0");
   const [selectedOutcome2, setSelectedOutcome2] = useState("0");
   const [deployerLocked, setDeployerLocked] = useState("");
+  const [isBettingOpen, setIsBettingOpen] = useState("");
+  const [isVotingTime, setIsVotingTime] = useState("");
+  const [isBettingClosed, setIsBettingClosed] = useState("");
+  const [showModal, setShowModal] = useState(false);
+  const [modalContent, setModalContent] = useState("");
+  const [modalAction, setModalAction] = useState(null);
+  const [isDisagreementState, setIsDisagreementState] = useState("");
+  const [contractBalance, setContractBalance] = useState("");
+  const [newDeployedPrices, setNewDeployedPrices] = useState({});
+  const [newAskingPrices, setNewAskingPrices] = useState({});
 
   const [bets_balance, setbetsbalance] = useState({
     allbets: [],
@@ -100,6 +107,13 @@ export default function PredMarketPageV2() {
     winnings: 0,
   });
   const [filter, setFilter] = useState("forSale");
+  const betsContainerRef = useRef(null);
+
+  useEffect(() => {
+    if (betsContainerRef.current) {
+      betsContainerRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [filter]);
 
   const [currentTime, setCurrentTime] = useState(Math.floor(Date.now() / 1000));
 
@@ -111,6 +125,7 @@ export default function PredMarketPageV2() {
       console.log(
         isBettingOpen,
         isVotingTime,
+        "-< Is voting time",
         isBettingClosed,
         isDisagreementState,
         bets_balance.voteTime
@@ -120,14 +135,24 @@ export default function PredMarketPageV2() {
     return () => clearInterval(interval); // Clean up the interval
   }, []);
 
-  const isBettingOpen =
-    bets_balance.state === 0 && currentTime < bets_balance.endTime;
-  const isVotingTime =
-    (bets_balance.state === 1 && currentTime < contract.voteTime) ||
-    (bets_balance.state === 0 && currentTime > bets_balance.endTime);
-  const isBettingClosed =
-    bets_balance.state === 0 && currentTime > bets_balance.endTime;
-  const isDisagreementState = bets_balance.state === 2;
+  useEffect(() => {
+    const updateStates = () => {
+      console.log(bets_balance.state);
+      setIsBettingOpen(
+        bets_balance.state === 0 && currentTime < bets_balance.endTime
+      );
+      setIsVotingTime(
+        (bets_balance.state === 1 && currentTime < contract.voteTime) ||
+          (bets_balance.state === 0 && currentTime > bets_balance.endTime)
+      );
+      setIsBettingClosed(
+        bets_balance.state === 0 && currentTime > bets_balance.endTime
+      );
+      setIsDisagreementState(bets_balance.state === 2);
+    };
+
+    updateStates();
+  }, [bets_balance, currentTime, contract]);
 
   useEffect(() => {
     const deployContract = async () => {
@@ -167,6 +192,12 @@ export default function PredMarketPageV2() {
               displayAllBets();
 
               setChain(commonChains[network.chainId]);
+
+              const balance = await signer.provider.getBalance(contractAddress);
+
+              // ethers.js uses BigNumber to handle large numbers; convert the balance from Wei to Ether
+              const balanceInEther = ethers.utils.formatEther(balance);
+              setContractBalance(balanceInEther);
             }
           } else {
             console.error("Contract or contract.chain.chainId is not defined");
@@ -184,7 +215,7 @@ export default function PredMarketPageV2() {
     try {
       // Correctly construct the URL using template literals
 
-      const url = `http://localhost:3001/api/updateBetterMongoDB`;
+      const url = `${process.env.NEXT_PUBLIC_API_BASE_URL}/updateBetterMongoDB`;
 
       // Make the POST request
       await fetch(url, {
@@ -195,64 +226,65 @@ export default function PredMarketPageV2() {
         body: JSON.stringify({
           contractAddress: address,
           better: signerAddress,
-        }), // Assuming you're sending the vote time in the request body
+        }),
       });
     } catch (error) {
       console.error("Error updating MongoDB:", error);
     }
   };
 
+  const handleConfirm = async () => {
+    setShowModal(false);
+    if (modalAction) {
+      await modalAction();
+    }
+  };
+
+  const handleClose = () => {
+    setShowModal(false);
+  };
+
   const bigNumberToString = (bigNumber) =>
     parseInt(bigNumber._hex, 16).toString();
 
-  const convertCryptoToUSD = (numberInCrypto) => {};
-
-  const [selectedOutcome, setSelectedOutcome] = useState("");
-  const [optionalOutcome, setOptionalOutcome] = useState("");
-
-  const sellANewBet = async (
-    myBet,
-    buyIn,
-    selectedOutcome,
-    optionalOutcome
-  ) => {
+  const sellANewBet = async (myBet, buyIn, selectedOutcome) => {
     console.log(myBet);
     console.log(buyIn);
     console.log(selectedOutcome);
-
     if (contractInstance) {
       try {
-        // Convert myBet from ether to wei and ensure it's a BigNumber
         const total = parseFloat(myBet) + parseFloat(buyIn);
         const reverseSelected = selectedOutcome === "1" ? "2" : "1";
         const selectedName =
           selectedOutcome === "1" ? contract.eventA : contract.eventB;
         const valueInWei = ethers.utils.parseEther(myBet.toString());
         const valueInWeiBuyIn = ethers.utils.parseEther(buyIn.toString());
-        const specificSet =
-          optionalOutcome != [0, 0, 0] ? optionalOutcome : [0, 0, 0];
 
-        // Display the alert-style message to the user and get their response
-        const userConfirmed = confirm(
-          `You are depositing ${myBet} ETH. If ${selectedName} wins and another user buys this bet for ${buyIn} ETH, you will be rewarded ${total} ETH. If another user does not buy in by the time the deployer of the bet declares a winner, you will be refunded ${myBet} ETH. You are eligible to unlist this bet at any time. Do you accept the terms?`
+        setModalContent(
+          `<p>You are depositing <strong>${myBet} ETH</strong>. If <strong>${selectedName}</strong> wins and another user buys this bet for <strong>${buyIn} ETH</strong>, you will be rewarded <strong>${total} ETH</strong>. If another user does not buy in by the time the deployer of the bet declares a winner, you will be refunded <strong>${myBet} ETH</strong>. You are eligible to unlist this bet at any time. Do you accept the terms?</p>`
         );
+        setModalAction(() => async () => {
+          try {
+            // Attempt to execute the smart contract function
+            const tx = await contractInstance.sellANewBet(
+              valueInWeiBuyIn,
+              reverseSelected,
+              {
+                value: valueInWei,
+              }
+            );
+            await tx.wait(); // Wait for the transaction to be mined
 
-        if (!userConfirmed) {
-          alert("You declined the terms. The bet was not placed.");
-          return;
-        }
-
-        const tx = await contractInstance.sellANewBet(
-          valueInWeiBuyIn,
-          reverseSelected,
-          specificSet,
-
-          {
-            value: valueInWei,
+            // Update the database after the transaction is successful
+            await updateBetterMongoDB(contractAddress, signerAddress);
+          } catch (error) {
+            // Log the error or handle it as needed
+            console.error("Error occurred:", error);
+            alert("Failed to complete the transaction. Please try again.");
           }
-        );
-        await tx.wait();
-        updateBetterMongoDB(contractAddress, signerAddress);
+        });
+
+        setShowModal(true);
       } catch (error) {
         console.log("Can't send new bet, this whyyyy");
         console.log(error);
@@ -264,7 +296,6 @@ export default function PredMarketPageV2() {
 
   const unlistBet = async (positionsArray) => {
     try {
-      // Ensure positionsArray is an array, even if it's just one position
       const positions = Array.isArray(positionsArray)
         ? positionsArray
         : [positionsArray];
@@ -280,8 +311,6 @@ export default function PredMarketPageV2() {
 
   const buyBet = async (positionInArray, purchasePrice) => {
     try {
-      // Convert myBet from ether to wei and ensure it's a BigNumber
-
       const selectedName =
         bets_balance.allbets[positionInArray].conditionForBuyerToWin === 1
           ? contract.eventA
@@ -292,6 +321,9 @@ export default function PredMarketPageV2() {
           ? bets_balance.allbets[positionInArray].amountBuyerLocked
           : bets_balance.allbets[positionInArray].amountToBuyFor;
 
+      // Assuming you already have a web3 instance initialized
+      const buyerPriceEth = ethers.utils.formatEther(buyerPrice, "ether");
+
       const winnings =
         parseFloat(
           ethers.utils.formatEther(
@@ -301,20 +333,23 @@ export default function PredMarketPageV2() {
 
       const purchasePriceString = ethers.utils.formatEther(purchasePrice);
 
-      const userConfirmed = confirm(
-        `You are spending ${purchasePriceString} to buy into a bet that states: if ${selectedName} wins you will be rewarded ${winnings}`
+      setModalContent(
+        `<p>You are spending <strong>${purchasePriceString} ${chain.nativeCurrency.symbol}</strong> to buy into a bet that states: if <strong>${selectedName}</strong> wins, you will be rewarded <strong>${winnings} ${chain.nativeCurrency.symbol}</strong>. If the set is a tie or DQ you will be refunded <strong>${buyerPriceEth} ${chain.nativeCurrency.symbol}</strong></p>`
       );
-
-      if (!userConfirmed) {
-        alert("You declined the terms. The bet was not placed.");
-        return;
-      }
-
-      const tx = await contractInstance.buyABet(positionInArray, {
-        value: purchasePrice,
+      setModalAction(() => async () => {
+        try {
+          const tx = await contractInstance.buyABet(positionInArray, {
+            value: purchasePrice,
+          });
+          await tx.wait();
+          updateBetterMongoDB(contractAddress, signerAddress);
+        } catch (error) {
+          // Log the error or handle it as needed
+          console.error("Error occurred:", error);
+          alert("Failed to complete the transaction. Please try again.");
+        }
       });
-      await tx.wait();
-      updateBetterMongoDB(contractAddress, signerAddress);
+      setShowModal(true);
     } catch (error) {
       console.log(error);
     }
@@ -322,28 +357,139 @@ export default function PredMarketPageV2() {
 
   const listBetForSale = async (positionInArray, askingPrice) => {
     try {
-      // Convert myBet from ether to wei and ensure it's a BigNumber
       const valueInWei = ethers.utils.parseEther(askingPrice.toString());
 
-      const userConfirmed = confirm(
-        `You are selling this bet for ${askingPrice} ETH and will no longer be participating. Do you agree?`
+      setModalContent(
+        `<p>You are selling this bet for <strong>${askingPrice} ETH</strong> and will no longer be participating. Do you agree?</p>`
       );
-
-      if (!userConfirmed) {
-        alert("You declined the terms. The bet was not placed.");
-        return;
-      }
-
-      const tx = await contractInstance.sellAnExistingBet(
-        positionInArray,
-        valueInWei
-      );
-      await tx.wait();
+      setModalAction(() => async () => {
+        try {
+          const tx = await contractInstance.sellAnExistingBet(
+            positionInArray,
+            valueInWei
+          );
+          await tx.wait();
+        } catch (error) {
+          // Log the error or handle it as needed
+          console.error("Error occurred:", error);
+          alert("Failed to complete the transaction. Please try again.");
+        }
+      });
+      setShowModal(true);
     } catch (error) {
       console.log("Can't sell bet, this whyyyy");
       console.log(error);
     }
   };
+
+  const editADeployedBet = async (
+    positionInArray,
+    newDeployedPriceInEth, // Expecting input in ETH
+    newAskingPriceInEth // Expecting input in ETH
+  ) => {
+    try {
+      // Convert new prices to Wei (smallest unit of Ether)
+      const newDeployedPrice = ethers.utils.parseEther(
+        newDeployedPriceInEth.toString()
+      );
+      const newAskingPrice = ethers.utils.parseEther(
+        newAskingPriceInEth.toString()
+      );
+
+      // Fetch the current bet details
+      const currentBet = await contractInstance.arrayOfBets(positionInArray);
+      console.log("Current Bet:", currentBet);
+
+      // Calculate the difference needed to cover the new deploy price
+      const currentLockedAmount = ethers.BigNumber.from(
+        currentBet.amountDeployerLocked.toString()
+      );
+      let valueInWei = ethers.BigNumber.from("0"); // Default to 0 if no additional value is needed
+
+      if (currentLockedAmount.lt(newDeployedPrice)) {
+        valueInWei = newDeployedPrice.sub(currentLockedAmount); // Difference needed in Wei
+      }
+
+      console.log("Additional Value in Wei:", valueInWei.toString());
+
+      // Prepare modal content for user confirmation
+      setModalContent(
+        `<p>The new amount that you will have locked up is <strong>${newDeployedPriceInEth} ETH</strong> and the new purchase price for this bet is <strong>${newAskingPriceInEth} ETH</strong>. Do you agree?</p>`
+      );
+
+      // Define action for the modal confirmation
+      setModalAction(() => async () => {
+        try {
+          // Call the smart contract function
+          const tx = await contractInstance.editADeployedBet(
+            positionInArray,
+            newDeployedPrice,
+            newAskingPrice,
+            {
+              value: valueInWei.toString(), // Pass additional value in Wei
+            }
+          );
+          await tx.wait(); // Wait for transaction to be mined
+          alert("Bet updated successfully!");
+        } catch (error) {
+          console.error("Transaction Error:", error);
+          alert("Failed to complete the transaction. Please try again.");
+        }
+      });
+
+      // Show the modal for user confirmation
+      setShowModal(true);
+    } catch (error) {
+      console.error("Error while editing bet:", error);
+    }
+  };
+
+  // const editADeployedBet = async (
+  //   positionInArray,
+  //   newDeployedPrice,
+  //   newAskingPrice
+  // ) => {
+  //   try {
+  //     const currentBet = await contractInstance.arrayOfBets(positionInArray);
+  //     console.log(currentBet);
+  //     let valueInWei = 0;
+
+  //     if (currentBet.amountDeployerLocked < newDeployedPrice) {
+  //       valueInWei = newDeployedPrice - currentBet.amountDeployerLocked;
+  //     }
+  //     console.log(valueInWei);
+
+  //     setModalContent(
+  //       `<p>The new amount that you will have locked up is <strong>${ethers.utils.formatEther(
+  //         newDeployedPrice
+  //       )} ETH</strong> and the new purchase price for this bet is <strong>${ethers.utils.formatEther(
+  //         newAskingPrice
+  //       )} ETH</strong>. Do you agree?</p>`
+  //     );
+
+  //     setModalAction(() => async () => {
+  //       try {
+  //         const tx = await contractInstance.editADeployedBet(
+  //           positionInArray,
+  //           newDeployedPrice,
+  //           newAskingPrice,
+  //           {
+  //             value: valueInWei.toString(),
+  //           }
+  //         );
+  //         await tx.wait();
+  //         alert("Bet updated successfully!");
+  //       } catch (error) {
+  //         console.error("Error occurred:", error);
+  //         alert("Failed to complete the transaction. Please try again.");
+  //       }
+  //     });
+
+  //     setShowModal(true);
+  //   } catch (error) {
+  //     console.error("Can't edit bet:", error);
+  //   }
+  // };
 
   const withdrawBet = async () => {
     try {
@@ -354,14 +500,32 @@ export default function PredMarketPageV2() {
     }
   };
 
+  const ownerWithdraw = async () => {
+    try {
+      const tx = await contractInstance.transferOwnerAmount();
+      await tx.wait;
+    } catch (error) {
+      console.log(error);
+    }
+  };
+
   function handleChangePrice(value, index) {
     setBetPrices((prevPrices) => ({
       ...prevPrices,
-      [index]: value, // Update the price for the specific bet
+      [index]: value,
     }));
   }
 
   const BigNumber = require("bignumber.js");
+
+  const transferStaffAmount = async () => {
+    try {
+      const tx = await contractInstance.transferStaffAmount();
+      await tx.wait;
+    } catch (error) {
+      console.log(error);
+    }
+  };
 
   const calculateTotalWinnings = (allbets) => {
     if (!Array.isArray(allbets)) {
@@ -369,11 +533,18 @@ export default function PredMarketPageV2() {
     }
 
     const totalWinnings = allbets
+      .filter((bet) => {
+        if (bet.deployer !== bet.owner) {
+          return true;
+        } else if (bet.deployer === bet.owner && bet.amountBuyerLocked > 0) {
+          return true;
+        }
+        return false;
+      })
       .filter(
         (bet) => bet.deployer === signerAddress || bet.owner === signerAddress
       )
       .reduce((total, bet) => {
-        // Convert BigNumber values to ether and then to numbers
         const amountDeployerLocked = parseFloat(
           ethers.utils.formatEther(bet.amountDeployerLocked)
         );
@@ -383,20 +554,18 @@ export default function PredMarketPageV2() {
           )
         );
 
-        // Check for NaN values and handle them appropriately
         if (isNaN(amountDeployerLocked) || isNaN(amountBuyerLocked)) {
           console.error("Invalid BigNumber conversion encountered.");
           return total;
         }
 
-        // Sum up the locked amounts and add to the total
         return total + amountDeployerLocked + amountBuyerLocked;
-      }, 0); // Start with zero
+      }, 0);
 
-    // Return the total winnings as a string
-    console.log(`Total Winnings: ${totalWinnings}`); // Final output before conversion
-    return totalWinnings.toString(); // Convert to string for final output
+    console.log(`Total Winnings: ${totalWinnings}`);
+    return totalWinnings.toString();
   };
+
   const bigNumberToNumber = (bigNumber) => {
     return parseInt(bigNumber._hex, 16);
   };
@@ -431,61 +600,161 @@ export default function PredMarketPageV2() {
     (signerAddress === contract.deployerAddress ||
       signerAddress === "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
 
+  // const declareWinner = async (winner, isDeclaredCorrect) => {
+  //   if (contractInstance) {
+  //     try {
+  //       const voteTime = Math.floor(Date.now() / 1000) + 7200;
+  //       console.log(voteTime);
+  //       const tx = await contractInstance.declareWinner(
+  //         winner,
+  //         isDeclaredCorrect
+  //       );
+  //       await tx.wait();
+
+  //       const response = await fetch(
+  //         `${process.env.NEXT_PUBLIC_API_BASE_URL}/updateMongoDB`,
+  //         {
+  //           method: "POST",
+  //           headers: {
+  //             "Content-Type": "application/json",
+  //           },
+  //           body: JSON.stringify({ contractAddress, voteTime }),
+  //         }
+  //       );
+  //     } catch (error) {
+  //       console.log(error);
+  //     }
+  //   }
+  // };
+
+  // const voteDisagree = async (reason) => {
+  //   if (contractInstance && disagreeText) {
+  //     try {
+  //       const value = await contractInstance.creatorLocked();
+
+  //       const tx = await contractInstance.disagreeWithOwner({
+  //         value: value,
+  //       });
+  //       await tx.wait();
+  //       const response = await fetch(
+  //         `${process.env.NEXT_PUBLIC_API_BASE_URL}/moveToDisagreements`,
+  //         {
+  //           method: "POST",
+  //           headers: {
+  //             "Content-Type": "application/json",
+  //           },
+  //           body: JSON.stringify({ contractAddress, reason }),
+  //         }
+  //       );
+  //     } catch (error) {
+  //       console.log(error);
+  //     }
+  //   }
+  // };
+
   const declareWinner = async (winner, isDeclaredCorrect) => {
     if (contractInstance) {
       try {
         const voteTime = Math.floor(Date.now() / 1000) + 7200;
         console.log(voteTime);
-        const tx = await contractInstance.declareWinner(
-          winner,
-          isDeclaredCorrect
-        );
-        await tx.wait();
+        const winnerName =
+          winner === 1
+            ? contract.eventA
+            : winner === 2
+            ? contract.eventB
+            : winner === 3
+            ? "As A Tie/No Contest and Refund?"
+            : "";
 
-        const response = await fetch(
-          "http://localhost:3001/api/updateMongoDB",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ contractAddress, voteTime }), // Include disagreement text here
-          }
+        // Prepare modal content for user confirmation
+        setModalContent(
+          `<p>Are you sure you want to declare <strong>${winnerName}</strong> as the winner? This action cannot be undone.</p>`
         );
+
+        // Define action for the modal confirmation
+        setModalAction(() => async () => {
+          try {
+            const tx = await contractInstance.declareWinner(
+              winner,
+              isDeclaredCorrect
+            );
+            await tx.wait();
+
+            const response = await fetch(
+              `${process.env.NEXT_PUBLIC_API_BASE_URL}/updateMongoDB`,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ contractAddress, voteTime }),
+              }
+            );
+            alert("Winner declared successfully!");
+          } catch (error) {
+            console.error("Transaction Error:", error);
+            alert("Failed to declare the winner. Please try again.");
+          }
+        });
+
+        // Show the modal for user confirmation
+        setShowModal(true);
       } catch (error) {
-        console.log(error);
+        console.error("Error while declaring winner:", error);
       }
     }
   };
 
   const voteDisagree = async (reason) => {
-    if (contractInstance) {
+    if (contractInstance && disagreeText) {
       try {
         const value = await contractInstance.creatorLocked();
-        const tx = await contractInstance.disagreeWithOwner({
-          value: value,
-        });
-        await tx.wait();
-        const response = await fetch(
-          "http://localhost:3001/moveToDisagreements",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ contractAddress, reason }), // Include disagreement text here
-          }
+        const valueString = ethers.utils.formatEther(value);
+
+        // Prepare modal content for user confirmation
+        setModalContent(
+          `<p>Are you sure you want to disagree with the owner for the following reason: <strong>${reason}</strong>? This will lock ${valueString} ETH. You will recieve this and the amount the creator has locked if the deployer of the set has made an incorrect decision and you are correct with your disagreement reason.</p>`
         );
+
+        // Define action for the modal confirmation
+        setModalAction(() => async () => {
+          try {
+            const tx = await contractInstance.disagreeWithOwner({
+              value: value,
+            });
+            await tx.wait();
+
+            const response = await fetch(
+              `${process.env.NEXT_PUBLIC_API_BASE_URL}/moveToDisagreements`,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ contractAddress, reason }),
+              }
+            );
+            alert("Disagreement vote submitted successfully!");
+          } catch (error) {
+            console.error("Transaction Error:", error);
+            alert("Failed to submit the disagreement vote. Please try again.");
+          }
+        });
+
+        // Show the modal for user confirmation
+        setShowModal(true);
       } catch (error) {
-        console.log(error);
+        console.error("Error while voting to disagree:", error);
       }
     }
   };
 
   const fetchContractDetails = async (address) => {
     try {
+      console.log(`${process.env.NEXT_PUBLIC_API_BASE_URL}`, "logged .env");
+
       const response = await fetch(
-        `http://localhost:3001/api/contracts/${address}`
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}/contracts/${address}`
       );
       if (!response.ok) {
         throw new Error(
@@ -496,12 +765,10 @@ export default function PredMarketPageV2() {
       return data;
     } catch (error) {
       console.error("Error fetching contract details:", error);
-      // Consider setting state here to display the error on the UI if appropriate
     }
   };
 
   useEffect(() => {
-    // Only attempt to fetch if contractAddress is not undefined
     if (contractAddress) {
       console.log(`Fetching details for contract: ${contractAddress}`);
       fetchContractDetails(contractAddress)
@@ -518,17 +785,62 @@ export default function PredMarketPageV2() {
     } else {
       console.log("contractAddress is undefined, waiting for it to be set");
     }
-  }, [contractAddress, signer]); // Ensure this effect runs whenever contractAddress changes
+  }, [contractAddress, signer]);
+
+  // const switchNetwork = async (targetChainId) => {
+  //   const chainHex = `0x${targetChainId.toString(16)}`;
+
+  //   try {
+  //     await window.ethereum.request({
+  //       method: "wallet_switchEthereumChain",
+  //       params: [{ chainId: chainHex }],
+  //     });
+  //   } catch (switchError) {
+  //     if (switchError.code === 4902) {
+  //       try {
+  //         const chainDetails = commonChains[targetChainId];
+  //         if (chainDetails) {
+  //           await window.ethereum.request({
+  //             method: "wallet_addEthereumChain",
+  //             params: [
+  //               {
+  //                 chainId: chainHex,
+  //                 chainName: chainDetails.chainName,
+  //                 nativeCurrency: chainDetails.nativeCurrency,
+  //                 rpcUrls: [chainDetails.rpcUrl],
+  //                 blockExplorerUrls: chainDetails.blockExplorerUrls,
+  //               },
+  //             ],
+  //           });
+  //           window.location.reload();
+  //         } else {
+  //           console.error(
+  //             `No RPC URL available for chain ID: ${targetChainId}. Please add the network manually.`
+  //           );
+  //           alert(
+  //             `Please add the network with chain ID ${targetChainId} manually, as no RPC URL is available.`
+  //           );
+  //         }
+  //       } catch (addError) {
+  //         console.error("Failed to add the network:", addError);
+  //       }
+  //     } else {
+  //       console.error("Failed to switch the network:", switchError);
+  //     }
+  //   }
+  // };
 
   const switchNetwork = async (targetChainId) => {
     const chainHex = `0x${targetChainId.toString(16)}`;
 
     try {
+      // Attempt to switch to the target network
       await window.ethereum.request({
         method: "wallet_switchEthereumChain",
         params: [{ chainId: chainHex }],
       });
     } catch (switchError) {
+      // If the target network is not added, add it
       if (switchError.code === 4902) {
         try {
           const chainDetails = commonChains[targetChainId];
@@ -540,11 +852,12 @@ export default function PredMarketPageV2() {
                   chainId: chainHex,
                   chainName: chainDetails.chainName,
                   nativeCurrency: chainDetails.nativeCurrency,
-                  rpcUrls: [chainDetails.rpcUrl], // Ensure this is an array
+                  rpcUrls: [chainDetails.rpcUrl],
                   blockExplorerUrls: chainDetails.blockExplorerUrls,
                 },
               ],
             });
+            // Reload the page to reflect the new network
             window.location.reload();
           } else {
             console.error(
@@ -556,25 +869,33 @@ export default function PredMarketPageV2() {
           }
         } catch (addError) {
           console.error("Failed to add the network:", addError);
+          alert(
+            "Failed to add the network. Please try again or add it manually."
+          );
         }
       } else {
         console.error("Failed to switch the network:", switchError);
+        alert("Failed to switch the network. Please try again.");
       }
     }
   };
 
   useEffect(() => {
-    // Ensure that contractInstance is not null and is ready to use
     if (contractInstance && signer) {
-      // Define a list of event names you want to listen to
-      const eventNames = ["shithappened", "winnerDeclaredVoting", "userVoted"];
+      const eventNames = [
+        "userCreatedABet",
+        "BetUnlisted",
+        "userBoughtBet",
+        "userReListedBet",
+        "winnerDeclaredVoting",
+        "userVoted",
+        "userWithdrew",
+      ];
 
-      // Attach the event listener for each event
       eventNames.forEach((eventName) => {
         contractInstance.on(eventName, displayAllBets);
       });
 
-      // Cleanup function to remove the event listeners
       return () => {
         eventNames.forEach((eventName) => {
           contractInstance.off(eventName, displayAllBets);
@@ -584,17 +905,19 @@ export default function PredMarketPageV2() {
   }, [contractInstance, signer]);
 
   const handleSelectBet = (position) => {
-    setSelectedBets(
-      (prevSelectedBets) =>
-        prevSelectedBets.includes(position)
-          ? prevSelectedBets.filter((pos) => pos !== position) // Remove if already selected
-          : [...prevSelectedBets, position] // Add if not already selected
+    setSelectedBets((prevSelectedBets) =>
+      prevSelectedBets.includes(position)
+        ? prevSelectedBets.filter((pos) => pos !== position)
+        : [...prevSelectedBets, position]
     );
   };
 
   const handleEndBet = () => {
     const outcomeValue = parseInt(winnerOfSet, 10);
     const outcomeValue2 = parseInt(selectedOutcome2, 10);
+    console.log("outcome Val1", outcomeValue);
+    console.log("outcome Val2", outcomeValue2);
+
     declareWinner(outcomeValue, outcomeValue2);
   };
 
@@ -625,6 +948,7 @@ export default function PredMarketPageV2() {
                       {""} Is the amount the creator of the set has locked up to
                       ensure Integrity
                     </h4>
+                    <h4>{contractBalance} The Amount of Eth In contract</h4>
                     <h4>{contract.NameofMarket}</h4>
                     <h4>{contract.fullName}</h4>
                     <div>
@@ -632,10 +956,12 @@ export default function PredMarketPageV2() {
                       {contract.eventB}
                     </div>
                     {bets_balance.state === 0 ? (
-                      <p>
-                        Total Potential Winnings: {totalWinnings}{" "}
-                        {chain?.nativeCurrency?.symbol}
-                      </p>
+                      <>
+                        <p>
+                          Total Potential Winnings: {totalWinnings}{" "}
+                          {chain?.nativeCurrency?.symbol}
+                        </p>
+                      </>
                     ) : (
                       <h4>
                         <div>
@@ -650,6 +976,12 @@ export default function PredMarketPageV2() {
                     )}
                   </h4>
                 </div>
+                <Modal
+                  show={showModal}
+                  handleClose={handleClose}
+                  handleConfirm={handleConfirm}
+                  content={modalContent}
+                />
 
                 <div className="input-container">
                   <div>
@@ -679,6 +1011,7 @@ export default function PredMarketPageV2() {
                                 value={myLocked}
                                 onChange={(e) => setmyLocked(e.target.value)}
                                 placeholder={`My Bet In ${chain?.nativeCurrency?.symbol}`}
+                                maxLength={20}
                               />
                               <input
                                 className="input-field"
@@ -687,6 +1020,7 @@ export default function PredMarketPageV2() {
                                   setbuyInIChoose(e.target.value)
                                 }
                                 placeholder={`Opponent's Bet In ${chain?.nativeCurrency?.symbol}`}
+                                maxLength={20}
                               />
                               <select
                                 className="dropdown"
@@ -701,27 +1035,12 @@ export default function PredMarketPageV2() {
                                 <option value="1">{contract.eventA}</option>
                                 <option value="2">{contract.eventB}</option>
                               </select>
-
-                              <select
-                                className="dropdown"
-                                value={selectedOutcome}
-                                onChange={(e) =>
-                                  setOptionalOutcome(e.target.value)
-                                }
-                              >
-                                <option value="" disabled>
-                                  Dictate Specific Set
-                                </option>
-                                <input value="1">{contract.eventA}</input>
-                                <input value="2">{contract.eventB}</input>
-                              </select>
                               <button
                                 onClick={() =>
                                   sellANewBet(
                                     myLocked,
                                     buyInIChoose,
-                                    selectedOutcome,
-                                    optionalOutcome
+                                    selectedOutcome
                                   )
                                 }
                               >
@@ -741,6 +1060,7 @@ export default function PredMarketPageV2() {
                             value={disagreeText}
                             onChange={(e) => setDisagreeText(e.target.value)}
                             placeholder={`Disagreement Reason`}
+                            maxLength={1000}
                           />
                           <p>
                             <CountdownTimer
@@ -779,6 +1099,18 @@ export default function PredMarketPageV2() {
                           <button onClick={() => withdrawBet()}>
                             Withdraw Balance
                           </button>
+                          {contract && contractInstance && isAuthorizedUser && (
+                            <>
+                              <button onClick={() => ownerWithdraw()}>
+                                Owner Withdraw Collected Comission & Locked
+                                Amounts
+                              </button>
+
+                              <button onClick={() => transferStaffAmount()}>
+                                Staff Withdrawl
+                              </button>
+                            </>
+                          )}
                         </>
                       )}
                     </div>
@@ -801,7 +1133,7 @@ export default function PredMarketPageV2() {
 
             <div>
               <ul>
-                <div className="bets-container">
+                <div ref={betsContainerRef} className="bets-container">
                   {selectedBets.length > 0 && (
                     <button onClick={() => unlistBet(selectedBets)}>
                       Unlist All Selected
@@ -812,108 +1144,217 @@ export default function PredMarketPageV2() {
                     bets_balance.allbets.length > 0 ? (
                       bets_balance.allbets
                         .filter((bet) => {
-                          // Example filtering conditions, adjust according to your actual data structure
                           switch (filter) {
                             case "forSale":
-                              return bet.selling; // Assuming this is a boolean indicating the bet is for sale
+                              return bet.selling;
                             case "deployedByMe":
-                              return bet.deployer === signerAddress; // You'll need to determine `signerAddress`
+                              return bet.deployer === signerAddress;
                             case "ownedByMe":
-                              return bet.owner === signerAddress; // Adjust based on your data
+                              return bet.owner === signerAddress;
                             case "all":
                             default:
-                              return true; // No filtering, return all bets
+                              return true;
                           }
                         })
-                        .map((bet, index) => (
-                          <div key={index} className="bet">
-                            <h3>Bet {index + 1}</h3>
-                            <div className="bet-info">
-                              Amount To Win:{" "}
-                              {ethers.utils.formatEther(
-                                ethers.BigNumber.from(
-                                  bet.amountDeployerLocked
-                                ).add(
-                                  ethers.BigNumber.from(
-                                    bet.amountBuyerLocked > 0
-                                      ? bet.amountBuyerLocked
-                                      : bet.amountToBuyFor
-                                  )
-                                )
-                              )}{" "}
-                              {chain?.nativeCurrency?.symbol}
-                            </div>
-                            {bet.selling && (
+                        .map((bet, index) => {
+                          return (
+                            <div key={index} className="bet">
+                              <h3>Bet {index + 1}</h3>
                               <div className="bet-info">
-                                Cost To Purchase:{" "}
+                                Amount To Win:{" "}
                                 {ethers.utils.formatEther(
-                                  bigNumberToString(bet.amountToBuyFor)
+                                  ethers.BigNumber.from(
+                                    bet.amountDeployerLocked
+                                  ).add(
+                                    ethers.BigNumber.from(
+                                      bet.amountBuyerLocked > 0
+                                        ? bet.amountBuyerLocked
+                                        : bet.amountToBuyFor
+                                    )
+                                  )
                                 )}{" "}
                                 {chain?.nativeCurrency?.symbol}
                               </div>
-                            )}
-                            <div className="bet-info">
-                              Owner Of Bet Wins If:{" "}
-                              {bet.conditionForBuyerToWin === 1
-                                ? contract.eventA
-                                : contract.eventB}{" "}
-                              Wins
-                            </div>
-                            {bet.selling ? (
-                              bet.owner === signerAddress ? (
-                                <div className="bet-selection">
-                                  <input
-                                    type="checkbox"
-                                    value={bet.positionInArray}
-                                    onChange={(e) =>
-                                      handleSelectBet(e.target.value)
-                                    }
-                                  />
-                                  Select To Unlist
+                              {bet.selling && (
+                                <div className="bet-info">
+                                  Cost To Purchase:{" "}
+                                  {ethers.utils.formatEther(bet.amountToBuyFor)}{" "}
+                                  {chain?.nativeCurrency?.symbol}
                                 </div>
-                              ) : (
-                                <button
-                                  onClick={() =>
-                                    buyBet(
-                                      bet.positionInArray,
-                                      bet.amountToBuyFor
-                                    )
-                                  }
-                                >
-                                  Buy Bet
-                                </button>
-                              )
-                            ) : !bet.selling && bet.owner === signerAddress ? (
-                              <>
-                                <input
-                                  style={{
-                                    width: "50%",
-                                    padding: "6px 10px",
-                                    border: "1px solid #ccc",
-                                    borderRadius: "4px",
-                                    textAlign: "center",
-                                    fontSize: "14px",
-                                  }}
-                                  value={betPrices[index] || ""}
-                                  onChange={(e) =>
-                                    handleChangePrice(e.target.value, index)
-                                  }
-                                  placeholder={`ReSell Price In ${chain?.nativeCurrency?.symbol}`}
-                                />
-                                <button
-                                  onClick={() =>
-                                    listBetForSale(
-                                      bet.positionInArray,
-                                      betPrices[index] || ""
-                                    )
-                                  }
-                                >
-                                  Re-List Bet
-                                </button>
-                              </>
-                            ) : null}
-                          </div>
-                        ))
+                              )}
+                              <div className="bet-info">
+                                Owner Of Bet Wins If:{" "}
+                                {bet.conditionForBuyerToWin === 1
+                                  ? contract.eventA
+                                  : contract.eventB}{" "}
+                                Wins
+                              </div>
+                              {bet.selling ? (
+                                bet.owner === signerAddress ? (
+                                  <div className="bet-selection">
+                                    <input
+                                      type="checkbox"
+                                      value={bet.positionInArray}
+                                      onChange={(e) =>
+                                        handleSelectBet(e.target.value)
+                                      }
+                                    />
+                                    Select To Unlist
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() =>
+                                      buyBet(
+                                        bet.positionInArray,
+                                        bet.amountToBuyFor
+                                      )
+                                    }
+                                  >
+                                    Buy Bet
+                                  </button>
+                                )
+                              ) : !bet.selling &&
+                                bet.owner === signerAddress &&
+                                bet.deployer != signerAddress ? (
+                                <>
+                                  <input
+                                    style={{
+                                      width: "50%",
+                                      padding: "6px 10px",
+                                      border: "1px solid #ccc",
+                                      borderRadius: "4px",
+                                      textAlign: "center",
+                                      fontSize: "14px",
+                                    }}
+                                    value={betPrices[index] || ""}
+                                    onChange={(e) =>
+                                      handleChangePrice(e.target.value, index)
+                                    }
+                                    placeholder={`ReSell Price In ${chain?.nativeCurrency?.symbol}`}
+                                    maxLength={100}
+                                  />
+                                  <button
+                                    onClick={() =>
+                                      listBetForSale(
+                                        bet.positionInArray,
+                                        betPrices[index] || ""
+                                      )
+                                    }
+                                  >
+                                    Re-List Bet
+                                  </button>
+                                </>
+                              ) : null}
+
+                              {bet.deployer === signerAddress &&
+                                bet.owner === signerAddress && (
+                                  <div className="edit-bet-section">
+                                    <h4>Edit Your Deployed Bet</h4>
+                                    <div className="current-values">
+                                      <p>
+                                        <strong>Current Deployed Price:</strong>{" "}
+                                        {ethers.utils.formatEther(
+                                          bet.amountDeployerLocked
+                                        )}{" "}
+                                        {chain?.nativeCurrency?.symbol}
+                                      </p>
+                                      <p>
+                                        <strong>Current Asking Price:</strong>{" "}
+                                        {ethers.utils.formatEther(
+                                          bet.amountToBuyFor
+                                        )}{" "}
+                                        {chain?.nativeCurrency?.symbol}
+                                      </p>
+                                    </div>
+                                    <div className="edit-inputs">
+                                      <label>
+                                        Amount You Locked Up{" "}
+                                        <input
+                                          style={{
+                                            width: "100%",
+                                            padding: "8px",
+                                            border: "1px solid #ccc",
+                                            borderRadius: "4px",
+                                            textAlign: "center",
+                                            fontSize: "14px",
+                                            marginTop: "5px",
+                                          }}
+                                          value={
+                                            newDeployedPrices[
+                                              bet.positionInArray
+                                            ] || ""
+                                          } // Use specific bet's value
+                                          onChange={(e) =>
+                                            setNewDeployedPrices({
+                                              ...newDeployedPrices,
+                                              [bet.positionInArray]:
+                                                e.target.value, // Update only this bet's value
+                                            })
+                                          }
+                                          placeholder={`Enter new price in ${chain?.nativeCurrency?.symbol}`}
+                                        />
+                                      </label>
+                                      <label>
+                                        New Buying Price
+                                        <input
+                                          style={{
+                                            width: "100%",
+                                            padding: "8px",
+                                            border: "1px solid #ccc",
+                                            borderRadius: "4px",
+                                            textAlign: "center",
+                                            fontSize: "14px",
+                                            marginTop: "5px",
+                                          }}
+                                          value={
+                                            newAskingPrices[
+                                              bet.positionInArray
+                                            ] || ""
+                                          } // Use specific bet's value
+                                          onChange={(e) =>
+                                            setNewAskingPrices({
+                                              ...newAskingPrices,
+                                              [bet.positionInArray]:
+                                                e.target.value, // Update only this bet's value
+                                            })
+                                          }
+                                          placeholder={`Enter new price in ${chain?.nativeCurrency?.symbol}`}
+                                          maxLength={100}
+                                        />
+                                      </label>
+                                    </div>
+                                    <button
+                                      style={{
+                                        marginTop: "10px",
+                                        padding: "10px 15px",
+                                        backgroundColor: "#007bff",
+                                        color: "#fff",
+                                        border: "none",
+                                        borderRadius: "4px",
+                                        cursor: "pointer",
+                                      }}
+                                      onClick={() =>
+                                        editADeployedBet(
+                                          bet.positionInArray,
+                                          newDeployedPrices[
+                                            bet.positionInArray
+                                          ] || bet.amountDeployerLocked,
+                                          newAskingPrices[
+                                            bet.positionInArray
+                                          ] ||
+                                            ethers.utils.formatEther(
+                                              bet.amountToBuyFor
+                                            )
+                                        )
+                                      }
+                                    >
+                                      Save Changes
+                                    </button>
+                                  </div>
+                                )}
+                            </div>
+                          );
+                        })
                     ) : (
                       <div>No Bets Available</div>
                     )
@@ -932,9 +1373,10 @@ export default function PredMarketPageV2() {
                   <select
                     id="outcomeSelect"
                     className="dropdown"
-                    value={selectedOutcome}
-                    onChange={(e) => setSelectedOutcome(e.target.value)}
+                    value={winnerOfSet}
+                    onChange={(e) => setWinnerOfSet(e.target.value)}
                   >
+                    <option value="0">Set Winner As ...</option>
                     <option value="1">Set Winner As {contract.eventA}</option>
                     <option value="2">Set Winner As {contract.eventB}</option>
                     <option value="3">Cancel Refund</option>
@@ -967,6 +1409,156 @@ export default function PredMarketPageV2() {
           </div>
         )}
       </main>
+
+      <style jsx>{`
+        /* Desktop styles */
+        .contract-container {
+          display: flex;
+          flex-direction: column;
+          padding: 20px;
+          max-width: 1200px;
+          margin: 0 auto;
+        }
+
+        .network-switch-modal,
+        .contract-details-grid,
+        .input-container,
+        .vertical-button-group,
+        .bets-container {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+        }
+
+        .contract-details-grid {
+          display: flex;
+          flex-direction: row;
+          align-items: flex-start;
+          justify-content: space-between;
+          width: 100%;
+        }
+
+        .contract-detail-item {
+          text-align: center;
+          margin-bottom: 15px;
+          flex: 1;
+        }
+
+        .input-container {
+          width: 50%;
+          padding: 10px;
+          box-sizing: border-box;
+        }
+
+        .countdown-container {
+          margin-bottom: 10px;
+        }
+
+        .countdown-heading {
+          font-size: 1.2rem;
+          margin-bottom: 5px;
+        }
+
+        .createBetContainer {
+          width: 100%;
+          max-width: 400px;
+        }
+
+        .input-field,
+        .dropdown {
+          width: 100%;
+          padding: 10px;
+          margin-bottom: 10px;
+          font-size: 1rem;
+        }
+
+        .toggle-inputs-btn {
+          width: 100%;
+          padding: 10px;
+          margin-bottom: 10px;
+          font-size: 1rem;
+          background-color: #007bff;
+          color: white;
+          border: none;
+          border-radius: 5px;
+        }
+
+        .bet {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          margin-bottom: 20px;
+          padding: 10px;
+          border: 1px solid #ddd;
+          border-radius: 5px;
+          width: 100%;
+          max-width: 400px;
+          box-sizing: border-box;
+        }
+
+        .bet-info {
+          margin-bottom: 5px;
+        }
+
+        .bet-selection {
+          margin-top: 10px;
+        }
+
+        .vertical-button-group {
+          display: flex;
+          flex-direction: column;
+          width: 100%;
+          max-width: 200px;
+        }
+
+        .vertical-button-group button {
+          margin-bottom: 10px;
+        }
+
+        .bets-container {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 20px;
+          width: 100%;
+        }
+
+        /* Mobile styles */
+        @media (max-width: 768px) {
+          .contract-container {
+            padding: 10px;
+            width: 100%;
+          }
+
+          .contract-details-grid {
+            flex-direction: column;
+          }
+
+          .input-container {
+            width: 100%;
+            padding: 10px;
+          }
+
+          .vertical-button-group {
+            width: 100%;
+            max-width: 400px;
+          }
+
+          .vertical-button-group button {
+            margin-bottom: 5px;
+            padding: 5px;
+            font-size: 0.8rem;
+          }
+
+          .bet {
+            width: 100%;
+          }
+
+          .createBetContainer {
+            max-width: 100%;
+          }
+        }
+      `}</style>
     </>
   );
 }
+//
