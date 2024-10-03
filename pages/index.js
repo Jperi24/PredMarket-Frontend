@@ -42,9 +42,22 @@ export default function ContractsPage() {
       case "ongoing":
         return "green";
       case "upcoming":
-        return "light green";
+        return "blue";
       default:
-        return "transparent";
+        return "gray";
+    }
+  };
+
+  const getStatusDisplay = (contract) => {
+    switch (contract.status) {
+      case "ongoing":
+        return "In Game";
+      case "upcoming":
+        return "Pending";
+      case "completed":
+        return `${contract.winner} Has Won`;
+      default:
+        return "Other";
     }
   };
 
@@ -139,16 +152,6 @@ export default function ContractsPage() {
         break;
     }
     applyFilters(filtered, searchQuery);
-  };
-  const getWinnerDisplay = (contract) => {
-    if (contract.status === "completed") {
-      return contract.winner ? (
-        <p className="winner">Winner: {contract.winner}</p>
-      ) : (
-        <p className="winner">Winner: Not available</p>
-      );
-    }
-    return null;
   };
 
   const handleSearchChange = (e) => {
@@ -279,8 +282,7 @@ export default function ContractsPage() {
                 <span className="vs">VS</span>
                 <span className="team">{contract.eventB}</span>
               </div>
-              <p className="status">Status: {contract.status}</p>
-              {getWinnerDisplay(contract)}
+              <p className="status">{getStatusDisplay(contract)}</p>
             </div>
           ))}
         </div>
@@ -370,6 +372,14 @@ export default function ContractsPage() {
           box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
           transition: all 0.3s ease;
           cursor: pointer;
+          border: 2px solid transparent;
+        }
+
+        .status {
+          font-size: 0.9rem;
+          color: #7f8c8d;
+          margin-top: 10px;
+          font-weight: bold;
         }
 
         .grid-item:hover {

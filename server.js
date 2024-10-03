@@ -14,6 +14,14 @@ const fetch = require("cross-fetch");
 const uri =
   "mongodb+srv://Jake:Koolaid20@cluster0.lwaxzbm.mongodb.net/?retryWrites=true&w=majority";
 const client = new MongoClient(uri);
+const ethers = require("ethers");
+const contractABI = require("./predMarketV2.json");
+// Make sure to import your contract ABI
+
+// You'll need to set up your provider and signer
+const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL);
+const privateKey = process.env.PRIVATE_KEY; // The private key of the wallet that will call declareWinner
+const signer = new ethers.Wallet(privateKey, provider);
 
 let db;
 const PORT = process.env.PORT || 3001;
@@ -700,12 +708,31 @@ async function updateFrequentCache() {
               temporaryFrequentCache.set(phase.id, allSets);
               for (const set of allSets) {
                 const setKey = `${tournament.slug}-${event.id}-${set.id}`;
-                if (set.winnerId) {
-                  setStatuses.set(setKey, "completed");
-                } else if (set.state === "IN_PROGRESS") {
-                  setStatuses.set(setKey, "ongoing");
+                const inGame = set.slots.every(
+                  (slot) => slot.standing?.placement === 2
+                );
+                const hasWinner = set.slots.some(
+                  (slot) => slot.standing?.placement === 1
+                );
+                const hasUnknownEntrant = set.slots.some(
+                  (slot) => !slot.entrant || slot.entrant.name === "Unknown"
+                );
+                const winnerName =
+                  set.slots.find((slot) => slot.standing?.placement === 1)
+                    ?.entrant?.name || "Unknown";
+
+                if (inGame && !hasWinner) {
+                  setStatuses.set(setKey, { status: "ongoing", winner: null });
+                } else if (!inGame && !hasWinner && !hasUnknownEntrant) {
+                  setStatuses.set(setKey, { status: "upcoming", winner: null });
+                } else if (hasWinner) {
+                  setStatuses.set(setKey, {
+                    status: "completed",
+                    winner: winnerName,
+                  });
+                  await updateMongoDBWithWinner(setKey, winnerName);
                 } else {
-                  setStatuses.set(setKey, "upcoming");
+                  setStatuses.set(setKey, { status: "other", winner: null });
                 }
               }
             }
@@ -735,6 +762,42 @@ async function updateFrequentCache() {
 
 cron.schedule("0 */15 * * * *", updateFrequentCache); // Update frequent cache every 20 minutes
 cron.schedule("0 0 */24 * * *", fetchAllTournamentDetails);
+
+async function updateMongoDBWithWinner(setKey, winnerName) {
+  try {
+    const collection = db.collection("Contracts");
+
+    // Find the document where the tags match the setKey
+    const document = await collection.findOne({ tags: setKey });
+
+    if (!document) {
+      console.log(`No contract found for set ${setKey}`);
+      return;
+    }
+
+    // Create contract instance
+    const contract = new ethers.Contract(document.address, contractABI, signer);
+
+    // Determine which participant won
+    let winnerNumber;
+    if (winnerName === document.eventA) {
+      winnerNumber = 1;
+    } else if (winnerName === document.eventB) {
+      winnerNumber = 2;
+    } else {
+      winnerNumber = 3; // DQ or other scenario
+    }
+
+    // Call the declareWinner function
+    const tx = await contract.declareWinner(winnerNumber);
+    await tx.wait();
+    console.log(
+      `Successfully called declareWinner(${winnerNumber}) for contract ${document.address}`
+    );
+  } catch (error) {
+    console.error("Error calling declareWinner:", error);
+  }
+}
 
 app.get("/api/tournament/:slug", (req, res) => {
   const { slug } = req.params;

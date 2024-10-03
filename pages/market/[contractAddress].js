@@ -2,6 +2,7 @@ import { ethers } from "ethers";
 import predMarketArtifact from "../../predMarketV2.json"; // path to the ABI and Bytecode
 import Modal from "../../components/Modal";
 import { useSigner } from "@thirdweb-dev/react";
+import { ConnectWallet } from "@thirdweb-dev/react";
 import Header from "../../components/Header";
 import React, { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/router";
@@ -184,11 +185,7 @@ export default function PredMarketPageV2() {
               setNetworkMismatch(false);
               console.log("Live on chain: ", network.chainId);
               setContractInstance(tempContractInstance);
-              const deployerLockedStatus =
-                await tempContractInstance.creatorLocked();
-              setDeployerLocked(
-                ethers.utils.formatEther(deployerLockedStatus.toString())
-              );
+
               displayAllBets();
 
               setChain(commonChains[network.chainId]);
@@ -769,18 +766,31 @@ export default function PredMarketPageV2() {
 
   const handleEndBet = () => {
     const outcomeValue = parseInt(winnerOfSet, 10);
-    const outcomeValue2 = parseInt(selectedOutcome2, 10);
-    console.log("outcome Val1", outcomeValue);
-    console.log("outcome Val2", outcomeValue2);
 
-    declareWinner(outcomeValue, outcomeValue2);
+    console.log("outcome Val1", outcomeValue);
+
+    declareWinner(outcomeValue);
   };
 
   return (
     <>
       <main className="contract-container">
         <Header />
-        {netWorkMismatch ? (
+        {!signerAddress ? (
+          <div className="wallet-connect-modal">
+            <p>Please connect your wallet to interact with this market.</p>
+            <ConnectWallet
+              style={{
+                background:
+                  "linear-gradient(to right, #6a11cb 0%, #2575fc 100%)", // Lively gradient background
+                padding: "10px",
+                borderRadius: "10px",
+                boxShadow: "0 4px 8px rgba(0, 0, 0, 0.2)", // Soft shadow for depth
+                color: "white", // White text color for better contrast
+              }}
+            />
+          </div>
+        ) : netWorkMismatch ? (
           <div className="network-switch-modal">
             <p>
               You are on the wrong network. This set is deployed on chain:{" "}
