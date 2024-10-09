@@ -6,6 +6,7 @@ import { ConnectWallet } from "@thirdweb-dev/react";
 import Header from "../../components/Header";
 import React, { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/router";
+import { useCallback } from "react";
 import CountdownTimer, { timeLeft } from "../../components/CountDownTimer";
 import { resultKeyNameFromField } from "@apollo/client/utilities";
 // import dotenv from "dotenv";
@@ -99,7 +100,7 @@ export default function PredMarketPageV2() {
   const [newDeployedPrices, setNewDeployedPrices] = useState({});
   const [newAskingPrices, setNewAskingPrices] = useState({});
 
-  const [bets_balance, setbetsbalance] = useState({
+  const [bets_balance, setBetsBalance] = useState({
     allbets: [],
     endTime: 0,
     winner: 0,
@@ -210,11 +211,8 @@ export default function PredMarketPageV2() {
 
   const updateBetterMongoDB = async (address, signerAddress) => {
     try {
-      // Correctly construct the URL using template literals
+      const url = `${process.env.NEXT_PUBLIC_API_BASE_URL}/updateUserContract`;
 
-      const url = `${process.env.NEXT_PUBLIC_API_BASE_URL}/updateBetterMongoDB`;
-
-      // Make the POST request
       await fetch(url, {
         method: "POST",
         headers: {
@@ -222,7 +220,8 @@ export default function PredMarketPageV2() {
         },
         body: JSON.stringify({
           contractAddress: address,
-          better: signerAddress,
+          userId: signerAddress,
+          role: "better",
         }),
       });
     } catch (error) {
@@ -520,30 +519,24 @@ export default function PredMarketPageV2() {
     return parseInt(bigNumber._hex, 16);
   };
 
-  const displayAllBets = async () => {
+  const displayAllBets = useCallback(async () => {
     if (contractInstance) {
       try {
-        let allbets, endTime, winner, state, endOfVoting, winnings;
-        [allbets, endTime, winner, state, endOfVoting, winnings] =
+        const [allbets, endTime, winner, state, endOfVoting, winnings] =
           await contractInstance.allBets_Balance();
-
-        setbetsbalance({
-          allbets: allbets,
+        setBetsBalance({
+          allbets,
           endTime: bigNumberToNumber(endTime),
-          winner: winner,
-          state: state,
+          winner,
+          state,
           endOfVoting: bigNumberToNumber(endOfVoting),
           winnings: ethers.utils.formatEther(winnings),
         });
-
-        const totalWinnings = calculateTotalWinnings(allbets);
-
-        setTotalWinnings(totalWinnings);
       } catch (error) {
-        console.log(error);
+        console.error("Error displaying bets:", error);
       }
     }
-  };
+  }, [contractInstance]);
 
   const isAuthorizedUserStaff =
     signerAddress &&
@@ -773,688 +766,651 @@ export default function PredMarketPageV2() {
   };
 
   return (
-    <>
-      <main className="contract-container">
-        <Header />
-        {!signerAddress ? (
-          <div className="wallet-connect-modal">
-            <p>Please connect your wallet to interact with this market.</p>
-            <ConnectWallet
-              style={{
-                background:
-                  "linear-gradient(to right, #6a11cb 0%, #2575fc 100%)", // Lively gradient background
-                padding: "10px",
-                borderRadius: "10px",
-                boxShadow: "0 4px 8px rgba(0, 0, 0, 0.2)", // Soft shadow for depth
-                color: "white", // White text color for better contrast
-              }}
-            />
-          </div>
-        ) : netWorkMismatch ? (
-          <div className="network-switch-modal">
-            <p>
-              You are on the wrong network. This set is deployed on chain:{" "}
-              {contract?.chain?.name}. Please switch to the correct one.
-            </p>
-            <button onClick={() => switchNetwork(contract.chain.chainId)}>
-              Switch Network
-            </button>
-          </div>
-        ) : (
-          <div>
-            <div className="contract-container">
-              <div className="contract-details-grid">
-                <div className="contract-detail-item">
-                  <h4>
-                    <h4>{contractBalance} The Amount of Eth In contract</h4>
-                    <h4>{contract.NameofMarket}</h4>
-                    <h4>{contract.fullName}</h4>
-                    <div>
-                      {contract.eventA} <span style={{ color: "red" }}>VS</span>{" "}
-                      {contract.eventB}
-                    </div>
-                    {bets_balance.state === 0 ? (
-                      <>
-                        <p>
-                          Total Potential Winnings: {totalWinnings}{" "}
-                          {chain?.nativeCurrency?.symbol}
-                        </p>
-                      </>
-                    ) : (
-                      <h4>
-                        <div>
-                          Winner:{" "}
-                          {bets_balance.winner.toString() === "1"
-                            ? contract.eventA
-                            : bets_balance.winner.toString() === "2"
-                            ? contract.eventB
-                            : "Draw/Cancel All Bets Refunded"}
-                        </div>
-                      </h4>
-                    )}
-                  </h4>
-                </div>
-                <Modal
-                  show={showModal}
-                  handleClose={handleClose}
-                  handleConfirm={handleConfirm}
-                  content={modalContent}
-                />
-
-                <div className="input-container">
-                  <div>
-                    {bets_balance.state === 0 && (
-                      <div className="countdown-container">
-                        <h4 className="countdown-heading">Time left to bet:</h4>
-                        <CountdownTimer
-                          endTime={contract.endsAt}
-                          className="countdown-time"
-                        />
-                      </div>
-                    )}
-
-                    <div className="createBetContainer">
-                      {isBettingOpen ? (
-                        <>
-                          <button
-                            className="toggle-inputs-btn"
-                            onClick={() => setShowInputs(!showInputs)}
-                          >
-                            {showInputs ? "Hide Details" : "Deploy A Bet"}
-                          </button>
-                          {showInputs && (
-                            <>
-                              <input
-                                className="input-field"
-                                value={myLocked}
-                                onChange={(e) => setmyLocked(e.target.value)}
-                                placeholder={`My Bet In ${chain?.nativeCurrency?.symbol}`}
-                                maxLength={20}
-                              />
-                              <input
-                                className="input-field"
-                                value={buyInIChoose}
-                                onChange={(e) =>
-                                  setbuyInIChoose(e.target.value)
-                                }
-                                placeholder={`Opponent's Bet In ${chain?.nativeCurrency?.symbol}`}
-                                maxLength={20}
-                              />
-                              <select
-                                className="dropdown"
-                                value={selectedOutcome}
-                                onChange={(e) =>
-                                  setSelectedOutcome(e.target.value)
-                                }
-                              >
-                                <option value="" disabled>
-                                  Select an outcome...
-                                </option>
-                                <option value="1">{contract.eventA}</option>
-                                <option value="2">{contract.eventB}</option>
-                              </select>
-                              <button
-                                onClick={() =>
-                                  sellANewBet(
-                                    myLocked,
-                                    buyInIChoose,
-                                    selectedOutcome
-                                  )
-                                }
-                              >
-                                Submit Bet
-                              </button>
-                            </>
-                          )}
-                        </>
-                      ) : isVotingTime ? (
-                        <>
-                          <p>
-                            The betting is closed you may file a disagreement if
-                            you believe their is a mistake.
-                          </p>
-                          <input
-                            className="input-field"
-                            value={disagreeText}
-                            onChange={(e) => setDisagreeText(e.target.value)}
-                            placeholder={`Disagreement Reason`}
-                            maxLength={1000}
-                          />
-                          <p>
-                            <CountdownTimer
-                              endTime={contract.voteTime}
-                              className="countdown-time"
-                            />
-                          </p>
-                          <button onClick={() => voteDisagree(disagreeText)}>
-                            Disagree
-                          </button>
-                        </>
-                      ) : isDisagreementState ? (
-                        <>
-                          <h4>
-                            A User has disagreed with the deployer of the bet
-                            with reasoning:
-                          </h4>
-                          <h4>{contract.disagreementText}</h4>
-                          <h4>
-                            The Team is looking into it and we will resolve this
-                            issue immediately
-                          </h4>
-                        </>
-                      ) : (
-                        <>
-                          {" "}
-                          <div className="contract-detail-item">
-                            {" "}
-                            The winner has been finalized, you may withdraw your
-                            balance of:
-                          </div>
-                          <h4>
-                            {bets_balance.winnings}{" "}
-                            {chain?.nativeCurrency?.symbol}{" "}
-                          </h4>
-                          <button onClick={() => withdrawBet()}>
-                            Withdraw Balance
-                          </button>
-                          {contract && contractInstance && (
-                            <>
-                              {isAuthorizedUserOwner ? (
-                                <button onClick={() => ownerWithdraw()}>
-                                  Owner Withdraw Collected Commission & Locked
-                                  Amounts
-                                </button>
-                              ) : isAuthorizedUserStaff ? (
-                                <button onClick={() => transferStaffAmount()}>
-                                  Staff Withdrawal
-                                </button>
-                              ) : null}
-                            </>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                <div className="vertical-button-group">
-                  <button onClick={() => setFilter("all")}>All Bets</button>
-                  <button onClick={() => setFilter("forSale")}>
-                    Bets For Sale
-                  </button>
-                  <button onClick={() => setFilter("deployedByMe")}>
-                    My Deployed Bets
-                  </button>
-                  <button onClick={() => setFilter("ownedByMe")}>
-                    Bets I Own
-                  </button>
-                </div>
+    <div className="betting-app">
+      <Header />
+      {!signerAddress ? (
+        <div className="wallet-connect-modal">
+          <h2>Welcome to the Betting Arena! 🎰</h2>
+          <p>Connect your wallet to join the action and place your bets.</p>
+          <ConnectWallet className="connect-wallet-btn" />
+        </div>
+      ) : netWorkMismatch ? (
+        <div className="network-switch-modal">
+          <h2>Oops! Wrong Network 🔗</h2>
+          <p>This market is on {contract?.chain?.name}. Let's switch!</p>
+          <button
+            onClick={() => switchNetwork(contract.chain.chainId)}
+            className="switch-network-btn"
+          >
+            Switch to {contract?.chain?.name}
+          </button>
+        </div>
+      ) : (
+        <div className="betting-arena">
+          <div className="market-info-column">
+            <div className="market-info">
+              <h1>{contract.NameofMarket}</h1>
+              <h2>{contract.fullName}</h2>
+              <div className="event-matchup">
+                <span className="event-a">{contract.eventA}</span>
+                <span className="vs">VS</span>
+                <span className="event-b">{contract.eventB}</span>
               </div>
-            </div>
-
-            <div>
-              <ul>
-                <div ref={betsContainerRef} className="bets-container">
-                  {selectedBets.length > 0 && (
-                    <button onClick={() => unlistBet(selectedBets)}>
-                      Unlist All Selected
-                    </button>
-                  )}
-                  {bets_balance.allbets &&
-                  Array.isArray(bets_balance.allbets) ? (
-                    bets_balance.allbets.length > 0 ? (
-                      bets_balance.allbets
-                        .filter((bet) => {
-                          switch (filter) {
-                            case "forSale":
-                              return bet.selling;
-                            case "deployedByMe":
-                              return bet.deployer === signerAddress;
-                            case "ownedByMe":
-                              return bet.owner === signerAddress;
-                            case "all":
-                            default:
-                              return true;
-                          }
-                        })
-                        .map((bet, index) => {
-                          return (
-                            <div key={index} className="bet">
-                              <h3>Bet {index + 1}</h3>
-                              <div className="bet-info">
-                                Amount To Win:{" "}
-                                {ethers.utils.formatEther(
-                                  ethers.BigNumber.from(
-                                    bet.amountDeployerLocked
-                                  ).add(
-                                    ethers.BigNumber.from(
-                                      bet.amountBuyerLocked > 0
-                                        ? bet.amountBuyerLocked
-                                        : bet.amountToBuyFor
-                                    )
-                                  )
-                                )}{" "}
-                                {chain?.nativeCurrency?.symbol}
-                              </div>
-                              {bet.selling && (
-                                <div className="bet-info">
-                                  Cost To Purchase:{" "}
-                                  {ethers.utils.formatEther(bet.amountToBuyFor)}{" "}
-                                  {chain?.nativeCurrency?.symbol}
-                                </div>
-                              )}
-                              <div className="bet-info">
-                                Owner Of Bet Wins If:{" "}
-                                {bet.conditionForBuyerToWin === 1
-                                  ? contract.eventA
-                                  : contract.eventB}{" "}
-                                Wins
-                              </div>
-                              {bet.selling ? (
-                                bet.owner === signerAddress ? (
-                                  <div className="bet-selection">
-                                    <input
-                                      type="checkbox"
-                                      value={bet.positionInArray}
-                                      onChange={(e) =>
-                                        handleSelectBet(e.target.value)
-                                      }
-                                    />
-                                    Select To Unlist
-                                  </div>
-                                ) : (
-                                  <button
-                                    onClick={() =>
-                                      buyBet(
-                                        bet.positionInArray,
-                                        bet.amountToBuyFor
-                                      )
-                                    }
-                                  >
-                                    Buy Bet
-                                  </button>
-                                )
-                              ) : !bet.selling &&
-                                bet.owner === signerAddress &&
-                                bet.deployer != signerAddress ? (
-                                <>
-                                  <input
-                                    style={{
-                                      width: "50%",
-                                      padding: "6px 10px",
-                                      border: "1px solid #ccc",
-                                      borderRadius: "4px",
-                                      textAlign: "center",
-                                      fontSize: "14px",
-                                    }}
-                                    value={betPrices[index] || ""}
-                                    onChange={(e) =>
-                                      handleChangePrice(e.target.value, index)
-                                    }
-                                    placeholder={`ReSell Price In ${chain?.nativeCurrency?.symbol}`}
-                                    maxLength={100}
-                                  />
-                                  <button
-                                    onClick={() =>
-                                      listBetForSale(
-                                        bet.positionInArray,
-                                        betPrices[index] || ""
-                                      )
-                                    }
-                                  >
-                                    Re-List Bet
-                                  </button>
-                                </>
-                              ) : null}
-
-                              {bet.deployer === signerAddress &&
-                                bet.owner === signerAddress && (
-                                  <div className="edit-bet-section">
-                                    <h4>Edit Your Deployed Bet</h4>
-                                    <div className="current-values">
-                                      <p>
-                                        <strong>Current Deployed Price:</strong>{" "}
-                                        {ethers.utils.formatEther(
-                                          bet.amountDeployerLocked
-                                        )}{" "}
-                                        {chain?.nativeCurrency?.symbol}
-                                      </p>
-                                      <p>
-                                        <strong>Current Asking Price:</strong>{" "}
-                                        {ethers.utils.formatEther(
-                                          bet.amountToBuyFor
-                                        )}{" "}
-                                        {chain?.nativeCurrency?.symbol}
-                                      </p>
-                                    </div>
-                                    <div className="edit-inputs">
-                                      <label>
-                                        Amount You Locked Up{" "}
-                                        <input
-                                          style={{
-                                            width: "100%",
-                                            padding: "8px",
-                                            border: "1px solid #ccc",
-                                            borderRadius: "4px",
-                                            textAlign: "center",
-                                            fontSize: "14px",
-                                            marginTop: "5px",
-                                          }}
-                                          value={
-                                            newDeployedPrices[
-                                              bet.positionInArray
-                                            ] || ""
-                                          } // Use specific bet's value
-                                          onChange={(e) =>
-                                            setNewDeployedPrices({
-                                              ...newDeployedPrices,
-                                              [bet.positionInArray]:
-                                                e.target.value, // Update only this bet's value
-                                            })
-                                          }
-                                          placeholder={`Enter new price in ${chain?.nativeCurrency?.symbol}`}
-                                        />
-                                      </label>
-                                      <label>
-                                        New Buying Price
-                                        <input
-                                          style={{
-                                            width: "100%",
-                                            padding: "8px",
-                                            border: "1px solid #ccc",
-                                            borderRadius: "4px",
-                                            textAlign: "center",
-                                            fontSize: "14px",
-                                            marginTop: "5px",
-                                          }}
-                                          value={
-                                            newAskingPrices[
-                                              bet.positionInArray
-                                            ] || ""
-                                          } // Use specific bet's value
-                                          onChange={(e) =>
-                                            setNewAskingPrices({
-                                              ...newAskingPrices,
-                                              [bet.positionInArray]:
-                                                e.target.value, // Update only this bet's value
-                                            })
-                                          }
-                                          placeholder={`Enter new price in ${chain?.nativeCurrency?.symbol}`}
-                                          maxLength={100}
-                                        />
-                                      </label>
-                                    </div>
-                                    <button
-                                      style={{
-                                        marginTop: "10px",
-                                        padding: "10px 15px",
-                                        backgroundColor: "#007bff",
-                                        color: "#fff",
-                                        border: "none",
-                                        borderRadius: "4px",
-                                        cursor: "pointer",
-                                      }}
-                                      onClick={() =>
-                                        editADeployedBet(
-                                          bet.positionInArray,
-                                          newDeployedPrices[
-                                            bet.positionInArray
-                                          ] || bet.amountDeployerLocked,
-                                          newAskingPrices[
-                                            bet.positionInArray
-                                          ] ||
-                                            ethers.utils.formatEther(
-                                              bet.amountToBuyFor
-                                            )
-                                        )
-                                      }
-                                    >
-                                      Save Changes
-                                    </button>
-                                  </div>
-                                )}
-                            </div>
-                          );
-                        })
-                    ) : (
-                      <div>No Bets Available</div>
-                    )
-                  ) : (
-                    <div>No Bets Available</div>
-                  )}
+              {bets_balance.state === 0 ? (
+                <div className="potential-winnings">
+                  <h3>Total Potential Winnings</h3>
+                  <p>
+                    {totalWinnings} {chain?.nativeCurrency?.symbol}
+                  </p>
                 </div>
-              </ul>
+              ) : (
+                <div className="winner-announcement">
+                  <h3>Winner</h3>
+                  <p>
+                    {bets_balance.winner.toString() === "1"
+                      ? contract.eventA
+                      : bets_balance.winner.toString() === "2"
+                      ? contract.eventB
+                      : "Draw/Cancel - All Bets Refunded"}
+                  </p>
+                </div>
+              )}
             </div>
-
             {contract &&
               contractInstance &&
               isAuthorizedUserStaff &&
               bets_balance.state < 4 && (
-                <div>
+                <div className="admin-controls">
+                  <h3>Admin Controls</h3>
                   <select
                     id="outcomeSelect"
                     className="dropdown"
                     value={winnerOfSet}
                     onChange={(e) => setWinnerOfSet(e.target.value)}
                   >
-                    <option value="0">Set Winner As ...</option>
-                    <option value="1">Set Winner As {contract.eventA}</option>
-                    <option value="2">Set Winner As {contract.eventB}</option>
-                    <option value="3">Cancel Refund</option>
+                    <option value="0">Set Winner...</option>
+                    <option value="1">Winner: {contract.eventA}</option>
+                    <option value="2">Winner: {contract.eventB}</option>
+                    <option value="3">Cancel & Refund</option>
                   </select>
-
-                  <button onClick={handleEndBet}>End Bet</button>
+                  <button className="end-bet-btn" onClick={handleEndBet}>
+                    Finalize Bet
+                  </button>
                 </div>
               )}
           </div>
-        )}
-      </main>
-      // ... (previous code remains unchanged)
-      <style jsx>{`
-        /* Global styles */
-        :root {
-          --primary-color: #6200ee;
-          --secondary-color: #03dac6;
-          --background-color: #121212;
-          --surface-color: #1e1e1e;
-          --on-surface-color: #ffffff;
-          --error-color: #cf6679;
-        }
 
-        /* Desktop styles */
-        .contract-container {
+          <div className="betting-interface-column">
+            <div className="betting-actions">
+              {bets_balance.state === 0 && (
+                <div className="countdown-container">
+                  <h3>Time left to bet</h3>
+                  <CountdownTimer
+                    endTime={contract.endsAt}
+                    className="countdown-timer"
+                  />
+                </div>
+              )}
+              <div className="create-bet-container">
+                {isBettingOpen ? (
+                  <>
+                    <button
+                      className="toggle-inputs-btn"
+                      onClick={() => setShowInputs(!showInputs)}
+                    >
+                      {showInputs ? "Hide Bet Form" : "Place a New Bet"}
+                    </button>
+                    {showInputs && (
+                      <div className="bet-form">
+                        <input
+                          className="input-field"
+                          value={myLocked}
+                          onChange={(e) => setmyLocked(e.target.value)}
+                          placeholder={`Your Bet (${chain?.nativeCurrency?.symbol})`}
+                          maxLength={20}
+                        />
+                        <input
+                          className="input-field"
+                          value={buyInIChoose}
+                          onChange={(e) => setbuyInIChoose(e.target.value)}
+                          placeholder={`Opponent's Bet (${chain?.nativeCurrency?.symbol})`}
+                          maxLength={20}
+                        />
+                        <select
+                          className="dropdown"
+                          value={selectedOutcome}
+                          onChange={(e) => setSelectedOutcome(e.target.value)}
+                        >
+                          <option value="" disabled>
+                            Choose your winner...
+                          </option>
+                          <option value="1">{contract.eventA}</option>
+                          <option value="2">{contract.eventB}</option>
+                        </select>
+                        <button
+                          className="submit-bet-btn"
+                          onClick={() =>
+                            sellANewBet(myLocked, buyInIChoose, selectedOutcome)
+                          }
+                        >
+                          Place Bet
+                        </button>
+                      </div>
+                    )}
+                  </>
+                ) : isVotingTime ? (
+                  <div className="disagreement-form">
+                    <h3>Betting is Closed</h3>
+                    <p>
+                      If you believe there's a mistake, you can file a
+                      disagreement.
+                    </p>
+                    <input
+                      className="input-field"
+                      value={disagreeText}
+                      onChange={(e) => setDisagreeText(e.target.value)}
+                      placeholder="Reason for disagreement"
+                      maxLength={1000}
+                    />
+                    <p>Time left to disagree:</p>
+                    <CountdownTimer
+                      endTime={contract.voteTime}
+                      className="countdown-timer"
+                    />
+                    <button
+                      className="disagree-btn"
+                      onClick={() => voteDisagree(disagreeText)}
+                    >
+                      File Disagreement
+                    </button>
+                  </div>
+                ) : isDisagreementState ? (
+                  <div className="disagreement-notice">
+                    <h3>Disagreement Filed</h3>
+                    <p>A user has disagreed with the bet outcome:</p>
+                    <blockquote>{contract.disagreementText}</blockquote>
+                    <p>
+                      Our team is reviewing the issue and will resolve it
+                      promptly.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="withdrawal-section">
+                    <h3>Betting Concluded</h3>
+                    <p>Your balance available for withdrawal:</p>
+                    <h2>
+                      {bets_balance.winnings} {chain?.nativeCurrency?.symbol}
+                    </h2>
+                    <button
+                      className="withdraw-btn"
+                      onClick={() => withdrawBet()}
+                    >
+                      Withdraw Winnings
+                    </button>
+                    {contract && contractInstance && (
+                      <>
+                        {isAuthorizedUserOwner ? (
+                          <button
+                            className="admin-btn"
+                            onClick={() => ownerWithdraw()}
+                          >
+                            Owner: Withdraw Commission & Locked Amounts
+                          </button>
+                        ) : isAuthorizedUserStaff ? (
+                          <button
+                            className="admin-btn"
+                            onClick={() => transferStaffAmount()}
+                          >
+                            Staff: Process Withdrawal
+                          </button>
+                        ) : null}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="bets-list-column">
+            <div className="bet-filters">
+              <button
+                onClick={() => setFilter("all")}
+                className={filter === "all" ? "active" : ""}
+              >
+                All Bets
+              </button>
+              <button
+                onClick={() => setFilter("forSale")}
+                className={filter === "forSale" ? "active" : ""}
+              >
+                Bets For Sale
+              </button>
+              <button
+                onClick={() => setFilter("deployedByMe")}
+                className={filter === "deployedByMe" ? "active" : ""}
+              >
+                My Deployed Bets
+              </button>
+              <button
+                onClick={() => setFilter("ownedByMe")}
+                className={filter === "ownedByMe" ? "active" : ""}
+              >
+                Bets I Own
+              </button>
+            </div>
+            <div className="bets-list">
+              {selectedBets.length > 0 && (
+                <button
+                  className="unlist-selected-btn"
+                  onClick={() => unlistBet(selectedBets)}
+                >
+                  Unlist Selected Bets
+                </button>
+              )}
+              {bets_balance.allbets && Array.isArray(bets_balance.allbets) ? (
+                bets_balance.allbets.length > 0 ? (
+                  bets_balance.allbets
+                    .filter((bet) => {
+                      switch (filter) {
+                        case "forSale":
+                          return bet.selling;
+                        case "deployedByMe":
+                          return bet.deployer === signerAddress;
+                        case "ownedByMe":
+                          return bet.owner === signerAddress;
+                        case "all":
+                        default:
+                          return true;
+                      }
+                    })
+                    .map((bet, index) => (
+                      <div key={index} className="bet-card">
+                        <h3>Bet #{index + 1}</h3>
+                        <div className="bet-details">
+                          <p>
+                            Potential Win:{" "}
+                            {ethers.utils.formatEther(
+                              ethers.BigNumber.from(
+                                bet.amountDeployerLocked
+                              ).add(
+                                ethers.BigNumber.from(
+                                  bet.amountBuyerLocked > 0
+                                    ? bet.amountBuyerLocked
+                                    : bet.amountToBuyFor
+                                )
+                              )
+                            )}{" "}
+                            {chain?.nativeCurrency?.symbol}
+                          </p>
+                          {bet.selling && (
+                            <p>
+                              Purchase Cost:{" "}
+                              {ethers.utils.formatEther(bet.amountToBuyFor)}{" "}
+                              {chain?.nativeCurrency?.symbol}
+                            </p>
+                          )}
+                          <p>
+                            Winning Condition:{" "}
+                            {bet.conditionForBuyerToWin === 1
+                              ? contract.eventA
+                              : contract.eventB}{" "}
+                            Wins
+                          </p>
+                        </div>
+                        {bet.selling ? (
+                          bet.owner === signerAddress ? (
+                            <div className="bet-actions">
+                              <label>
+                                <input
+                                  type="checkbox"
+                                  value={bet.positionInArray}
+                                  onChange={(e) =>
+                                    handleSelectBet(e.target.value)
+                                  }
+                                />
+                                Select to Unlist
+                              </label>
+                            </div>
+                          ) : (
+                            <button
+                              className="buy-bet-btn"
+                              onClick={() =>
+                                buyBet(bet.positionInArray, bet.amountToBuyFor)
+                              }
+                            >
+                              Buy This Bet
+                            </button>
+                          )
+                        ) : !bet.selling &&
+                          bet.owner === signerAddress &&
+                          bet.deployer !== signerAddress ? (
+                          <div className="relist-bet">
+                            <input
+                              className="relist-price-input"
+                              value={betPrices[index] || ""}
+                              onChange={(e) =>
+                                handleChangePrice(e.target.value, index)
+                              }
+                              placeholder={`Resell Price (${chain?.nativeCurrency?.symbol})`}
+                              maxLength={100}
+                            />
+                            <button
+                              className="relist-btn"
+                              onClick={() =>
+                                listBetForSale(
+                                  bet.positionInArray,
+                                  betPrices[index] || ""
+                                )
+                              }
+                            >
+                              Relist Bet
+                            </button>
+                          </div>
+                        ) : null}
+                        {bet.deployer === signerAddress &&
+                          bet.owner === signerAddress && (
+                            <div className="edit-bet-section">
+                              <h4>Edit Your Deployed Bet</h4>
+                              <div className="current-values">
+                                <p>
+                                  Current Deployed:{" "}
+                                  {ethers.utils.formatEther(
+                                    bet.amountDeployerLocked
+                                  )}{" "}
+                                  {chain?.nativeCurrency?.symbol}
+                                </p>
+                                <p>
+                                  Current Ask:{" "}
+                                  {ethers.utils.formatEther(bet.amountToBuyFor)}{" "}
+                                  {chain?.nativeCurrency?.symbol}
+                                </p>
+                              </div>
+                              <div className="edit-inputs">
+                                <input
+                                  className="edit-input"
+                                  value={
+                                    newDeployedPrices[bet.positionInArray] || ""
+                                  }
+                                  onChange={(e) =>
+                                    setNewDeployedPrices({
+                                      ...newDeployedPrices,
+                                      [bet.positionInArray]: e.target.value,
+                                    })
+                                  }
+                                  placeholder={`New Deployed (${chain?.nativeCurrency?.symbol})`}
+                                />
+                                <input
+                                  className="edit-input"
+                                  value={
+                                    newAskingPrices[bet.positionInArray] || ""
+                                  }
+                                  onChange={(e) =>
+                                    setNewAskingPrices({
+                                      ...newAskingPrices,
+                                      [bet.positionInArray]: e.target.value,
+                                    })
+                                  }
+                                  placeholder={`New Ask (${chain?.nativeCurrency?.symbol})`}
+                                  maxLength={100}
+                                />
+                              </div>
+                              <button
+                                className="save-changes-btn"
+                                onClick={() =>
+                                  editADeployedBet(
+                                    bet.positionInArray,
+                                    newDeployedPrices[bet.positionInArray] ||
+                                      bet.amountDeployerLocked,
+                                    newAskingPrices[bet.positionInArray] ||
+                                      ethers.utils.formatEther(
+                                        bet.amountToBuyFor
+                                      )
+                                  )
+                                }
+                              >
+                                Save Changes
+                              </button>
+                            </div>
+                          )}
+                      </div>
+                    ))
+                ) : (
+                  <div className="no-bets-message">No Bets Available</div>
+                )
+              ) : (
+                <div className="no-bets-message">No Bets Available</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      <Modal
+        show={showModal}
+        handleClose={handleClose}
+        handleConfirm={handleConfirm}
+        content={modalContent}
+      />
+      <style jsx>{`
+        .betting-app {
           display: flex;
           flex-direction: column;
-          padding: 20px;
-          max-width: 1200px;
-          margin: 0 auto;
-          background-color: var(--background-color);
-          color: var(--on-surface-color);
+          min-height: 100vh;
+          background: linear-gradient(135deg, #1a1a2e, #16213e);
+          color: #e0e0e0;
           font-family: "Roboto", sans-serif;
         }
 
-        .network-switch-modal,
-        .contract-details-grid,
-        .input-container,
-        .vertical-button-group,
-        .bets-container {
+        .betting-arena {
           display: flex;
-          flex-direction: column;
-          align-items: center;
-          background-color: var(--surface-color);
-          border-radius: 8px;
-          padding: 20px;
-          margin-bottom: 20px;
+          flex-wrap: wrap;
+          justify-content: space-between;
+          padding: 1rem;
+          gap: 1rem;
+        }
+
+        .market-info-column,
+        .betting-interface-column,
+        .bets-list-column {
+          flex: 1;
+          min-width: 300px;
+          background: rgba(255, 255, 255, 0.05);
+          border-radius: 10px;
+          padding: 1rem;
           box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
 
-        .contract-details-grid {
-          display: flex;
-          flex-direction: row;
-          align-items: flex-start;
-          justify-content: space-between;
-          width: 100%;
-        }
-
-        .contract-detail-item {
-          text-align: center;
-          margin-bottom: 15px;
-          flex: 1;
-          padding: 15px;
-          background-color: rgba(255, 255, 255, 0.05);
+        .market-info,
+        .betting-actions,
+        .bets-list {
+          background: rgba(255, 255, 255, 0.08);
           border-radius: 8px;
-          transition: transform 0.3s ease;
+          padding: 1rem;
+          margin-bottom: 1rem;
         }
 
-        .contract-detail-item:hover {
-          transform: translateY(-5px);
+        .event-matchup {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          gap: 0.5rem;
+          margin: 1rem 0;
+          font-size: 1.2rem;
         }
 
-        .input-container {
-          width: 50%;
-          padding: 20px;
-          box-sizing: border-box;
+        .event-a,
+        .event-b {
+          padding: 0.25rem 0.5rem;
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 4px;
         }
 
-        .countdown-container {
-          margin-bottom: 20px;
-          text-align: center;
+        .vs {
+          color: #ff6b6b;
+          font-weight: bold;
         }
 
-        .countdown-heading {
-          font-size: 1.4rem;
-          margin-bottom: 10px;
-          color: var(--secondary-color);
+        .countdown-timer {
+          font-size: 1.5rem;
+          color: #4ecdc4;
+          background: rgba(78, 205, 196, 0.1);
+          padding: 0.5rem;
+          border-radius: 4px;
+          display: inline-block;
         }
 
-        .createBetContainer {
-          width: 100%;
-          max-width: 400px;
+        .bet-form {
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
         }
 
         .input-field,
         .dropdown {
-          width: 100%;
-          padding: 12px;
-          margin-bottom: 15px;
-          font-size: 1rem;
-          background-color: rgba(255, 255, 255, 0.1);
+          padding: 0.5rem;
           border: none;
           border-radius: 4px;
-          color: var(--on-surface-color);
+          background: rgba(255, 255, 255, 0.1);
+          color: #e0e0e0;
         }
 
-        .toggle-inputs-btn {
-          width: 100%;
-          padding: 12px;
-          margin-bottom: 15px;
-          font-size: 1rem;
-          background-color: var(--primary-color);
-          color: white;
+        .submit-bet-btn,
+        .buy-bet-btn,
+        .relist-btn,
+        .withdraw-btn,
+        .disagree-btn,
+        .end-bet-btn {
+          padding: 0.5rem 1rem;
           border: none;
           border-radius: 4px;
           cursor: pointer;
-          transition: background-color 0.3s ease;
+          transition: all 0.3s ease;
+          font-weight: bold;
         }
 
-        .toggle-inputs-btn:hover {
-          background-color: #7c4dff;
+        .submit-bet-btn {
+          background: #4ecdc4;
+          color: #1a1a2e;
+        }
+        .buy-bet-btn {
+          background: #45b7d1;
+          color: #1a1a2e;
+        }
+        .relist-btn {
+          background: #f7b731;
+          color: #1a1a2e;
+        }
+        .withdraw-btn {
+          background: #26de81;
+          color: #1a1a2e;
+        }
+        .disagree-btn {
+          background: #fc5c65;
+          color: #1a1a2e;
+        }
+        .end-bet-btn {
+          background: #a55eea;
+          color: #1a1a2e;
         }
 
-        .bet {
+        .submit-bet-btn:hover,
+        .buy-bet-btn:hover,
+        .relist-btn:hover,
+        .withdraw-btn:hover,
+        .disagree-btn:hover,
+        .end-bet-btn:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .bet-filters {
           display: flex;
-          flex-direction: column;
-          align-items: center;
-          margin-bottom: 20px;
-          padding: 20px;
-          background-color: rgba(255, 255, 255, 0.05);
+          justify-content: center;
+          gap: 0.5rem;
+          margin-bottom: 1rem;
+        }
+
+        .bet-filters button {
+          background: rgba(255, 255, 255, 0.1);
+          border: none;
+          padding: 0.5rem 1rem;
+          border-radius: 20px;
+          color: #e0e0e0;
+          cursor: pointer;
+          transition: all 0.3s ease;
+        }
+
+        .bet-filters button.active,
+        .bet-filters button:hover {
+          background: rgba(255, 255, 255, 0.2);
+        }
+
+        .bet-card {
+          background: rgba(255, 255, 255, 0.08);
           border-radius: 8px;
-          width: 100%;
-          max-width: 400px;
-          box-sizing: border-box;
-          transition: transform 0.3s ease, box-shadow 0.3s ease;
+          padding: 1rem;
+          margin-bottom: 1rem;
+          transition: all 0.3s ease;
         }
 
-        .bet:hover {
-          transform: translateY(-5px);
-          box-shadow: 0 6px 12px rgba(0, 0, 0, 0.2);
+        .bet-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
         }
 
-        .bet-info {
-          margin-bottom: 10px;
-          font-size: 1.1rem;
+        .bet-details {
+          font-size: 0.9rem;
+          color: #b0b0b0;
         }
 
-        .bet-selection {
-          margin-top: 15px;
+        .edit-bet-section {
+          margin-top: 1rem;
+          padding-top: 1rem;
+          border-top: 1px solid rgba(255, 255, 255, 0.1);
         }
 
-        .vertical-button-group {
+        .edit-inputs {
           display: flex;
-          flex-direction: column;
-          width: 100%;
-          max-width: 200px;
+          gap: 0.5rem;
+          margin-top: 0.5rem;
         }
 
-        .vertical-button-group button {
-          margin-bottom: 10px;
-          padding: 12px;
-          font-size: 1rem;
-          background-color: var(--primary-color);
-          color: white;
+        .edit-input {
+          flex: 1;
+          padding: 0.5rem;
           border: none;
           border-radius: 4px;
+          background: rgba(255, 255, 255, 0.1);
+          color: #e0e0e0;
+        }
+
+        .save-changes-btn {
+          background: #45b7d1;
+          color: #1a1a2e;
+          border: none;
+          padding: 0.5rem 1rem;
+          border-radius: 4px;
           cursor: pointer;
-          transition: background-color 0.3s ease;
+          transition: all 0.3s ease;
+          margin-top: 0.5rem;
         }
 
-        .vertical-button-group button:hover {
-          background-color: #7c4dff;
+        .save-changes-btn:hover {
+          background: #3ca3bc;
         }
 
-        .bets-container {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-          gap: 20px;
-          width: 100%;
-        }
-
-        /* Mobile styles */
         @media (max-width: 768px) {
-          .contract-container {
-            padding: 10px;
-            width: 100%;
-          }
-
-          .contract-details-grid {
+          .betting-arena {
             flex-direction: column;
           }
 
-          .input-container {
-            width: 100%;
-            padding: 10px;
-          }
-
-          .vertical-button-group {
-            width: 100%;
-            max-width: 400px;
-          }
-
-          .vertical-button-group button {
-            margin-bottom: 10px;
-            padding: 10px;
-            font-size: 0.9rem;
-          }
-
-          .bet {
-            width: 100%;
-          }
-
-          .createBetContainer {
-            max-width: 100%;
+          .market-info-column,
+          .betting-interface-column,
+          .bets-list-column {
+            min-width: 100%;
           }
         }
       `}</style>
-      // ... (rest of the code remains unchanged)
-    </>
+    </div>
   );
 }

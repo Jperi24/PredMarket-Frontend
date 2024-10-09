@@ -8,8 +8,7 @@ export async function deployPredMarket(
   NameofMarket,
   signer,
   fullName,
-  endsAt,
-  tokenAmount
+  endsAt
 ) {
   // const localNetworkURL = "http://localhost:8545";
   // await window.ethereum.request({ method: "eth_requestAccounts" });
@@ -32,9 +31,7 @@ export async function deployPredMarket(
   const chain = signer?.provider?.network || "";
 
   try {
-    const predMarket = await PredMarket.deploy(endsAt, {
-      value: tokenAmount,
-    });
+    const predMarket = await PredMarket.deploy(endsAt);
     await predMarket.deployed(); // Waits for the contract to be mined
 
     try {
@@ -69,6 +66,30 @@ export async function deployPredMarket(
       }
     } catch (error) {
       console.error("Error adding contract to MongoDB:", error);
+    }
+    // **Update the user as a deployer**
+    try {
+      const updateUrl = "http://localhost:3001/api/updateUserContract";
+      const updateResponse = await fetch(updateUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contractAddress,
+          userId: deployerAddress,
+          role: "deployer",
+        }),
+      });
+
+      if (updateResponse.ok) {
+        console.log("User updated successfully as deployer in MongoDB");
+      } else {
+        const errorResponse = await updateResponse.json();
+        console.error("Error updating user as deployer:", errorResponse);
+      }
+    } catch (error) {
+      console.error("Error updating user in MongoDB:", error);
     }
     console.log("Contract deployed to:", predMarket.address);
     console.log("Contract deployed with: ", tags, "  tags");

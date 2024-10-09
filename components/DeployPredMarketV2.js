@@ -10,30 +10,35 @@ export async function deployPredMarket(
   fullName,
   endsAt
 ) {
-  // const localNetworkURL = "http://localhost:8545";
-  // await window.ethereum.request({ method: "eth_requestAccounts" });
-  // const provider = new ethers.providers.Web3Provider(window.ethereum);
-  // const signer = provider.getSigner();
+  // Check if the signer is available
+  if (!signer) {
+    alert("Please Connect Wallet");
+    return;
+  }
 
+  const deployerAddress = await signer.getAddress();
+  const chain = signer?.provider?.network || "";
+
+  console.log(
+    endsAt,
+    "is the end Time that was passed into the smart contract"
+  );
+
+  // Create the ContractFactory after checking for signer
   const PredMarket = new ethers.ContractFactory(
     predMarketArtifact.abi,
     predMarketArtifact.bytecode,
     signer
   );
-  if (!signer) {
-    alert("Please Connect Wallet");
-  }
-  const deployerAddress = await signer.getAddress();
-  console.log(
-    endsAt,
-    "is the end Time that was passed into the smart contract"
-  );
-  const chain = signer?.provider?.network || "";
 
   try {
+    // Deploy the contract
     const predMarket = await PredMarket.deploy(endsAt);
     await predMarket.deployed(); // Waits for the contract to be mined
 
+    const contractAddress = predMarket.address;
+
+    // Add the contract to MongoDB
     try {
       const url = "http://localhost:3001/addContract";
       const response = await fetch(url, {
@@ -42,17 +47,15 @@ export async function deployPredMarket(
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          address: predMarket.address,
+          address: contractAddress,
           NameofMarket,
           eventA,
           eventB,
           tags,
-          deployerAddress: deployerAddress,
+          deployerAddress,
           fullName,
           endsAt,
           chain,
-
-          // Assuming you want to log the deployed contract's address
         }),
       });
 
@@ -67,10 +70,37 @@ export async function deployPredMarket(
     } catch (error) {
       console.error("Error adding contract to MongoDB:", error);
     }
-    console.log("Contract deployed to:", predMarket.address);
-    console.log("Contract deployed with: ", tags, "  tags");
-    console.log("Address of deployer:", await signer.getAddress());
+
+    // **Update the user as a deployer**
+    try {
+      const updateUrl = "http://localhost:3001/api/updateUserContract";
+      const updateResponse = await fetch(updateUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contractAddress,
+          userId: deployerAddress,
+          role: "deployer",
+        }),
+      });
+
+      if (updateResponse.ok) {
+        console.log("User updated successfully as deployer in MongoDB");
+      } else {
+        const errorResponse = await updateResponse.json();
+        console.error("Error updating user as deployer:", errorResponse);
+      }
+    } catch (error) {
+      console.error("Error updating user in MongoDB:", error);
+    }
+
+    console.log("Contract deployed to:", contractAddress);
+    console.log("Contract deployed with:", tags, "tags");
+    console.log("Address of deployer:", deployerAddress);
   } catch (error) {
-    alert(error.data.message);
+    console.error("Error deploying contract:", error);
+    alert(error.data?.message || error.message);
   }
 }

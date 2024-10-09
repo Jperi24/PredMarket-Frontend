@@ -385,26 +385,6 @@ app.post("/api/updateMongoDB", async (req, res) => {
   }
 });
 
-app.post("/api/updateBetterMongoDB", async (req, res) => {
-  const { contractAddress, better } = req.body;
-
-  try {
-    // Use the existing MongoDB client and database connection
-    const collection = db.collection("Contracts");
-
-    // Update the document where the contract address matches
-    // Ensure the field name matches your MongoDB document structure
-    await collection.updateOne(
-      { address: contractAddress }, // filter by the correct field name
-      { $addToSet: { betters: better } }
-    );
-
-    res.status(200).send("Update successful");
-  } catch (error) {
-    console.error("Error updating MongoDB:", error);
-    res.status(500).send("Error updating MongoDB");
-  }
-});
 const {
   GET_ALL_TOURNAMENTS_QUERY,
   GET_FEATURED_TOURNAMENTS_QUERY,
@@ -828,6 +808,155 @@ app.get("/api/phase-sets/:phaseId", (req, res) => {
       .send(
         "phaseId not found in cache. Please wait until the next cache refresh."
       );
+  }
+});
+
+app.get("/getUserContracts/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Pagination parameters
+    const limit = parseInt(req.query.limit) || 100; // Default 100 results
+    const skip = parseInt(req.query.skip) || 0;
+
+    // Step 1: Fetch user and get deployer and better arrays
+    const usersCollection = db.collection("Users");
+    const user = await usersCollection.findOne({ userId });
+
+    if (!user) {
+      return res.status(404).send("User not found");
+    }
+
+    // Separate deployer and better contracts
+    const deployerContracts = user.deployer || [];
+    const betterContracts = user.better || [];
+
+    // Create a roles map to associate each contract address with the user's role(s)
+    const rolesMap = {};
+
+    // Map deployer contracts
+    deployerContracts.forEach((address) => {
+      rolesMap[address] = rolesMap[address] || [];
+      if (!rolesMap[address].includes("deployer")) {
+        rolesMap[address].push("deployer");
+      }
+    });
+
+    // Map better contracts
+    betterContracts.forEach((address) => {
+      rolesMap[address] = rolesMap[address] || [];
+      if (!rolesMap[address].includes("better")) {
+        rolesMap[address].push("better");
+      }
+    });
+
+    // Combine all contract addresses
+    const contractAddresses = Object.keys(rolesMap);
+
+    if (contractAddresses.length === 0) {
+      return res.status(200).json([]);
+    }
+
+    // Step 2: Fetch contracts for this user's contracts
+    const fetchUserContracts = async (collectionName) => {
+      const collection = db.collection(collectionName);
+
+      // Fetch contracts where address is in contractAddresses
+      const contracts = await collection
+        .find({ address: { $in: contractAddresses } })
+        .skip(skip)
+        .limit(limit)
+        .toArray();
+
+      // Add collectionName and role to each contract
+      contracts.forEach((contract) => {
+        contract.collectionName = collectionName;
+        contract.role = rolesMap[contract.address];
+      });
+
+      return contracts;
+    };
+
+    // Step 3: Fetch contracts from all collections
+    const collectionNames = ["Contracts", "ExpiredContracts", "Disagreements"];
+    const contractsPromises = collectionNames.map(fetchUserContracts);
+    const results = await Promise.all(contractsPromises);
+
+    // Step 4: Combine results and send response
+    const allUserContracts = results.flat();
+    res.status(200).json(allUserContracts);
+  } catch (error) {
+    console.error("Error fetching contracts for user:", error);
+    res.status(500).send("Error fetching contracts");
+  }
+});
+
+app.get("/api/existingUser/:address", async (req, res) => {
+  const { address } = req.params;
+  const collection = db.collection("Users");
+
+  try {
+    const existingUser = await collection.findOne({ userId: address });
+
+    if (existingUser) {
+      // User exists, return 200 OK
+      res.sendStatus(200);
+    } else {
+      // Insert a new user if the address does not exist
+      const newUser = {
+        userId: address,
+        deployer: [], // Initialize deployer array
+        better: [], // Initialize better array
+      };
+      await collection.insertOne(newUser);
+      // Return 201 Created
+      res.sendStatus(201);
+    }
+  } catch (error) {
+    console.error("Error fetching or creating user:", error);
+    res.status(500).send("Server Error: Unable to fetch or create user.");
+  }
+});
+
+app.post("/api/updateUserContract", async (req, res) => {
+  const { contractAddress, userId, role } = req.body;
+
+  try {
+    const collection = db.collection("Users");
+
+    // Find the user by userId
+    const user = await collection.findOne({ userId });
+
+    if (!user) {
+      res.status(404).send("User not found");
+      return;
+    }
+
+    // Determine which array to update based on the role
+    let arrayToUpdate;
+    if (role === "better") {
+      arrayToUpdate = "better";
+    } else if (role === "deployer") {
+      arrayToUpdate = "deployer";
+    } else {
+      res.status(400).send("Invalid role specified");
+      return;
+    }
+
+    // Check if the contractAddress already exists in the corresponding array
+    if (!user[arrayToUpdate].includes(contractAddress)) {
+      // Push the new value if it does not exist
+      await collection.updateOne(
+        { userId },
+        { $push: { [arrayToUpdate]: contractAddress } }
+      );
+      res.status(200).send("Update successful");
+    } else {
+      res.status(200).send("No update needed: Value already exists.");
+    }
+  } catch (error) {
+    console.error("Error updating MongoDB:", error);
+    res.status(500).send("Error updating MongoDB");
   }
 });
 

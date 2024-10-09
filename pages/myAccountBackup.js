@@ -8,117 +8,79 @@ import { motion } from "framer-motion";
 import { FaEthereum, FaGamepad, FaTrophy } from "react-icons/fa";
 
 export default function MyAccount() {
-  const [contracts, setContracts] = useState({
-    ongoing: [],
-    completed: [],
-    deployed: [],
-  });
+  const [contracts, setContracts] = useState([]);
   const [contractsBalances, setContractsBalances] = useState({});
   const [contractInstances, setContractInstances] = useState({});
-  const [activeCategory, setActiveCategory] = useState("ongoing"); // New state to handle active category
+  const [showCompletedBets, setShowCompletedBets] = useState(false);
   const signer = useSigner();
   const router = useRouter();
 
-  const fetchContracts = async () => {
-    if (!signer) return;
-
-    try {
-      const userAddress = await signer.getAddress();
-
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_BASE_URL}/getUserContracts/${userAddress}`
-      );
-
-      if (!response.ok) {
-        throw new Error("Network response was not ok");
-      }
-
-      const contractsData = await response.json();
-      categorizeContracts(contractsData);
-      console.log("Contract Data", contractsData);
-    } catch (error) {
-      console.error("Error fetching contracts:", error);
-    }
-  };
-
   useEffect(() => {
+    async function fetchContracts() {
+      if (!signer) return;
+
+      try {
+        const userAddress = await signer.getAddress();
+
+        const response = await fetch(
+          `${process.env.NEXT_PUBLIC_BASE_URL}/getUserContracts/${userAddress}`
+        );
+
+        if (!response.ok) {
+          throw new Error("Network response was not ok");
+        }
+
+        const contractsData = await response.json();
+        categorizeContracts(contractsData);
+      } catch (error) {
+        console.error("Error fetching contracts:", error);
+      }
+    }
+
     fetchContracts();
   }, [signer]);
 
-  const navigateToMarket = (contractAddress) => {
-    router.push(`/market/${contractAddress}`);
-  };
-
   const categorizeContracts = async (contractsData) => {
-    try {
-      const contractInstancesTemp = {};
+    const contractInstancesTemp = {};
+    const contractsBalancesTemp = {};
 
-      // Initialize arrays for different categories
-      const categorizedContracts = {
-        ongoing: [],
-        completed: [],
-        deployed: [],
-      };
+    // Initialize arrays for different categories
+    const categorizedContracts = {
+      ongoing: [],
+      completed: [],
+    };
 
-      // Create contract instances and categorize contracts
-      for (const contract of contractsData) {
-        // Check if contract address is valid and defined before proceeding
-        if (!contract.address) {
-          console.warn("Skipping contract with undefined address", contract);
-          continue;
-        }
-
-        try {
-          // Create a new contract instance using ethers.js
-          const contractInstance = new ethers.Contract(
-            contract.address,
-            predMarketArtifact.abi,
-            signer
-          );
-
-          // Store the contract instance for later use
-          contractInstancesTemp[contract.address] = contractInstance;
-
-          // Check if the contract is completed by calling the 'winner' method
-          const winner = await contractInstance.winner();
-          const isCompleted = winner.toString() !== "0";
-
-          // Check the role(s) of the user in this contract
-          const userRoles = contract.role || [];
-
-          // Add the contract to the deployed category if the user is a deployer
-          if (userRoles.includes("deployer")) {
-            categorizedContracts.deployed.push({ ...contract, userRoles });
-          }
-
-          // If the user is both a deployer and a better, add to multiple categories
-          if (userRoles.includes("better")) {
-            if (isCompleted) {
-              categorizedContracts.completed.push({ ...contract, userRoles });
-            } else {
-              categorizedContracts.ongoing.push({ ...contract, userRoles });
-            }
-          }
-        } catch (innerError) {
-          console.error(
-            `Error processing contract ${contract.address}:`,
-            innerError
-          );
-        }
-      }
-
-      // Update the state with the categorized contracts and contract instances
-      setContracts(categorizedContracts);
-      setContractInstances(contractInstancesTemp);
-
-      // Initialize contract balances after categorizing
-      await initializeContractsBalances(
-        categorizedContracts,
-        contractInstancesTemp
+    // Create contract instances and categorize contracts
+    for (const contract of contractsData) {
+      const contractInstance = new ethers.Contract(
+        contract.address,
+        predMarketArtifact.abi,
+        signer
       );
-    } catch (error) {
-      console.error("Error categorizing contracts:", error);
+
+      // Store contract instance for later use
+      contractInstancesTemp[contract.address] = contractInstance;
+
+      // Check if the contract is completed
+      const winner = await contractInstance.winner();
+      const isCompleted = winner !== 0;
+
+      // Fetch user's roles in this contract
+      const userRoles = contract.role; // ['deployer', 'better'] etc.
+
+      // Add the contract to the appropriate category
+      if (isCompleted) {
+        categorizedContracts.completed.push({ ...contract, userRoles });
+      } else {
+        categorizedContracts.ongoing.push({ ...contract, userRoles });
+      }
     }
+
+    setContracts(categorizedContracts);
+    setContractInstances(contractInstancesTemp);
+
+    // Initialize contracts balances
+    initializeContractsBalances(categorizedContracts, contractInstancesTemp);
   };
 
   const initializeContractsBalances = async (
@@ -126,6 +88,7 @@ export default function MyAccount() {
     contractInstancesTemp
   ) => {
     const newContractsBalances = {};
+
     const allContracts = [
       ...categorizedContracts.ongoing,
       ...categorizedContracts.completed,
@@ -159,6 +122,8 @@ export default function MyAccount() {
       if (!contractInstance) throw new Error("Contract instance not found");
       const tx = await contractInstance.withdraw();
       await tx.wait();
+      console.log(`Withdraw successful from contract: ${contractAddress}`);
+      // Refresh balances
       fetchContracts();
     } catch (error) {
       console.error("Withdraw failed:", error);
@@ -171,6 +136,8 @@ export default function MyAccount() {
       if (!contractInstance) throw new Error("Contract instance not found");
       const tx = await contractInstance.transferOwnerAmount();
       await tx.wait();
+      console.log(`Owner amount transferred from contract: ${contractAddress}`);
+      // Refresh balances
       fetchContracts();
     } catch (error) {
       console.error("Transfer owner amount failed:", error);
@@ -233,45 +200,30 @@ export default function MyAccount() {
         <motion.button
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
-          className={activeCategory === "ongoing" ? "active" : ""}
-          onClick={() => setActiveCategory("ongoing")}
+          className={!showCompletedBets ? "active" : ""}
+          onClick={() => setShowCompletedBets(false)}
         >
           <FaGamepad /> Ongoing Bets
         </motion.button>
         <motion.button
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
-          className={activeCategory === "completed" ? "active" : ""}
-          onClick={() => setActiveCategory("completed")}
+          className={showCompletedBets ? "active" : ""}
+          onClick={() => setShowCompletedBets(true)}
         >
           <FaTrophy /> Completed Bets
-        </motion.button>
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          className={activeCategory === "deployed" ? "active" : ""}
-          onClick={() => setActiveCategory("deployed")}
-        >
-          <FaTrophy /> Deployed Sets
         </motion.button>
       </div>
 
       <div className="grid-container">
         <BetSection
-          title={
-            activeCategory === "completed"
-              ? "Completed Bets"
-              : activeCategory === "deployed"
-              ? "Deployed Sets"
-              : "Ongoing Bets"
-          }
-          bets={contracts[activeCategory]}
+          title={showCompletedBets ? "Completed Bets" : "Ongoing Bets"}
+          bets={showCompletedBets ? contracts.completed : contracts.ongoing}
           contractInstances={contractInstances}
           contractsBalances={contractsBalances}
           onWithdraw={handleWithdraw}
           onTransferOwnerAmount={handleTransferOwnerAmount}
           getImageForTag={getImageForTag}
-          navigateToMarket={navigateToMarket}
         />
       </div>
     </motion.div>
@@ -286,7 +238,6 @@ function BetSection({
   onWithdraw,
   onTransferOwnerAmount,
   getImageForTag,
-  navigateToMarket,
 }) {
   return (
     <motion.div
@@ -304,20 +255,11 @@ function BetSection({
               className="contract-card"
               whileHover={{ scale: 1.05 }}
               transition={{ type: "spring", stiffness: 300 }}
-              style={{
-                border: "1px solid #ccc", // Add a border
-                borderRadius: "8px", // Rounded corners
-                padding: "16px", // Padding inside the card
-                margin: "10px 0", // Margin between cards
-                backgroundColor: "#f9f9f9", // Light background color
-                boxShadow: "0 2px 5px rgba(0, 0, 0, 0.1)", // Subtle shadow for depth
-              }}
             >
               <img
                 src={getImageForTag(contract.tags)}
                 alt="Game Image"
                 className="contract-image"
-                onClick={() => navigateToMarket(contract.address)}
               />
               <h3 className="market-name">
                 {contract.NameofMarket || "No Market Name"}
@@ -416,6 +358,9 @@ function CreatorLockedInfo({ contractInstance, onTransferOwnerAmount }) {
   useEffect(() => {
     async function fetchCreatorLocked() {
       try {
+        const locked = await contractInstance.creatorLocked();
+        setCreatorLocked(ethers.utils.formatEther(locked));
+
         const raffleState = await contractInstance.s_raffleState();
         const endOfVoting = await contractInstance.endOfVoting();
         const currentTime = Math.floor(Date.now() / 1000);
@@ -437,6 +382,12 @@ function CreatorLockedInfo({ contractInstance, onTransferOwnerAmount }) {
 
   return (
     <div className="creator-locked-info">
+      <p>
+        Creator Locked:{" "}
+        <span className="amount">
+          {creatorLocked} <FaEthereum />
+        </span>
+      </p>
       {canTransfer && (
         <motion.button
           whileHover={{ scale: 1.05 }}
