@@ -130,7 +130,7 @@ export default function PredMarketPageV2() {
         "-< Is voting time",
         isBettingClosed,
         isDisagreementState,
-        bets_balance.voteTime
+        bets_balance.endOfVoting
       );
     }, 10000);
 
@@ -144,7 +144,7 @@ export default function PredMarketPageV2() {
         bets_balance.state === 0 && currentTime < bets_balance.endTime
       );
       setIsVotingTime(
-        (bets_balance.state === 1 && currentTime < contract.voteTime) ||
+        (bets_balance.state === 1 && currentTime < bets_balance.endOfVoting) ||
           (bets_balance.state === 0 && currentTime > bets_balance.endTime)
       );
       setIsBettingClosed(
@@ -551,8 +551,6 @@ export default function PredMarketPageV2() {
   const declareWinner = async (winner) => {
     if (contractInstance) {
       try {
-        const voteTime = Math.floor(Date.now() / 1000) + 7200;
-        console.log(voteTime);
         const winnerName =
           winner === 1
             ? contract.eventA
@@ -573,16 +571,6 @@ export default function PredMarketPageV2() {
             const tx = await contractInstance.declareWinner(winner);
             await tx.wait();
 
-            const response = await fetch(
-              `${process.env.NEXT_PUBLIC_API_BASE_URL}/updateMongoDB`,
-              {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ contractAddress, voteTime }),
-              }
-            );
             alert("Winner declared successfully!");
           } catch (error) {
             console.error("Transaction Error:", error);
@@ -613,7 +601,7 @@ export default function PredMarketPageV2() {
             await tx.wait();
 
             const response = await fetch(
-              `${process.env.NEXT_PUBLIC_API_BASE_URL}/moveToDisagreements`,
+              `${process.env.NEXT_PUBLIC_BASE_URL}/moveToDisagreements`,
               {
                 method: "POST",
                 headers: {
@@ -914,7 +902,7 @@ export default function PredMarketPageV2() {
                     />
                     <p>Time left to disagree:</p>
                     <CountdownTimer
-                      endTime={contract.voteTime}
+                      endTime={bets_balance.endOfVoting}
                       className="countdown-timer"
                     />
                     <button
@@ -1231,7 +1219,7 @@ export default function PredMarketPageV2() {
 
         .event-matchup {
           display: flex;
-          justify-content: center;
+          justify-content: left;
           align-items: center;
           gap: 0.5rem;
           margin: 1rem 0;

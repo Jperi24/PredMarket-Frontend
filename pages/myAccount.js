@@ -312,12 +312,12 @@ function BetSection({
                 backgroundColor: "#f9f9f9", // Light background color
                 boxShadow: "0 2px 5px rgba(0, 0, 0, 0.1)", // Subtle shadow for depth
               }}
+              onClick={() => navigateToMarket(contract.address)}
             >
               <img
                 src={getImageForTag(contract.tags)}
                 alt="Game Image"
                 className="contract-image"
-                onClick={() => navigateToMarket(contract.address)}
               />
               <h3 className="market-name">
                 {contract.NameofMarket || "No Market Name"}
