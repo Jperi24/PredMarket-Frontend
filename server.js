@@ -482,7 +482,7 @@ async function fetchAllTournamentDetails() {
     }
 
     hasMore = true;
-    while (hasMore && allTournaments.length < 50) {
+    while (hasMore && allTournaments.length < 9) {
       ////////////////////////////////////////////////////////////FIXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
       await sleep(100); // Updated sleep from 10 to 100
       try {
@@ -566,7 +566,9 @@ async function fetchAllTournamentDetails() {
               }
 
               console.log(`Caching sets for phaseId: ${phase.id}`);
-              frequentCache.set(phase.id.toString(), allSets);
+              console.log(`Caching sets for phaseId: ${phase.id}`);
+              const phaseKey = `phase:${phase.id}`;
+              frequentCache.set(phaseKey, allSets);
             }
           }
         }
@@ -592,160 +594,8 @@ async function fetchAllTournamentDetails() {
 
 let isUpdatingFrequentCache = false;
 
-// async function updateFrequentCache() {
-//   if (isFetchingTournaments || isUpdatingFrequentCache) {
-//     console.log("updateFrequentCache is already running. Exiting.");
-//     return;
-//   }
-
-//   isUpdatingFrequentCache = true;
-//   setStatuses.clear();
-//   console.log("Updating frequent cache for ongoing tournaments...");
-
-//   const temporaryFrequentCache = new NodeCache({ stdTTL: 0 });
-//   const currentTime = Math.floor(Date.now() / 1000);
-//   let ongoingTournaments = [];
-
-//   // Fetch ongoing tournaments from the daily cache
-//   const keysToCheck = dailyCache.keys();
-//   const phaseIdsToDelete = [];
-//   for (const key of keysToCheck) {
-//     const tournament = dailyCache.get(key);
-//     if (tournament) {
-//       let startAt = Number(tournament.startAt);
-//       let endAt = Number(tournament.endAt);
-
-//       // Check if endAt is at midnight (00:00:00)
-//       const endAtDate = new Date(endAt * 1000); // Convert to milliseconds
-//       if (
-//         endAtDate.getHours() === 0 &&
-//         endAtDate.getMinutes() === 0 &&
-//         endAtDate.getSeconds() === 0
-//       ) {
-//         // Adjust endAt to 23:59:59 of the same day
-//         endAtDate.setHours(23, 59, 59, 999);
-//         endAt = Math.floor(endAtDate.getTime() / 1000);
-//       }
-
-//       // Now perform the comparison
-//       if (startAt <= currentTime && endAt >= currentTime) {
-//         ongoingTournaments.push(tournament);
-//       }
-//     }
-//   }
-
-//   console.log("Ongoing tournaments to update:", ongoingTournaments.length);
-
-//   for (const tournament of ongoingTournaments) {
-//     await sleep(100); // Updated sleep from 10 to 100
-//     try {
-//       // Fetch the updated tournament details
-//       const tournamentDetailResponse = await fetchWithRetry(
-//         GET_TOURNAMENT_QUERY,
-//         {
-//           slug: tournament.slug,
-//         }
-//       );
-//       const detailedTournament = tournamentDetailResponse.tournament;
-//       temporaryFrequentCache.set(
-//         tournament.slug.toLowerCase(),
-//         detailedTournament
-//       );
-
-//       if (detailedTournament.events) {
-//         for (const event of detailedTournament.events) {
-//           if (event.phases) {
-//             for (const phase of event.phases) {
-//               phaseIdsToDelete.push(phase.id.toString());
-//               await sleep(100); // Updated sleep from 10 to 100
-//               let allSets = [];
-//               let page2 = 1;
-//               let hasMore2 = true;
-//               const phaseId = phase.id;
-
-//               while (hasMore2) {
-//                 await sleep(100); // Updated sleep from 10 to 100
-//                 try {
-//                   const phaseData = await fetchWithRetry(
-//                     GET_SETS_BY_PHASE_QUERY,
-//                     {
-//                       phaseId,
-//                       page: page2,
-//                       perPage: 100, // Assuming 100 per page
-//                     }
-//                   );
-//                   allSets = [...allSets, ...phaseData.phase.sets.nodes];
-//                   hasMore2 = phaseData.phase.sets.nodes.length === 100; // Adjust this based on perPage setting
-//                   page2 += 1;
-//                 } catch (error) {
-//                   console.error(
-//                     "Error fetching sets for phase:",
-//                     phase.id,
-//                     error
-//                   );
-//                   hasMore2 = false;
-//                 }
-//               }
-
-//               console.log(`Caching sets for phaseId: ${phase.id}`);
-//               temporaryFrequentCache.set(phase.id, allSets);
-//               for (const set of allSets) {
-//                 const setKey = `${tournament.slug}-${event.id}-${set.id}`;
-//                 const inGame = set.slots.every(
-//                   (slot) => slot.standing?.placement === 2
-//                 );
-//                 const hasWinner = set.slots.some(
-//                   (slot) => slot.standing?.placement === 1
-//                 );
-//                 const hasUnknownEntrant = set.slots.some(
-//                   (slot) => !slot.entrant || slot.entrant.name === "Unknown"
-//                 );
-//                 const winnerName =
-//                   set.slots.find((slot) => slot.standing?.placement === 1)
-//                     ?.entrant?.name || "Unknown";
-
-//                 if (inGame && !hasWinner) {
-//                   setStatuses.set(setKey, { status: "ongoing", winner: null });
-//                 } else if (!inGame && !hasWinner && !hasUnknownEntrant) {
-//                   setStatuses.set(setKey, { status: "upcoming", winner: null });
-//                 } else if (hasWinner) {
-//                   setStatuses.set(setKey, {
-//                     status: "completed",
-//                     winner: winnerName,
-//                   });
-//                   await updateMongoDBWithWinner(setKey, winnerName);
-//                 } else {
-//                   setStatuses.set(setKey, { status: "other", winner: null });
-//                 }
-//               }
-//             }
-//           }
-//         }
-//       }
-//     } catch (error) {
-//       console.error("Error handling tournament:", tournament.slug, error);
-//     }
-//     console.log("Updated tournament:", tournament.slug);
-//   }
-
-//   // Remove only the keys corresponding to ongoing tournaments in the frequentCache
-//   for (const tournament of ongoingTournaments) {
-//     frequentCache.del(tournament.slug.toLowerCase());
-//   }
-//   frequentCache.del(phaseIdsToDelete);
-
-//   // Replace with new entries from the temporaryFrequentCache using mset
-//   const keysToUpdate = temporaryFrequentCache.keys();
-//   frequentCache.mset(
-//     keysToUpdate.map((key) => ({ key, val: temporaryFrequentCache.get(key) }))
-//   );
-
-//   console.log("Frequent cache updated with ongoing tournaments.");
-//   isUpdatingFrequentCache = false;
-// }
-
 async function updateFrequentCache() {
-  if (isFetchingTournaments || isUpdatingFrequentCache) {
+  if (isFetchingTournaments) {
     console.log("updateFrequentCache is already running. Exiting.");
     return;
   }
@@ -758,37 +608,24 @@ async function updateFrequentCache() {
   const currentTime = Math.floor(Date.now() / 1000);
 
   let ongoingTournaments = [];
+  const keysToCheck = dailyCache.keys();
 
   // Fetch ongoing tournaments from the daily cache
-
   for (const key of keysToCheck) {
     const tournament = dailyCache.get(key);
     if (tournament) {
-      let startAt = Number(tournament.startAt);
-      let endAt = Number(tournament.endAt);
-
-      // Log initial values of startAt and endAt
-      console.log(`Tournament ID: ${key}`);
-      console.log(`Original startAt: ${startAt}, endAt: ${endAt}`);
+      const startAt = Number(tournament.startAt);
+      const endAt = Number(tournament.endAt);
 
       // Add a 1-day (24 hours) buffer to startAt and endAt
       const startAtWithBuffer = startAt - 86400; // Subtract 1 day (in seconds)
       const endAtWithBuffer = endAt + 86400; // Add 1 day (in seconds)
 
-      // Log the buffered startAt and endAt times
-      console.log(
-        `Buffered startAt: ${startAtWithBuffer}, Buffered endAt: ${endAtWithBuffer}`
-      );
-
       // Perform the comparison using the buffered values
       if (startAtWithBuffer <= currentTime && endAtWithBuffer >= currentTime) {
         console.log(`Tournament ${key} is ongoing.`);
         ongoingTournaments.push(tournament);
-      } else {
-        console.log(`Tournament ${key} is not ongoing.`);
       }
-    } else {
-      console.log(`No tournament found for key: ${key}`);
     }
   }
 
@@ -802,62 +639,62 @@ async function updateFrequentCache() {
         { slug: tournament.slug }
       );
       const detailedTournament = tournamentDetailResponse.tournament;
-      temporaryFrequentCache.set(
-        tournament.slug.toLowerCase(),
-        detailedTournament
-      );
 
       if (detailedTournament.events) {
         for (const event of detailedTournament.events) {
           if (event.phases) {
             for (const phase of event.phases) {
-              phaseIdsToDelete.push(phase.id.toString());
               await sleep(100);
               let allSets = [];
-              let page2 = 1;
-              let hasMore2 = true;
+              let page = 1;
+              let hasMore = true;
               const phaseId = phase.id;
 
-              while (hasMore2) {
+              while (hasMore) {
                 await sleep(100);
                 try {
                   const phaseData = await fetchWithRetry(
                     GET_SETS_BY_PHASE_QUERY,
                     {
                       phaseId,
-                      page: page2,
+                      page,
                       perPage: 100,
                     }
                   );
                   allSets = [...allSets, ...phaseData.phase.sets.nodes];
-                  hasMore2 = phaseData.phase.sets.nodes.length === 100;
-                  page2 += 1;
+                  hasMore = phaseData.phase.sets.nodes.length === 100;
+                  page += 1;
                 } catch (error) {
                   console.error(
                     "Error fetching sets for phase:",
                     phase.id,
                     error
                   );
-                  hasMore2 = false;
+                  hasMore = false;
                 }
               }
 
-              console.log(`Caching sets for phaseId: ${phase.id}`);
-              temporaryFrequentCache.set(phase.id, allSets);
-
               for (const set of allSets) {
                 const setKey = `${tournament.slug}-${event.id}-${set.id}`;
+                const cacheSetKey = `set:${setKey}`;
+
+                // Log the set data
+                console.log(
+                  `Set data for ${cacheSetKey}:`,
+                  JSON.stringify(set, null, 2)
+                );
+
                 const currentEntrants = set.slots.map(
                   (slot) => slot.entrant?.name || "Unknown"
                 );
 
                 // Fetch the original entrants from frequentCache before updating
-                const originalSet = frequentCache.get(setKey);
+                const originalSet = frequentCache.get(cacheSetKey);
                 const originalEntrants = originalSet
                   ? originalSet.slots.map(
                       (slot) => slot.entrant?.name || "Unknown"
                     )
-                  : [];
+                  : currentEntrants; // Use currentEntrants if originalSet is undefined
 
                 // Check if the entrants have changed
                 const entrantsChanged =
@@ -868,43 +705,69 @@ async function updateFrequentCache() {
 
                 if (entrantsChanged) {
                   console.log(
-                    `Set ${setKey} has changed entrants or no longer exists with original entrants.`
+                    `Set ${cacheSetKey} has changed entrants or no longer exists with original entrants.`
                   );
-                  await updateMongoDBWithWinner(setKey, 3); // Set winnerName to 3 for invalid/canceled sets
-                  setStatuses.set(setKey, { status: "canceled", winner: 3 });
+                  await updateMongoDBWithWinner(cacheSetKey, 3); // Set winnerName to 3 for invalid/canceled sets
+                  setStatuses.set(cacheSetKey, {
+                    status: "canceled",
+                    winner: 3,
+                  });
                 } else {
-                  // Continue with your regular status logic
+                  // Adjusted logic
+                  const hasWinner = !!set.winnerId;
+                  const winnerSlot = set.slots.find(
+                    (slot) => slot.entrant?.id === set.winnerId
+                  );
+                  const winnerName = winnerSlot?.entrant?.name || "Unknown";
+
                   const inGame = set.slots.every(
                     (slot) => slot.standing?.placement === 2
-                  );
-                  const hasWinner = set.slots.some(
-                    (slot) => slot.standing?.placement === 1
                   );
                   const hasUnknownEntrant = set.slots.some(
                     (slot) => !slot.entrant || slot.entrant.name === "Unknown"
                   );
-                  const winnerName =
-                    set.slots.find((slot) => slot.standing?.placement === 1)
-                      ?.entrant?.name || "Unknown";
+
+                  console.log(`Processing set ${cacheSetKey}`);
+                  console.log(`inGame: ${inGame}`);
+                  console.log(`hasWinner: ${hasWinner}`);
+                  console.log(`hasUnknownEntrant: ${hasUnknownEntrant}`);
+                  console.log(`winnerName: ${winnerName}`);
 
                   if (inGame && !hasWinner) {
-                    setStatuses.set(setKey, {
+                    setStatuses.set(cacheSetKey, {
                       status: "ongoing",
                       winner: null,
                     });
                   } else if (!inGame && !hasWinner && !hasUnknownEntrant) {
-                    setStatuses.set(setKey, {
+                    setStatuses.set(cacheSetKey, {
                       status: "upcoming",
                       winner: null,
                     });
                   } else if (hasWinner) {
-                    setStatuses.set(setKey, {
+                    setStatuses.set(cacheSetKey, {
                       status: "completed",
                       winner: winnerName,
                     });
-                    await updateMongoDBWithWinner(setKey, winnerName);
+                    await updateMongoDBWithWinner(cacheSetKey, winnerName);
                   } else {
-                    setStatuses.set(setKey, { status: "other", winner: null });
+                    setStatuses.set(cacheSetKey, {
+                      status: "other",
+                      winner: null,
+                    });
+                  }
+                }
+
+                // Update the temporaryFrequentCache with the current set data
+                temporaryFrequentCache.set(cacheSetKey, set);
+
+                // Also update the phase sets in frequentCache
+                const phaseKey = `phase:${phaseId}`;
+                if (frequentCache.has(phaseKey)) {
+                  const phaseSets = frequentCache.get(phaseKey);
+                  const setIndex = phaseSets.findIndex((s) => s.id === set.id);
+                  if (setIndex !== -1) {
+                    phaseSets[setIndex] = set; // Update the set
+                    frequentCache.set(phaseKey, phaseSets); // Save back to cache
                   }
                 }
               }
@@ -912,27 +775,32 @@ async function updateFrequentCache() {
           }
         }
       }
+
+      // Update temporaryFrequentCache with the detailed tournament data
+      temporaryFrequentCache.set(
+        `phase:${tournament.slug.toLowerCase()}`,
+        detailedTournament
+      );
     } catch (error) {
       console.error("Error handling tournament:", tournament.slug, error);
     }
     console.log("Updated tournament:", tournament.slug);
   }
 
-  for (const tournament of ongoingTournaments) {
-    frequentCache.del(tournament.slug.toLowerCase());
-  }
-  frequentCache.del(phaseIdsToDelete);
-
+  // Now update the frequentCache with the new data from temporaryFrequentCache
   const keysToUpdate = temporaryFrequentCache.keys();
   frequentCache.mset(
-    keysToUpdate.map((key) => ({ key, val: temporaryFrequentCache.get(key) }))
+    keysToUpdate.map((key) => ({
+      key,
+      val: temporaryFrequentCache.get(key),
+    }))
   );
 
   console.log("Frequent cache updated with ongoing tournaments.");
   isUpdatingFrequentCache = false;
 }
 
-cron.schedule("0 */15 * * * *", updateFrequentCache); // Update frequent cache every 20 minutes
+cron.schedule("0 */5 * * * *", updateFrequentCache); // Update frequent cache every 20 minutes
 cron.schedule("0 0 */24 * * *", fetchAllTournamentDetails);
 
 async function updateMongoDBWithWinner(setKey, winnerName) {
@@ -988,12 +856,11 @@ app.get("/api/tournament/:slug", (req, res) => {
 
 app.get("/api/phase-sets/:phaseId", (req, res) => {
   const { phaseId } = req.params;
-  const phaseIdStr = phaseId.toString(); // Ensure it's a string
+  const phaseKey = `phase:${phaseId.toString()}`; // Consistent key format
 
-  if (frequentCache.has(phaseIdStr)) {
-    const set = frequentCache.get(phaseIdStr);
-
-    res.json(set);
+  if (frequentCache.has(phaseKey)) {
+    const sets = frequentCache.get(phaseKey);
+    res.json(sets);
   } else {
     console.log(`Cache miss for phaseId: ${phaseId}`);
     res

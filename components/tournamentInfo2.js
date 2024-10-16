@@ -294,6 +294,7 @@ const TournamentInfo = ({ slug }) => {
         throw new Error(`HTTP error, status = ${response.status}`);
       }
       const json = await response.json();
+      console.log(json);
 
       setCurrentPhaseSets(json);
     } catch (error) {
@@ -304,16 +305,31 @@ const TournamentInfo = ({ slug }) => {
     }
   };
 
+  // const getStatus = (set) => {
+  //   const inGame = set.slots.every((slot) => slot.standing?.placement === 2);
+  //   const hasWinner = set.slots.some((slot) => slot.standing?.placement === 1);
+  //   const hasUnknownEntrant = set.slots.some(
+  //     (slot) => !slot.entrant || slot.entrant.name === "Unknown"
+  //   );
+
+  //   if (inGame && !hasWinner) return "In Game";
+  //   if (!inGame && !hasWinner && !hasUnknownEntrant) return "Pending";
+  //   return "Other";
+  // };
+
   const getStatus = (set) => {
-    const inGame = set.slots.every((slot) => slot.standing?.placement === 2);
-    const hasWinner = set.slots.some((slot) => slot.standing?.placement === 1);
+    const hasWinner = !!set.winnerId;
+    const winnerSlot = set.slots.find(
+      (slot) => slot.entrant?.id === set.winnerId
+    );
+    const winnerName = winnerSlot?.entrant?.name || "Unknown";
     const hasUnknownEntrant = set.slots.some(
       (slot) => !slot.entrant || slot.entrant.name === "Unknown"
     );
 
-    if (inGame && !hasWinner) return "In Game";
-    if (!inGame && !hasWinner && !hasUnknownEntrant) return "Pending";
-    return "Other";
+    if (hasWinner) return `${winnerName} Has Won`;
+    if (hasUnknownEntrant) return "Waiting for Opponent";
+    return "Pending"; // Assuming if no winner and no unknown entrant, it's pending
   };
 
   const sortSets = (a, b) => {
@@ -457,19 +473,18 @@ const SetBox = ({
 }) => {
   // Enhanced status determination logic
   const getStatus = (set) => {
-    const inGame = set.slots.every((slot) => slot.standing?.placement === 2);
-    const hasWinner = set.slots.some((slot) => slot.standing?.placement === 1);
+    const hasWinner = !!set.winnerId;
+    const winnerSlot = set.slots.find(
+      (slot) => slot.entrant?.id === set.winnerId
+    );
+    const winnerName = winnerSlot?.entrant?.name || "Unknown";
     const hasUnknownEntrant = set.slots.some(
       (slot) => !slot.entrant || slot.entrant.name === "Unknown"
     );
-    const winnerName =
-      set.slots.find((slot) => slot.standing?.placement === 1)?.entrant.name ||
-      "Unknown";
 
-    if (inGame && !hasWinner) return "In Game";
-    if (!inGame && !hasWinner && !hasUnknownEntrant) return "Pending";
     if (hasWinner) return `${winnerName} Has Won`;
-    return "Other"; // Covers other statuses, such as "Waiting For Opponent"
+    if (hasUnknownEntrant) return "Waiting for Opponent";
+    return "Pending"; // Assuming if no winner and no unknown entrant, it's pending
   };
 
   const status = getStatus(set);

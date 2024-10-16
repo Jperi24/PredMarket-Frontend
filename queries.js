@@ -100,6 +100,7 @@ const GET_SETS_BY_PHASE_QUERY = gql`
         nodes {
           fullRoundText
           id
+          winnerId
           slots {
             id
             entrant {
