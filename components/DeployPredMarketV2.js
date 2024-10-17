@@ -8,7 +8,8 @@ export async function deployPredMarket(
   NameofMarket,
   signer,
   fullName,
-  endsAt
+  endsAt,
+  setKey
 ) {
   // Check if the signer is available
   if (!signer) {
@@ -56,6 +57,7 @@ export async function deployPredMarket(
           fullName,
           endsAt,
           chain,
+          setKey,
         }),
       });
 

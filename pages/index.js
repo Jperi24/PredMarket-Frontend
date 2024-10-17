@@ -36,7 +36,7 @@ export default function ContractsPage() {
   }, []);
 
   const getStatusColor = (status) => {
-    switch (status) {
+    switch (status.status) {
       case "completed":
         return "red";
       case "ongoing":
@@ -49,13 +49,13 @@ export default function ContractsPage() {
   };
 
   const getStatusDisplay = (contract) => {
-    switch (contract.status) {
+    switch (contract.status.status) {
       case "ongoing":
         return "In Game";
       case "upcoming":
         return "Pending";
       case "completed":
-        return `${contract.winner} Has Won`;
+        return `${contract.status.winner} Has Won`;
       default:
         return "Other";
     }

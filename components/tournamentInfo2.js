@@ -200,6 +200,8 @@ const TournamentInfo = ({ slug }) => {
       const eventB = set.slots[1].entrant.name;
       const NameofMarket = `${tournamentData.name} - ${videogame}- ${currentPhaseObj.name}`;
       const fullName = set.fullRoundText;
+      const setKey = `set:${tournamentData.slug}-${selectedEventId}-${set.id}`;
+      console.log("setKey", setKey);
 
       const tags = `${videogame},${tournamentData.name},${currentPhaseObj.name},${set.slots[0].entrant.name},${set.slots[1].entrant.name},${fullName}`;
 
@@ -249,7 +251,8 @@ const TournamentInfo = ({ slug }) => {
               NameofMarket,
               signer,
               fullName,
-              endsAt
+              endsAt,
+              setKey
             );
           } catch (deployError) {
             console.error("Failed to deploy contract:", deployError);

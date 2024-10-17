@@ -17,7 +17,7 @@ const uri =
   "mongodb+srv://Jake:Koolaid20@cluster0.lwaxzbm.mongodb.net/?retryWrites=true&w=majority";
 const client = new MongoClient(uri);
 const ethers = require("ethers");
-const contractABI = require("./predMarketV2.json");
+const predMarketArtifact = require("./predMarketV2.json");
 
 // Make sure to import your contract ABI
 
@@ -284,7 +284,7 @@ app.get("/getContracts", async (req, res) => {
       const documents = await collection.find({}).toArray();
       return documents.map((doc) => {
         // Assuming doc.tags contains the tournament slug, event id, and set id
-        const status = setStatuses.get(doc.tags) || "upcoming";
+        const status = setStatuses.get(doc.setKey) || "upcoming";
         return { ...doc, collectionName, status };
       });
     };
@@ -604,6 +604,9 @@ async function updateFrequentCache() {
   setStatuses.clear();
   console.log("Updating frequent cache for ongoing tournaments...");
 
+  const collection = db.collection("Contracts");
+  const documents = await collection.find({}).toArray();
+
   const temporaryFrequentCache = new NodeCache({ stdTTL: 0 });
   const currentTime = Math.floor(Date.now() / 1000);
 
@@ -676,87 +679,99 @@ async function updateFrequentCache() {
 
               for (const set of allSets) {
                 const setKey = `${tournament.slug}-${event.id}-${set.id}`;
+
                 const cacheSetKey = `set:${setKey}`;
+                const normalizeString = (str) =>
+                  str ? str.trim().toLowerCase() : "";
+
+                const doesSetExist = documents.some((docSet) => {
+                  return (
+                    normalizeString(docSet.eventA) ===
+                      normalizeString(set.slots[0]?.entrant?.name) &&
+                    normalizeString(docSet.eventB) ===
+                      normalizeString(set.slots[1]?.entrant?.name) &&
+                    normalizeString(docSet.fullName) ===
+                      normalizeString(set.fullRoundText)
+                  );
+                });
 
                 // Log the set data
-                console.log(
-                  `Set data for ${cacheSetKey}:`,
-                  JSON.stringify(set, null, 2)
-                );
-
-                const currentEntrants = set.slots.map(
-                  (slot) => slot.entrant?.name || "Unknown"
-                );
-
-                // Fetch the original entrants from frequentCache before updating
-                const originalSet = frequentCache.get(cacheSetKey);
-                const originalEntrants = originalSet
-                  ? originalSet.slots.map(
-                      (slot) => slot.entrant?.name || "Unknown"
-                    )
-                  : currentEntrants; // Use currentEntrants if originalSet is undefined
-
-                // Check if the entrants have changed
-                const entrantsChanged =
-                  originalEntrants.length !== currentEntrants.length ||
-                  !originalEntrants.every(
-                    (entrant, index) => entrant === currentEntrants[index]
+                if (doesSetExist) {
+                  console.log("SET FOUND");
+                  const currentEntrants = set.slots.map(
+                    (slot) => slot.entrant?.name || "Unknown"
                   );
 
-                if (entrantsChanged) {
-                  console.log(
-                    `Set ${cacheSetKey} has changed entrants or no longer exists with original entrants.`
-                  );
-                  await updateMongoDBWithWinner(cacheSetKey, 3); // Set winnerName to 3 for invalid/canceled sets
-                  setStatuses.set(cacheSetKey, {
-                    status: "canceled",
-                    winner: 3,
-                  });
-                } else {
-                  // Adjusted logic
-                  const hasWinner = !!set.winnerId;
-                  const winnerSlot = set.slots.find(
-                    (slot) => slot.entrant?.id === set.winnerId
-                  );
-                  const winnerName = winnerSlot?.entrant?.name || "Unknown";
+                  // Fetch the original entrants from frequentCache before updating
+                  const originalSet = frequentCache.get(cacheSetKey);
+                  const originalEntrants = originalSet
+                    ? originalSet.slots.map(
+                        (slot) => slot.entrant?.name || "Unknown"
+                      )
+                    : currentEntrants; // Use currentEntrants if originalSet is undefined
 
-                  const inGame = set.slots.every(
-                    (slot) => slot.standing?.placement === 2
-                  );
-                  const hasUnknownEntrant = set.slots.some(
-                    (slot) => !slot.entrant || slot.entrant.name === "Unknown"
-                  );
+                  // Check if the entrants have changed
+                  const entrantsChanged =
+                    originalEntrants.length !== currentEntrants.length ||
+                    !originalEntrants.every(
+                      (entrant, index) => entrant === currentEntrants[index]
+                    );
 
-                  console.log(`Processing set ${cacheSetKey}`);
-                  console.log(`inGame: ${inGame}`);
-                  console.log(`hasWinner: ${hasWinner}`);
-                  console.log(`hasUnknownEntrant: ${hasUnknownEntrant}`);
-                  console.log(`winnerName: ${winnerName}`);
+                  if (entrantsChanged) {
+                    console.log(
+                      `Set ${cacheSetKey} has changed entrants or no longer exists with original entrants.`
+                    );
 
-                  if (inGame && !hasWinner) {
+                    await updateMongoDBWithWinner(cacheSetKey, 3); // Set winnerName to 3 for invalid/canceled sets
                     setStatuses.set(cacheSetKey, {
-                      status: "ongoing",
-                      winner: null,
+                      status: "canceled",
+                      winner: 3,
                     });
-                  } else if (!inGame && !hasWinner && !hasUnknownEntrant) {
-                    setStatuses.set(cacheSetKey, {
-                      status: "upcoming",
-                      winner: null,
-                    });
-                  } else if (hasWinner) {
-                    setStatuses.set(cacheSetKey, {
-                      status: "completed",
-                      winner: winnerName,
-                    });
-                    await updateMongoDBWithWinner(cacheSetKey, winnerName);
                   } else {
-                    setStatuses.set(cacheSetKey, {
-                      status: "other",
-                      winner: null,
-                    });
+                    // Adjusted logic
+                    const hasWinner = !!set.winnerId;
+                    const winnerSlot = set.slots.find(
+                      (slot) => slot.entrant?.id === set.winnerId
+                    );
+                    const winnerName = winnerSlot?.entrant?.name || "Unknown";
+
+                    const inGame = set.slots.every(
+                      (slot) => slot.standing?.placement === 2
+                    );
+                    const hasUnknownEntrant = set.slots.some(
+                      (slot) => !slot.entrant || slot.entrant.name === "Unknown"
+                    );
+
+                    console.log(`Processing set ${cacheSetKey}`);
+                    console.log(`inGame: ${inGame}`);
+                    console.log(`hasWinner: ${hasWinner}`);
+                    console.log(`hasUnknownEntrant: ${hasUnknownEntrant}`);
+                    console.log(`winnerName: ${winnerName}`);
+
+                    if (inGame && !hasWinner) {
+                      setStatuses.set(cacheSetKey, {
+                        status: "ongoing",
+                        winner: null,
+                      });
+                    } else if (!inGame && !hasWinner && !hasUnknownEntrant) {
+                      setStatuses.set(cacheSetKey, {
+                        status: "upcoming",
+                        winner: null,
+                      });
+                    } else if (hasWinner) {
+                      setStatuses.set(cacheSetKey, {
+                        status: "completed",
+                        winner: winnerName,
+                      });
+                      await updateMongoDBWithWinner(cacheSetKey, winnerName);
+                    } else {
+                      setStatuses.set(cacheSetKey, {
+                        status: "other",
+                        winner: null,
+                      });
+                    }
                   }
                 }
-
                 // Update the temporaryFrequentCache with the current set data
                 temporaryFrequentCache.set(cacheSetKey, set);
 
@@ -808,7 +823,7 @@ async function updateMongoDBWithWinner(setKey, winnerName) {
     const collection = db.collection("Contracts");
 
     // Find the document where the tags match the setKey
-    const document = await collection.findOne({ tags: setKey });
+    const document = await collection.findOne({ setKey });
 
     if (!document) {
       console.log(`No contract found for set ${setKey}`);
@@ -816,7 +831,11 @@ async function updateMongoDBWithWinner(setKey, winnerName) {
     }
 
     // Create contract instance
-    const contract = new ethers.Contract(document.address, contractABI, signer);
+    const contract = new ethers.Contract(
+      document.address,
+      predMarketArtifact.abi,
+      signer
+    );
 
     // Determine which participant won
     let winnerNumber;
