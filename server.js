@@ -970,6 +970,67 @@ app.get("/getUserContracts/:userId", async (req, res) => {
   }
 });
 
+async function cleanUpUserBets(userId) {
+  try {
+    const userCollection = db.collection("Users");
+    const relevantCollections = [
+      "Contracts",
+      "ExpiredContracts",
+      "Disagreements",
+    ];
+
+    // Find the user by userId
+    const user = await userCollection.findOne({ userId: userId });
+
+    if (!user) {
+      console.log("User not found");
+      return;
+    }
+
+    const deployerArray = user.deployer || [];
+    const betterArray = user.better || [];
+
+    const updatedDeployerArray = [];
+    const updatedBetterArray = [];
+
+    // Helper function to check if an address exists in any collection
+    const addressExistsInCollections = async (address) => {
+      for (let collectionName of relevantCollections) {
+        const collection = db.collection(collectionName);
+        const addressExists = await collection.findOne({ address: address }); // Check 'address' field in the collection
+        if (addressExists) return true;
+      }
+      return false;
+    };
+
+    // Check the deployer array
+    for (let contractAddress of deployerArray) {
+      const addressFound = await addressExistsInCollections(contractAddress);
+      if (addressFound) {
+        updatedDeployerArray.push(contractAddress); // Keep the address if found
+      }
+    }
+
+    // Check the better array
+    for (let contractAddress of betterArray) {
+      const addressFound = await addressExistsInCollections(contractAddress);
+      if (addressFound) {
+        updatedBetterArray.push(contractAddress); // Keep the address if found
+      }
+    }
+
+    // Update user object with cleaned up deployer and better arrays
+    await userCollection.updateOne(
+      { userId: userId },
+      { $set: { deployer: updatedDeployerArray, better: updatedBetterArray } }
+    );
+
+    console.log("User object cleaned up");
+  } catch (error) {
+    console.error("Error cleaning up user object:", error);
+  }
+}
+
 app.get("/api/existingUser/:address", async (req, res) => {
   const { address } = req.params;
   const collection = db.collection("Users");
@@ -978,6 +1039,7 @@ app.get("/api/existingUser/:address", async (req, res) => {
     const existingUser = await collection.findOne({ userId: address });
 
     if (existingUser) {
+      await cleanUpUserBets(address);
       // User exists, return 200 OK
       res.sendStatus(200);
     } else {
