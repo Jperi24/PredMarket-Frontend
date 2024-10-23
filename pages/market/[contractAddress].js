@@ -476,12 +476,12 @@ export default function PredMarketPageV2() {
     }
   };
 
-  const calculateTotalWinnings = (allbets) => {
+  const calculateTotalWinnings = async (allbets) => {
     if (!Array.isArray(allbets)) {
       return "0";
     }
 
-    const totalWinnings = allbets
+    const filteredBets = allbets
       .filter((bet) => {
         if (bet.deployer !== bet.owner) {
           return true;
@@ -492,26 +492,50 @@ export default function PredMarketPageV2() {
       })
       .filter(
         (bet) => bet.deployer === signerAddress || bet.owner === signerAddress
-      )
-      .reduce((total, bet) => {
-        const amountDeployerLocked = parseFloat(
-          ethers.utils.formatEther(bet.amountDeployerLocked)
-        );
-        const amountBuyerLocked = parseFloat(
-          ethers.utils.formatEther(
-            bet.amountBuyerLocked > 0 ? bet.amountBuyerLocked : 0
-          )
-        );
+      );
 
-        if (isNaN(amountDeployerLocked) || isNaN(amountBuyerLocked)) {
-          console.error("Invalid BigNumber conversion encountered.");
-          return total;
-        }
+    // Map over the filtered bets and process async calls outside of the reduce
+    const winningsPromises = filteredBets.map(async (bet) => {
+      const amountDeployerLocked = parseFloat(
+        ethers.utils.formatEther(bet.amountDeployerLocked)
+      );
+      const amountBuyerLocked = parseFloat(
+        ethers.utils.formatEther(
+          bet.amountBuyerLocked > 0 ? bet.amountBuyerLocked : 0
+        )
+      );
 
-        return total + amountDeployerLocked + amountBuyerLocked;
-      }, 0);
+      if (isNaN(amountDeployerLocked) || isNaN(amountBuyerLocked)) {
+        console.error("Invalid BigNumber conversion encountered.");
+        return 0;
+      }
+
+      // Fetch amount made from sold bets and ensure proper conversion to Ether
+      const amountMadeFromSoldBetsInWei =
+        await contractInstance.amountMadeFromSoldBets(signerAddress);
+      console.log("amount made from selling", amountMadeFromSoldBetsInWei);
+
+      // Explicit conversion from Wei to Ether using ethers.utils.formatEther
+      const amountMadeFromSoldBets = ethers.utils.formatEther(
+        bigNumberToNumber(amountMadeFromSoldBetsInWei)
+      );
+
+      return (
+        amountDeployerLocked +
+        amountBuyerLocked +
+        parseFloat(amountMadeFromSoldBets)
+      );
+    });
+
+    // Wait for all promises to resolve
+    const winnings = await Promise.all(winningsPromises);
+
+    const totalWinnings = winnings.reduce((total, currentWinnings) => {
+      return total + currentWinnings;
+    }, 0);
 
     console.log(`Total Winnings: ${totalWinnings}`);
+
     return totalWinnings.toString();
   };
 
@@ -522,15 +546,29 @@ export default function PredMarketPageV2() {
   const displayAllBets = useCallback(async () => {
     if (contractInstance) {
       try {
-        const [allbets, endTime, winner, state, endOfVoting, winnings] =
-          await contractInstance.allBets_Balance();
+        const [
+          allbets,
+          endTime,
+          winner,
+          state,
+          endOfVoting,
+          winnings,
+          winngs2,
+          winnings3,
+        ] = await contractInstance.allBets_Balance();
+        if (bigNumberToNumber(winnings) === 0) {
+          setTotalWinnings(await calculateTotalWinnings(allbets));
+        } else {
+          setTotalWinnings(bigNumberToNumber(winnings));
+        }
+
         setBetsBalance({
           allbets,
           endTime: bigNumberToNumber(endTime),
           winner,
           state,
           endOfVoting: bigNumberToNumber(endOfVoting),
-          winnings: ethers.utils.formatEther(winnings),
+          winnings: bigNumberToNumber(winnings),
         });
       } catch (error) {
         console.error("Error displaying bets:", error);
@@ -723,6 +761,7 @@ export default function PredMarketPageV2() {
         "winnerDeclaredVoting",
         "userVoted",
         "userWithdrew",
+        "BetEdited",
       ];
 
       eventNames.forEach((eventName) => {
@@ -927,7 +966,7 @@ export default function PredMarketPageV2() {
                     <h3>Betting Concluded</h3>
                     <p>Your balance available for withdrawal:</p>
                     <h2>
-                      {bets_balance.winnings} {chain?.nativeCurrency?.symbol}
+                      {totalWinnings} {chain?.nativeCurrency?.symbol}
                     </h2>
                     <button
                       className="withdraw-btn"

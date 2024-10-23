@@ -34,6 +34,7 @@ export default function MyAccount() {
       }
 
       const contractsData = await response.json();
+      console.log(contractsData);
       categorizeContracts(contractsData);
       console.log("Contract Data", contractsData);
     } catch (error) {
@@ -79,24 +80,46 @@ export default function MyAccount() {
           // Store the contract instance for later use
           contractInstancesTemp[contract.address] = contractInstance;
 
-          // Check if the contract is completed by calling the 'winner' method
-          const winner = await contractInstance.winner();
-          const isCompleted = winner.toString() !== "0";
-
-          // Check the role(s) of the user in this contract
+          // Initialize default values in case of errors
+          let winner = "void";
+          let isCompleted = false;
           const userRoles = contract.role || [];
+
+          try {
+            // Check if the contract is completed by calling the 'winner' method
+            winner = await contractInstance.winner();
+            isCompleted = winner.toString() !== "0";
+          } catch (contractReadError) {
+            // If reading from the contract fails, log the error and continue with default values
+            console.error(
+              `Error reading winner for contract ${contract.address}:`,
+              contractReadError
+            );
+          }
 
           // Add the contract to the deployed category if the user is a deployer
           if (userRoles.includes("deployer")) {
-            categorizedContracts.deployed.push({ ...contract, userRoles });
+            categorizedContracts.deployed.push({
+              ...contract,
+              userRoles,
+              winner,
+            });
           }
 
           // If the user is both a deployer and a better, add to multiple categories
           if (userRoles.includes("better")) {
             if (isCompleted) {
-              categorizedContracts.completed.push({ ...contract, userRoles });
+              categorizedContracts.completed.push({
+                ...contract,
+                userRoles,
+                winner,
+              });
             } else {
-              categorizedContracts.ongoing.push({ ...contract, userRoles });
+              categorizedContracts.ongoing.push({
+                ...contract,
+                userRoles,
+                winner,
+              });
             }
           }
         } catch (innerError) {
@@ -104,6 +127,15 @@ export default function MyAccount() {
             `Error processing contract ${contract.address}:`,
             innerError
           );
+
+          // If an error occurs in contract processing, still populate with void values
+          const userRoles = contract.role || [];
+          categorizedContracts.ongoing.push({
+            ...contract,
+            userRoles,
+            winner: "void",
+            isCompleted: false,
+          });
         }
       }
 

@@ -55,7 +55,7 @@ async function moveExpiredContracts() {
     const targetCollection = db.collection("ExpiredContracts");
 
     // Get the current time and subtract 7 days (7 days * 24 hours * 60 minutes * 60 seconds * 1000 milliseconds)
-    const sevenDaysAgo = new Date().getTime() - 7 * 24 * 60 * 60 * 1000;
+    const sevenDaysAgo = new Date().getTime() - 2 * 24 * 60 * 60 * 1000;
     // Convert milliseconds back to seconds for the timestamp comparison in MongoDB
     // const threshold = Math.floor(sevenDaysAgo / 1000);
     const threshold = Math.floor(sevenDaysAgo / 1000);
@@ -414,7 +414,7 @@ async function fetchWithRetry(query, variables, retries = 3, delay = 1000) {
 }
 
 async function fetchAllTournamentDetails() {
-  if (isFetchingTournaments) {
+  if (isFetchingTournaments || isUpdatingFrequentCache) {
     console.log("fetchAllTournamentDetails is already running. Exiting.");
     return;
   }
@@ -482,8 +482,7 @@ async function fetchAllTournamentDetails() {
     }
 
     hasMore = true;
-    while (hasMore && allTournaments.length < 9) {
-      ////////////////////////////////////////////////////////////FIXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+    while (hasMore && allTournaments.length < 50) {
       await sleep(100); // Updated sleep from 10 to 100
       try {
         const data = await fetchWithRetry(GET_ALL_TOURNAMENTS_QUERY, {
@@ -595,13 +594,13 @@ async function fetchAllTournamentDetails() {
 let isUpdatingFrequentCache = false;
 
 async function updateFrequentCache() {
-  if (isFetchingTournaments) {
+  if (isFetchingTournaments || isUpdatingFrequentCache) {
     console.log("updateFrequentCache is already running. Exiting.");
     return;
   }
 
   isUpdatingFrequentCache = true;
-  setStatuses.clear();
+
   console.log("Updating frequent cache for ongoing tournaments...");
 
   const collection = db.collection("Contracts");
@@ -815,7 +814,7 @@ async function updateFrequentCache() {
   isUpdatingFrequentCache = false;
 }
 
-cron.schedule("0 */5 * * * *", updateFrequentCache); // Update frequent cache every 20 minutes
+cron.schedule("0 */15 * * * *", updateFrequentCache); // Update frequent cache every 20 minutes
 cron.schedule("0 0 */24 * * *", fetchAllTournamentDetails);
 
 async function updateMongoDBWithWinner(setKey, winnerName) {
