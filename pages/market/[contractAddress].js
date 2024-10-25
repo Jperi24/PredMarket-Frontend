@@ -104,7 +104,7 @@ export default function PredMarketPageV2() {
     allbets: [],
     endTime: 0,
     winner: 0,
-    state: 0,
+    state: null,
     endOfVoting: 0,
     winnings: 0,
   });
@@ -122,7 +122,7 @@ export default function PredMarketPageV2() {
   useEffect(() => {
     const interval = setInterval(() => {
       const newTime = Math.floor(Date.now() / 1000);
-      console.log(newTime, "new time"); // Log the converted timestamp
+
       setCurrentTime(newTime);
       console.log(
         isBettingOpen,
@@ -138,23 +138,24 @@ export default function PredMarketPageV2() {
   }, []);
 
   useEffect(() => {
-    const updateStates = () => {
-      console.log(bets_balance.state);
-      setIsBettingOpen(
-        bets_balance.state === 0 && currentTime < bets_balance.endTime
-      );
-      setIsVotingTime(
-        (bets_balance.state === 1 && currentTime < bets_balance.endOfVoting) ||
-          (bets_balance.state === 0 && currentTime > bets_balance.endTime)
-      );
-      setIsBettingClosed(
-        bets_balance.state === 0 && currentTime > bets_balance.endTime
-      );
-      setIsDisagreementState(bets_balance.state === 2);
-    };
-
-    updateStates();
-  }, [bets_balance, currentTime, contract]);
+    if (contractInstance) {
+      const updateStates = () => {
+        setIsBettingOpen(
+          bets_balance.state === 0 && currentTime < bets_balance.endTime
+        );
+        setIsVotingTime(
+          (bets_balance.state === 1 &&
+            currentTime < bets_balance.endOfVoting) ||
+            (bets_balance.state === 0 && currentTime > bets_balance.endTime)
+        );
+        setIsBettingClosed(
+          bets_balance.state === 0 && currentTime > bets_balance.endTime
+        );
+        setIsDisagreementState(bets_balance.state === 2);
+      };
+      updateStates();
+    }
+  }, [contractInstance, bets_balance, currentTime, contract]);
 
   useEffect(() => {
     const deployContract = async () => {
@@ -481,6 +482,14 @@ export default function PredMarketPageV2() {
       return "0";
     }
 
+    // Fetch amount made from sold bets once and ensure proper conversion to Ether
+    const amountMadeFromSoldBetsInWei =
+      await contractInstance.amountMadeFromSoldBets(signerAddress);
+    const amountMadeFromSoldBets = ethers.utils.parseEther(
+      ethers.utils.formatEther(amountMadeFromSoldBetsInWei)
+    ); // Keep it as a BigNumber
+
+    // Filter and process bets
     const filteredBets = allbets
       .filter((bet) => {
         if (bet.deployer !== bet.owner) {
@@ -494,49 +503,30 @@ export default function PredMarketPageV2() {
         (bet) => bet.deployer === signerAddress || bet.owner === signerAddress
       );
 
-    // Map over the filtered bets and process async calls outside of the reduce
+    // Map over the filtered bets and process async calls
     const winningsPromises = filteredBets.map(async (bet) => {
-      const amountDeployerLocked = parseFloat(
+      const amountDeployerLocked = ethers.utils.parseEther(
         ethers.utils.formatEther(bet.amountDeployerLocked)
       );
-      const amountBuyerLocked = parseFloat(
-        ethers.utils.formatEther(
-          bet.amountBuyerLocked > 0 ? bet.amountBuyerLocked : 0
-        )
+      const amountBuyerLocked = ethers.utils.parseEther(
+        ethers.utils.formatEther(bet.amountBuyerLocked)
       );
 
-      if (isNaN(amountDeployerLocked) || isNaN(amountBuyerLocked)) {
-        console.error("Invalid BigNumber conversion encountered.");
-        return 0;
-      }
-
-      // Fetch amount made from sold bets and ensure proper conversion to Ether
-      const amountMadeFromSoldBetsInWei =
-        await contractInstance.amountMadeFromSoldBets(signerAddress);
-      console.log("amount made from selling", amountMadeFromSoldBetsInWei);
-
-      // Explicit conversion from Wei to Ether using ethers.utils.formatEther
-      const amountMadeFromSoldBets = ethers.utils.formatEther(
-        bigNumberToNumber(amountMadeFromSoldBetsInWei)
-      );
-
-      return (
-        amountDeployerLocked +
-        amountBuyerLocked +
-        parseFloat(amountMadeFromSoldBets)
-      );
+      return amountDeployerLocked
+        .add(amountBuyerLocked)
+        .add(amountMadeFromSoldBets);
     });
 
     // Wait for all promises to resolve
     const winnings = await Promise.all(winningsPromises);
 
     const totalWinnings = winnings.reduce((total, currentWinnings) => {
-      return total + currentWinnings;
-    }, 0);
+      return total.add(currentWinnings); // Using BigNumber addition
+    }, ethers.BigNumber.from(0));
 
-    console.log(`Total Winnings: ${totalWinnings}`);
+    console.log(`Total Winnings: ${ethers.utils.formatEther(totalWinnings)}`);
 
-    return totalWinnings.toString();
+    return ethers.utils.formatEther(totalWinnings).toString();
   };
 
   const bigNumberToNumber = (bigNumber) => {
@@ -546,20 +536,15 @@ export default function PredMarketPageV2() {
   const displayAllBets = useCallback(async () => {
     if (contractInstance) {
       try {
-        const [
-          allbets,
-          endTime,
-          winner,
-          state,
-          endOfVoting,
-          winnings,
-          winngs2,
-          winnings3,
-        ] = await contractInstance.allBets_Balance();
+        const [allbets, endTime, winner, state, endOfVoting, winnings] =
+          await contractInstance.allBets_Balance();
+        console.log("allBets Winnings", ethers.utils.formatEther(winnings));
         if (bigNumberToNumber(winnings) === 0) {
           setTotalWinnings(await calculateTotalWinnings(allbets));
         } else {
-          setTotalWinnings(bigNumberToNumber(winnings));
+          const WinningsAsEth = ethers.utils.formatEther(winnings); // Convert BigNumber (wei) to string (ether)
+
+          setTotalWinnings(WinningsAsEth); // Set the state with a human-readable ether value
         }
 
         setBetsBalance({
