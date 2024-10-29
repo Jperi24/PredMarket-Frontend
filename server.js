@@ -4,6 +4,7 @@ const rateLimit = require("express-rate-limit");
 const { MongoClient } = require("mongodb");
 const cron = require("node-cron"); // Import node-cron
 const NodeCache = require("node-cache");
+const { ObjectId } = require("mongodb");
 const app = express();
 require("dotenv").config();
 
@@ -196,27 +197,39 @@ app.post("/addContract", async (req, res) => {
 });
 
 app.post("/moveToDisagreements", async (req, res) => {
+  const { contractAddress, reason } = req.body;
+  const result = await moveContractToDisagreements(contractAddress, reason);
+
+  if (result.success) {
+    res
+      .status(200)
+      .send("Contract moved to Disagreements collection successfully");
+  } else {
+    res.status(500).send(result.error);
+  }
+});
+
+async function moveContractToDisagreements(contractAddress, reason) {
   try {
-    const { contractAddress, reason } = req.body;
     let sourceCollection = db.collection("Contracts");
     const targetCollection = db.collection("Disagreements");
 
-    // Find the contract in the source collection
+    // Find the contract in the Contracts collection
     let contract = await sourceCollection.findOne({ address: contractAddress });
 
-    // If not found in ExpiredContracts, search in Contracts collection
+    // If not found in Contracts, search in ExpiredContracts collection
     if (!contract) {
       sourceCollection = db.collection("ExpiredContracts");
       contract = await sourceCollection.findOne({ address: contractAddress });
 
-      // If still not found, respond with an error
+      // If still not found, return an error
       if (!contract) {
-        return res.status(404).send("Contract not found in collections");
+        console.error("Contract not found in collections");
+        return { error: "Contract not found" };
       }
     }
 
     // Prepare the document to be inserted into the Disagreements collection
-    // Include the disagreementText and update the lastModified field
     const updatedContract = {
       ...contract,
       disagreementText: reason,
@@ -229,14 +242,56 @@ app.post("/moveToDisagreements", async (req, res) => {
     // Remove the original document from its source collection
     await sourceCollection.deleteOne({ address: contractAddress });
 
-    res
-      .status(200)
-      .send("Contract moved to Disagreements collection successfully");
+    console.log("Contract moved to Disagreements collection successfully");
+    return { success: true };
   } catch (error) {
     console.error("Error moving contract to Disagreements:", error);
-    res.status(500).send("Error moving contract");
+    return { error: "Error moving contract" };
   }
-});
+}
+
+// app.post("/moveToDisagreements", async (req, res) => {
+//   try {
+//     const { contractAddress, reason } = req.body;
+//     let sourceCollection = db.collection("Contracts");
+//     const targetCollection = db.collection("Disagreements");
+
+//     // Find the contract in the source collection
+//     let contract = await sourceCollection.findOne({ address: contractAddress });
+
+//     // If not found in ExpiredContracts, search in Contracts collection
+//     if (!contract) {
+//       sourceCollection = db.collection("ExpiredContracts");
+//       contract = await sourceCollection.findOne({ address: contractAddress });
+
+//       // If still not found, respond with an error
+//       if (!contract) {
+//         return res.status(404).send("Contract not found in collections");
+//       }
+//     }
+
+//     // Prepare the document to be inserted into the Disagreements collection
+//     // Include the disagreementText and update the lastModified field
+//     const updatedContract = {
+//       ...contract,
+//       disagreementText: reason,
+//       lastModified: new Date(),
+//     };
+
+//     // Insert the updated document into the Disagreements collection
+//     await targetCollection.insertOne(updatedContract);
+
+//     // Remove the original document from its source collection
+//     await sourceCollection.deleteOne({ address: contractAddress });
+
+//     res
+//       .status(200)
+//       .send("Contract moved to Disagreements collection successfully");
+//   } catch (error) {
+//     console.error("Error moving contract to Disagreements:", error);
+//     res.status(500).send("Error moving contract");
+//   }
+// });
 
 app.post("/moveFromDisagreementsToContracts", async (req, res) => {
   try {
@@ -683,7 +738,7 @@ async function updateFrequentCache() {
                 const normalizeString = (str) =>
                   str ? str.trim().toLowerCase() : "";
 
-                const doesSetExist = documents.some((docSet) => {
+                const matchingDocument = documents.find((docSet) => {
                   return (
                     normalizeString(docSet.eventA) ===
                       normalizeString(set.slots[0]?.entrant?.name) &&
@@ -693,6 +748,9 @@ async function updateFrequentCache() {
                       normalizeString(set.fullRoundText)
                   );
                 });
+
+                // Check if a matching document is found
+                const doesSetExist = !!matchingDocument;
 
                 // Log the set data
                 if (doesSetExist) {
@@ -721,7 +779,20 @@ async function updateFrequentCache() {
                       `Set ${cacheSetKey} has changed entrants or no longer exists with original entrants.`
                     );
 
-                    await updateMongoDBWithWinner(cacheSetKey, 3); // Set winnerName to 3 for invalid/canceled sets
+                    const contract = new ethers.Contract(
+                      matchingDocument.address,
+                      predMarketArtifact.abi,
+                      signer
+                    );
+
+                    // Call the declareWinner function
+                    const tx = await contract.changeState(2);
+                    await tx.wait();
+
+                    await moveContractToDisagreements(
+                      matchingDocument.address,
+                      "Entrants have changed or are no longer valid"
+                    );
                     setStatuses.set(cacheSetKey, {
                       status: "canceled",
                       winner: 3,
@@ -1181,14 +1252,94 @@ app.get("/api/tournament-details", (req, res) => {
   }
 });
 
-// Export functions and caches for testing
-module.exports = {
-  app,
-  fetchAllTournamentDetails,
-  updateFrequentCache,
-  dailyCache,
-  frequentCache,
-  setStatuses,
-  updateMongoDBWithWinner,
-  sleep,
-};
+app.post("/api/bets", async (req, res) => {
+  const betsCollection = db.collection("bets");
+  const {
+    action,
+    address,
+    amount,
+    buyerAmount,
+    condition,
+    additionalData,
+    contractAddress,
+    positionInArray, // Use these for operations on existing bets
+  } = req.body;
+
+  try {
+    switch (action) {
+      case "deploy":
+        // Validate required fields
+        if (
+          !address ||
+          amount === undefined ||
+          buyerAmount === undefined ||
+          !condition ||
+          !contractAddress ||
+          positionInArray === undefined
+        ) {
+          return res.status(400).send("Missing required fields for deploy");
+        }
+
+        // Create the bet document
+        const bet = {
+          contractAddress,
+          positionInArray,
+          deployer: address,
+          condition,
+          deployedAmount: amount,
+          buyerAmount,
+          buyer: null,
+          resellPrice: null,
+          betForSale: true,
+          timestamp: new Date(),
+          lastUpdated: new Date(),
+          additionalData: additionalData || {},
+        };
+
+        await betsCollection.insertOne(bet);
+
+        return res.status(201).json({
+          message: "Bet deployed successfully",
+        });
+
+      case "buy":
+        if (!address || !contractAddress || positionInArray === undefined) {
+          return res.status(400).send("Missing required fields for buy");
+        }
+
+        const betToBuy = await betsCollection.findOne({
+          contractAddress,
+          positionInArray,
+        });
+
+        if (!betToBuy) {
+          return res.status(404).send("Bet not found");
+        }
+
+        if (betToBuy.buyer) {
+          return res.status(400).send("Bet already bought");
+        }
+
+        await betsCollection.updateOne(
+          { contractAddress, positionInArray },
+          {
+            $set: {
+              buyer: address,
+              betForSale: false,
+              lastUpdated: new Date(),
+            },
+          }
+        );
+
+        return res.status(200).send("Bet bought successfully");
+
+      // Handle other actions ('resell', 'unlist', 'edit') similarly, using contractAddress and positionInArray
+
+      default:
+        return res.status(400).send("Invalid action");
+    }
+  } catch (error) {
+    console.error(`Error processing ${action}:`, error);
+    res.status(500).send(`Error processing ${action}`);
+  }
+});

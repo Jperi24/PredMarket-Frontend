@@ -99,6 +99,7 @@ export default function PredMarketPageV2() {
   const [contractBalance, setContractBalance] = useState("");
   const [newDeployedPrices, setNewDeployedPrices] = useState({});
   const [newAskingPrices, setNewAskingPrices] = useState({});
+  const [selectedState, setSelectedState] = useState("");
 
   const [bets_balance, setBetsBalance] = useState({
     allbets: [],
@@ -241,6 +242,59 @@ export default function PredMarketPageV2() {
     setShowModal(false);
   };
 
+  const handleBetAction = async (action, data) => {
+    try {
+      // Construct the request body by combining the action with the data object
+      const requestBody = {
+        action,
+        ...data,
+      };
+
+      const response = await fetch("/api/bets", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Error performing ${action}: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+
+      // Handle the response based on the action
+      switch (action) {
+        case "deploy":
+          console.log("Bet deployed successfully with betId:", result.betId);
+          // Store betId if needed for future actions
+          return result.betId;
+        case "buy":
+          console.log("Bet bought successfully");
+          break;
+        case "resell":
+          console.log("Bet listed for resale successfully");
+          break;
+        case "unlist":
+          console.log("Bet unlisted successfully");
+          break;
+        case "edit":
+          console.log("Bet edited successfully");
+          break;
+        default:
+          console.log("Action completed successfully");
+      }
+
+      // Return the result if needed
+      return result;
+    } catch (error) {
+      console.error(`Error performing ${action}:`, error);
+      // You might want to rethrow the error or handle it appropriately
+      throw error;
+    }
+  };
+
   const bigNumberToString = (bigNumber) =>
     parseInt(bigNumber._hex, 16).toString();
 
@@ -270,10 +324,32 @@ export default function PredMarketPageV2() {
                 value: valueInWei,
               }
             );
-            await tx.wait(); // Wait for the transaction to be mined
+
+            const receipt = await tx.wait();
+
+            // Extract the positionInArray from the transaction receipt
+            const event = receipt.events.find(
+              (event) => event.event === "userCreatedABet"
+            );
+            if (!event) {
+              throw new Error(
+                "NewBetCreated event not found in transaction receipt"
+              );
+            }
+            const positionInArray = event.args.positionInArray.toNumber();
 
             // Update the database after the transaction is successful
             await updateBetterMongoDB(contractAddress, signerAddress);
+
+            const data = {
+              address: signerAddress,
+              amount: myBet,
+              buyerAmount: buyIn,
+              condition: reverseSelected,
+              contractAddress: contractAddress,
+              positionInArray: positionInArray,
+            };
+            await handleBetAction("deploy", data);
           } catch (error) {
             // Log the error or handle it as needed
             console.error("Error occurred:", error);
@@ -299,6 +375,15 @@ export default function PredMarketPageV2() {
 
       const tx = await contractInstance.unlistBets(positions);
       await tx.wait();
+      for (const positionInArray of positionsArray) {
+        const betData = {
+          address: signerAddress,
+          contractAddress,
+          positionInArray,
+        };
+
+        await handleBetAction("unlist", betData);
+      }
       setSelectedBets([]);
     } catch (error) {
       console.log("Can't unlist bet, this is why:");
@@ -340,6 +425,15 @@ export default function PredMarketPageV2() {
           });
           await tx.wait();
           updateBetterMongoDB(contractAddress, signerAddress);
+
+          const betData = {
+            address: signerAddress,
+            contractAddress,
+            positionInArray,
+          };
+
+          // Call the backend API
+          await handleBetAction("buy", betData);
         } catch (error) {
           // Log the error or handle it as needed
           console.error("Error occurred:", error);
@@ -366,6 +460,15 @@ export default function PredMarketPageV2() {
             valueInWei
           );
           await tx.wait();
+          const betData = {
+            address: signerAddress,
+            contractAddress,
+            positionInArray,
+            amount: askingPrice,
+          };
+
+          // Call the backend API
+          await handleBetAction("resell", betData);
         } catch (error) {
           // Log the error or handle it as needed
           console.error("Error occurred:", error);
@@ -428,6 +531,16 @@ export default function PredMarketPageV2() {
           );
           await tx.wait(); // Wait for transaction to be mined
           alert("Bet updated successfully!");
+          const betData = {
+            address: signerAddress,
+            contractAddress,
+            positionInArray,
+            amount: newDeployedPriceInEth, // Use 'amount' for deployed amount
+            buyerAmount: newAskingPriceInEth,
+          };
+
+          // Call the backend API
+          await handleBetAction("edit", betData);
         } catch (error) {
           console.error("Transaction Error:", error);
           alert("Failed to complete the transaction. Please try again.");
@@ -538,8 +651,8 @@ export default function PredMarketPageV2() {
       try {
         const [allbets, endTime, winner, state, endOfVoting, winnings] =
           await contractInstance.allBets_Balance();
-        console.log("allBets Winnings", ethers.utils.formatEther(winnings));
-        if (bigNumberToNumber(winnings) === 0) {
+
+        if (state.toString() === "0") {
           setTotalWinnings(await calculateTotalWinnings(allbets));
         } else {
           const WinningsAsEth = ethers.utils.formatEther(winnings); // Convert BigNumber (wei) to string (ether)
@@ -605,6 +718,35 @@ export default function PredMarketPageV2() {
         setShowModal(true);
       } catch (error) {
         console.error("Error while declaring winner:", error);
+      }
+    }
+  };
+
+  const changeState = async (state) => {
+    if (contractInstance) {
+      try {
+        // Prepare modal content for user confirmation
+        setModalContent(
+          `<p>Are you sure you want to change the contract to state <strong>${state}</strong>? This action cannot be undone.</p>`
+        );
+
+        // Define action for the modal confirmation
+        setModalAction(() => async () => {
+          try {
+            const tx = await contractInstance.changeState(state);
+            await tx.wait();
+
+            alert("State Changed Successfully!");
+          } catch (error) {
+            console.error("Transaction Error:", error);
+            alert("Failed to changeState");
+          }
+        });
+
+        // Show the modal for user confirmation
+        setShowModal(true);
+      } catch (error) {
+        console.error("Error while changing State:", error);
       }
     }
   };
@@ -847,6 +989,27 @@ export default function PredMarketPageV2() {
                   </select>
                   <button className="end-bet-btn" onClick={handleEndBet}>
                     Finalize Bet
+                  </button>
+
+                  {/* Dropdown to select contract state to change to */}
+                  <select
+                    id="stateSelect"
+                    className="dropdown"
+                    value={selectedState}
+                    onChange={(e) => setSelectedState(e.target.value)}
+                  >
+                    <option value="0">State: OPEN</option>
+                    <option value="1">State: VOTING</option>
+                    <option value="2">State: UNDERREVIEW</option>
+                    <option value="3">State: SETTLED</option>
+                  </select>
+
+                  {/* Button to change contract state */}
+                  <button
+                    className="change-state-btn"
+                    onClick={() => changeState(selectedState)}
+                  >
+                    Change Contract State
                   </button>
                 </div>
               )}
