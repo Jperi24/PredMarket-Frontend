@@ -100,6 +100,8 @@ export default function PredMarketPageV2() {
   const [newDeployedPrices, setNewDeployedPrices] = useState({});
   const [newAskingPrices, setNewAskingPrices] = useState({});
   const [selectedState, setSelectedState] = useState("");
+  const [userBetsHistory, setUserBets] = useState([]);
+  const [isLoadingBets, setIsLoadingBets] = useState(false);
 
   const [bets_balance, setBetsBalance] = useState({
     allbets: [],
@@ -137,26 +139,6 @@ export default function PredMarketPageV2() {
 
     return () => clearInterval(interval); // Clean up the interval
   }, []);
-
-  useEffect(() => {
-    if (contractInstance) {
-      const updateStates = () => {
-        setIsBettingOpen(
-          bets_balance.state === 0 && currentTime < bets_balance.endTime
-        );
-        setIsVotingTime(
-          (bets_balance.state === 1 &&
-            currentTime < bets_balance.endOfVoting) ||
-            (bets_balance.state === 0 && currentTime > bets_balance.endTime)
-        );
-        setIsBettingClosed(
-          bets_balance.state === 0 && currentTime > bets_balance.endTime
-        );
-        setIsDisagreementState(bets_balance.state === 2);
-      };
-      updateStates();
-    }
-  }, [contractInstance, bets_balance, currentTime, contract]);
 
   useEffect(() => {
     const deployContract = async () => {
@@ -202,6 +184,24 @@ export default function PredMarketPageV2() {
           } else {
             console.error("Contract or contract.chain.chainId is not defined");
           }
+          setIsLoadingBets(true);
+          try {
+            const response = await fetch(
+              `${process.env.NEXT_PUBLIC_API_BASE_URL}/user-bets/${saddress}?contractAddress=${contractAddress}`
+            );
+
+            if (!response.ok) {
+              throw new Error(`Error fetching bets: ${await response.text()}`);
+            }
+
+            const bets = await response.json();
+            setUserBets(bets);
+            console.log(bets, "these are the user bets");
+          } catch (error) {
+            console.error("Failed to fetch user bets:", error);
+          } finally {
+            setIsLoadingBets(false);
+          }
         }
       }
     };
@@ -210,6 +210,26 @@ export default function PredMarketPageV2() {
       deployContract();
     }
   }, [contractAddress, signer, contract]);
+
+  useEffect(() => {
+    if (contractInstance) {
+      const updateStates = () => {
+        setIsBettingOpen(
+          bets_balance.state === 0 && currentTime < bets_balance.endTime
+        );
+        setIsVotingTime(
+          (bets_balance.state === 1 &&
+            currentTime < bets_balance.endOfVoting) ||
+            (bets_balance.state === 0 && currentTime > bets_balance.endTime)
+        );
+        setIsBettingClosed(
+          bets_balance.state === 0 && currentTime > bets_balance.endTime
+        );
+        setIsDisagreementState(bets_balance.state === 2);
+      };
+      updateStates();
+    }
+  }, [contractInstance, bets_balance, currentTime, contract]);
 
   const updateBetterMongoDB = async (address, signerAddress) => {
     try {
@@ -1400,6 +1420,8 @@ export default function PredMarketPageV2() {
                                     })
                                   }
                                   placeholder={`New Deployed (${chain?.nativeCurrency?.symbol})`}
+                                  maxLength={100}
+                                  style={{ width: "80px" }}
                                 />
                                 <input
                                   className="edit-input"
@@ -1414,6 +1436,7 @@ export default function PredMarketPageV2() {
                                   }
                                   placeholder={`New Ask (${chain?.nativeCurrency?.symbol})`}
                                   maxLength={100}
+                                  style={{ width: "80px" }}
                                 />
                               </div>
                               <button
@@ -1444,6 +1467,81 @@ export default function PredMarketPageV2() {
               )}
             </div>
           </div>
+          <div className="betting-history-column">
+            <h2>Your Betting History</h2>
+            {isLoadingBets ? (
+              <div className="loading-spinner">Loading history...</div>
+            ) : userBetsHistory.length > 0 ? (
+              <div className="history-list">
+                {userBetsHistory.map((bet, index) => (
+                  <div key={index} className="history-card">
+                    <div className="history-card-header">
+                      <span className="bet-number">
+                        Bet #{bet.positionInArray + 1}
+                      </span>
+                      <span
+                        className={`bet-status ${bet.status?.toLowerCase()}`}
+                      >
+                        {bet.betForSale
+                          ? bet.deployer === signerAddress.toLowerCase()
+                            ? "No One Bought"
+                            : "Re-Selling Not Sold"
+                          : "Not Active"}
+                      </span>
+                    </div>
+                    <div className="history-card-body">
+                      <div className="bet-amount">
+                        <span>Amount Bet:</span>
+                        <strong>
+                          {bet.deployedAmount} {chain?.nativeCurrency?.symbol}
+                        </strong>
+                      </div>
+                      <div className="bet-prediction">
+                        <span>My Prediction:</span>
+                        <strong>
+                          {bet.condition === "1"
+                            ? contract.eventA
+                            : contract.eventB}{" "}
+                          Wins
+                        </strong>
+                      </div>
+                      {bet.buyerAmount && (
+                        <div className="potential-return">
+                          <span>Potential Return:</span>
+                          <strong>
+                            {bet.buyerAmount + bet.deployedAmount}{" "}
+                            {chain?.nativeCurrency?.symbol}
+                          </strong>
+                        </div>
+                      )}
+                      <div className="bet-timestamp">
+                        <span>Placed:</span>
+                        <time>
+                          {new Date(bet.timestamp).toLocaleDateString()}
+                        </time>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="no-history">
+                <div className="empty-state">
+                  <span className="empty-icon">🎲</span>
+                  <h3>No Betting History</h3>
+                  <p>You haven't placed any bets in this market yet.</p>
+                  {isBettingOpen && (
+                    <button
+                      className="start-betting-btn"
+                      onClick={() => setShowInputs(true)}
+                    >
+                      Place Your First Bet
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
       <Modal
@@ -1460,6 +1558,136 @@ export default function PredMarketPageV2() {
           background: linear-gradient(135deg, #1a1a2e, #16213e);
           color: #e0e0e0;
           font-family: "Roboto", sans-serif;
+        }
+        .betting-history-column {
+          flex: 1;
+          min-width: 300px;
+          background: rgba(255, 255, 255, 0.05);
+          border-radius: 10px;
+          padding: 1rem;
+          margin-top: 1rem;
+        }
+
+        .history-list {
+          display: flex;
+          flex-direction: column;
+          gap: 1rem;
+          max-height: 500px;
+          overflow-y: auto;
+          padding-right: 0.5rem;
+        }
+
+        .history-card {
+          background: rgba(255, 255, 255, 0.08);
+          border-radius: 8px;
+          overflow: hidden;
+          transition: transform 0.2s ease;
+        }
+
+        .history-card:hover {
+          transform: translateY(-2px);
+        }
+
+        .history-card-header {
+          background: rgba(0, 0, 0, 0.2);
+          padding: 0.75rem 1rem;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .bet-number {
+          font-weight: bold;
+          color: #4ecdc4;
+        }
+
+        .bet-status {
+          padding: 0.25rem 0.75rem;
+          border-radius: 12px;
+          font-size: 0.85rem;
+          text-transform: capitalize;
+        }
+
+        .bet-status.active {
+          background: #4ecdc4;
+          color: #1a1a2e;
+        }
+
+        .bet-status.completed {
+          background: #45b7d1;
+          color: #1a1a2e;
+        }
+
+        .bet-status.cancelled {
+          background: #fc5c65;
+          color: #fff;
+        }
+
+        .history-card-body {
+          padding: 1rem;
+          display: grid;
+          gap: 0.75rem;
+        }
+
+        .history-card-body > div {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .history-card-body span {
+          color: #b0b0b0;
+        }
+
+        .history-card-body strong {
+          color: #fff;
+        }
+
+        .no-history {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          min-height: 300px;
+        }
+
+        .empty-state {
+          text-align: center;
+        }
+
+        .empty-icon {
+          font-size: 3rem;
+          margin-bottom: 1rem;
+          display: block;
+        }
+
+        .start-betting-btn {
+          margin-top: 1rem;
+          background: #4ecdc4;
+          color: #1a1a2e;
+          border: none;
+          padding: 0.75rem 1.5rem;
+          border-radius: 4px;
+          cursor: pointer;
+          transition: all 0.3s ease;
+        }
+
+        .start-betting-btn:hover {
+          background: #45b7d1;
+          transform: translateY(-2px);
+        }
+
+        .loading-spinner {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          min-height: 300px;
+          color: #4ecdc4;
+        }
+
+        @media (max-width: 1200px) {
+          .betting-history-column {
+            order: 4;
+          }
         }
 
         .betting-arena {

@@ -1494,6 +1494,7 @@ app.post("/api/bets", async (req, res) => {
   } = req.body;
 
   contractAddress = String(contractAddress).toLowerCase();
+  address = String(address).toLowerCase();
   positionInArray = parseInt(positionInArray, 10);
 
   // Basic validation for common fields
@@ -1545,7 +1546,8 @@ app.post("/api/bets", async (req, res) => {
           deployedAmount: amount,
           buyerAmount,
           buyer: null,
-          resellPrice: null,
+          resellPrice: [],
+          reseller: [],
           betForSale: true,
           timestamp: new Date(),
           lastUpdated: new Date(),
@@ -1595,16 +1597,36 @@ app.post("/api/bets", async (req, res) => {
           return res.status(404).send("Bet not found");
         }
 
-        await betsCollection.updateOne(
-          { contractAddress, positionInArray },
-          {
-            $set: {
-              resellPrice: amount,
-              betForSale: true,
-              lastUpdated: new Date(),
-            },
-          }
-        );
+        if (
+          betToResell?.reseller?.length > 0 &&
+          betToResell.reseller[betToResell.reseller.length - 1] === address
+        ) {
+          // If the last element in the `reseller` array matches the current address, update the last element in `resellPrice`
+          await betsCollection.updateOne(
+            { contractAddress, positionInArray },
+            {
+              $set: {
+                [`resellPrice.${betToResell.resellPrice.length - 1}`]: amount, // Update last element of resellPrice
+                lastUpdated: new Date(),
+              },
+            }
+          );
+        } else {
+          // If it doesn't match, push the new values to both arrays
+          await betsCollection.updateOne(
+            { contractAddress, positionInArray },
+            {
+              $push: {
+                resellPrice: amount,
+                reseller: address,
+              },
+              $set: {
+                betForSale: true,
+                lastUpdated: new Date(),
+              },
+            }
+          );
+        }
 
         return res
           .status(200)
@@ -1626,7 +1648,7 @@ app.post("/api/bets", async (req, res) => {
           {
             $set: {
               betForSale: false,
-              resellPrice: null,
+
               lastUpdated: new Date(),
             },
           }
@@ -1676,8 +1698,11 @@ app.post("/api/bets", async (req, res) => {
 
 app.get("/api/user-bets/:address", async (req, res) => {
   const betsCollection = db.collection("bets");
-  const { address } = req.params;
-  const { contractAddress } = req.query;
+  let { address } = req.params;
+  let { contractAddress } = req.query;
+
+  address = String(address).toLowerCase();
+  contractAddress = String(contractAddress).toLowerCase();
 
   try {
     // Validate input parameters
@@ -1685,13 +1710,26 @@ app.get("/api/user-bets/:address", async (req, res) => {
       return res.status(400).send("Address and contractAddress are required");
     }
 
+    console.log(
+      "Querying for contractADdress: ",
+      contractAddress,
+      "And address: ",
+      address
+    );
+
     // Build the query object
     const query = {
       contractAddress: contractAddress,
-      $or: [{ deployer: address }, { buyer: address }],
+      $or: [
+        { deployer: address },
+        { buyer: address },
+        { reseller: address }, // Checks if `address` is in the `reseller` array
+      ],
     };
 
     const bets = await betsCollection.find(query).toArray();
+
+    console.log(bets);
 
     res.json(bets);
   } catch (error) {
