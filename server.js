@@ -518,7 +518,7 @@ async function fetchAllTournamentDetails() {
   console.log("Finished Querying featured Tourneys");
 
   // Fetch Regular Tournaments if the total is less than 50
-  if (allTournaments.length < 50) {
+  if (allTournaments.length < 1) {
     try {
       const data = await fetchWithRetry(GET_ALL_TOURNAMENTS_QUERY, {
         afterDate3,
@@ -1252,35 +1252,291 @@ app.get("/api/tournament-details", (req, res) => {
   }
 });
 
+// app.post("/api/bets", async (req, res) => {
+//   const betsCollection = db.collection("bets");
+//   let {
+//     action,
+//     address,
+//     amount,
+//     buyerAmount,
+//     condition,
+//     contractAddress,
+//     positionInArray,
+//   } = req.body;
+
+//   contractAddress = String(contractAddress).toLowerCase();
+
+//   // Ensure positionInArray is an integer
+//   positionInArray = parseInt(positionInArray, 10);
+//   amount = parseFloat(amount);
+//   buyerAmount = parseFloat(buyerAmount);
+
+//   try {
+//     switch (action) {
+//       case "deploy":
+//         // Validate required fields
+//         if (
+//           !address ||
+//           amount === undefined ||
+//           buyerAmount === undefined ||
+//           !condition ||
+//           !contractAddress ||
+//           positionInArray === undefined
+//         ) {
+//           return res.status(400).send("Missing required fields for deploy");
+//         }
+
+//         // Check if the bet already exists
+//         const existingBet = await betsCollection.findOne({
+//           contractAddress,
+//           positionInArray,
+//         });
+
+//         if (existingBet) {
+//           return res.status(400).send("Bet already exists");
+//         }
+
+//         // Create the bet document
+//         const bet = {
+//           contractAddress,
+//           positionInArray,
+//           deployer: address,
+//           condition,
+//           deployedAmount: amount,
+//           buyerAmount,
+//           buyer: null,
+//           resellPrice: null,
+//           betForSale: true,
+//           timestamp: new Date(),
+//           lastUpdated: new Date(),
+//         };
+
+//         await betsCollection.insertOne(bet);
+
+//         return res.status(201).json({
+//           message: "Bet deployed successfully",
+//         });
+
+//       case "buy":
+//         if (!address || !contractAddress || positionInArray === undefined) {
+//           return res.status(400).send("Missing required fields for buy");
+//         }
+//         console.log("Searching for bet with:", {
+//           contractAddress,
+//           positionInArray,
+//         });
+
+//         const betToBuy = await betsCollection.findOne({
+//           contractAddress,
+//           positionInArray,
+//         });
+
+//         console.log(betToBuy);
+
+//         if (!betToBuy) {
+//           return res.status(404).send("Bet not found");
+//         }
+
+//         if (betToBuy.buyer) {
+//           return res.status(400).send("Bet already bought");
+//         }
+
+//         if (!betToBuy.betForSale) {
+//           return res.status(400).send("Bet is not for sale");
+//         }
+
+//         // Update the bet document
+//         await betsCollection.updateOne(
+//           { contractAddress, positionInArray },
+//           {
+//             $set: {
+//               buyer: address,
+
+//               betForSale: false,
+//               lastUpdated: new Date(),
+//             },
+//           }
+//         );
+
+//         return res.status(200).send("Bet bought successfully");
+
+//       case "resell":
+//         if (
+//           !address ||
+//           !contractAddress ||
+//           positionInArray === undefined ||
+//           amount === undefined
+//         ) {
+//           return res.status(400).send("Missing required fields for resell");
+//         }
+
+//         const betToResell = await betsCollection.findOne({
+//           contractAddress,
+//           positionInArray,
+//         });
+
+//         if (!betToResell) {
+//           return res.status(404).send("Bet not found");
+//         }
+
+//         if (betToResell.owner !== address) {
+//           return res.status(403).send("You are not the owner of this bet");
+//         }
+
+//         // Update the bet document
+//         await betsCollection.updateOne(
+//           { contractAddress, positionInArray },
+//           {
+//             $set: {
+//               resellPrice: amount,
+//               betForSale: true,
+//               lastUpdated: new Date(),
+//             },
+//           }
+//         );
+
+//         return res.status(200).send("Bet listed for resale successfully");
+
+//       case "unlist":
+//         if (!address || !contractAddress || positionInArray === undefined) {
+//           return res.status(400).send("Missing required fields for unlist");
+//         }
+
+//         const betToUnlist = await betsCollection.findOne({
+//           contractAddress,
+//           positionInArray,
+//         });
+
+//         if (!betToUnlist) {
+//           return res.status(404).send("Bet not found");
+//         }
+
+//         if (betToUnlist.owner !== address) {
+//           return res.status(403).send("You are not the owner of this bet");
+//         }
+
+//         if (!betToUnlist.betForSale) {
+//           return res.status(400).send("Bet is not currently for sale");
+//         }
+
+//         // Update the bet document
+//         await betsCollection.updateOne(
+//           { contractAddress, positionInArray },
+//           {
+//             $set: {
+//               betForSale: false,
+//               resellPrice: null,
+//               lastUpdated: new Date(),
+//             },
+//           }
+//         );
+
+//         return res.status(200).send("Bet unlisted successfully");
+
+//       case "edit":
+//         if (
+//           !address ||
+//           !contractAddress ||
+//           positionInArray === undefined ||
+//           amount === undefined ||
+//           buyerAmount === undefined
+//         ) {
+//           return res.status(400).send("Missing required fields for edit");
+//         }
+
+//         const betToEdit = await betsCollection.findOne({
+//           contractAddress,
+//           positionInArray,
+//         });
+
+//         if (!betToEdit) {
+//           return res.status(404).send("Bet not found");
+//         }
+
+//         if (betToEdit.deployer !== address) {
+//           return res.status(403).send("You cannot edit this bet");
+//         }
+
+//         // Update the bet document
+//         await betsCollection.updateOne(
+//           { contractAddress, positionInArray },
+//           {
+//             $set: {
+//               deployedAmount: amount,
+//               buyerAmount: buyerAmount,
+//               betForSale: true,
+//               lastUpdated: new Date(),
+//             },
+//           }
+//         );
+
+//         return res.status(200).send("Bet edited successfully");
+
+//       default:
+//         return res.status(400).send("Invalid action");
+//     }
+//   } catch (error) {
+//     console.error(`Error processing ${action}:`, error);
+//     res.status(500).send(`Error processing ${action}`);
+//   }
+// });
+
 app.post("/api/bets", async (req, res) => {
   const betsCollection = db.collection("bets");
-  const {
+  let {
     action,
     address,
     amount,
     buyerAmount,
     condition,
-    additionalData,
     contractAddress,
-    positionInArray, // Use these for operations on existing bets
+    positionInArray,
   } = req.body;
 
+  contractAddress = String(contractAddress).toLowerCase();
+  positionInArray = parseInt(positionInArray, 10);
+
+  // Basic validation for common fields
+  if (!address || typeof address !== "string") {
+    return res.status(400).send("Invalid address");
+  }
+
+  if (!contractAddress || typeof contractAddress !== "string") {
+    return res.status(400).send("Invalid contract address");
+  }
+
+  if (isNaN(positionInArray)) {
+    return res.status(400).send("Invalid positionInArray");
+  }
+
+  // Action-specific validation
   try {
     switch (action) {
       case "deploy":
-        // Validate required fields
-        if (
-          !address ||
-          amount === undefined ||
-          buyerAmount === undefined ||
-          !condition ||
-          !contractAddress ||
-          positionInArray === undefined
-        ) {
-          return res.status(400).send("Missing required fields for deploy");
+        // Validate fields specific to deploy
+        amount = parseFloat(amount);
+        buyerAmount = parseFloat(buyerAmount);
+
+        if (isNaN(amount) || isNaN(buyerAmount)) {
+          return res
+            .status(400)
+            .send("Invalid amount or buyerAmount for deploy");
         }
 
-        // Create the bet document
+        if (!condition || typeof condition !== "string") {
+          return res.status(400).send("Invalid condition for deploy");
+        }
+
+        const existingBet = await betsCollection.findOne({
+          contractAddress,
+          positionInArray,
+        });
+
+        if (existingBet) {
+          return res.status(400).send("Bet already exists");
+        }
+
+        // Create and insert bet
         const bet = {
           contractAddress,
           positionInArray,
@@ -1293,20 +1549,13 @@ app.post("/api/bets", async (req, res) => {
           betForSale: true,
           timestamp: new Date(),
           lastUpdated: new Date(),
-          additionalData: additionalData || {},
         };
 
         await betsCollection.insertOne(bet);
-
-        return res.status(201).json({
-          message: "Bet deployed successfully",
-        });
+        return res.status(201).json({ message: "Bet deployed successfully" });
 
       case "buy":
-        if (!address || !contractAddress || positionInArray === undefined) {
-          return res.status(400).send("Missing required fields for buy");
-        }
-
+        // No need to validate amount for buy
         const betToBuy = await betsCollection.findOne({
           contractAddress,
           positionInArray,
@@ -1316,10 +1565,7 @@ app.post("/api/bets", async (req, res) => {
           return res.status(404).send("Bet not found");
         }
 
-        if (betToBuy.buyer) {
-          return res.status(400).send("Bet already bought");
-        }
-
+        // Update the bet document
         await betsCollection.updateOne(
           { contractAddress, positionInArray },
           {
@@ -1331,9 +1577,93 @@ app.post("/api/bets", async (req, res) => {
           }
         );
 
-        return res.status(200).send("Bet bought successfully");
+        return res.status(200).json({ message: "Bet bought successfully" });
 
-      // Handle other actions ('resell', 'unlist', 'edit') similarly, using contractAddress and positionInArray
+      case "resell":
+        // Validate amount for resell
+        amount = parseFloat(amount);
+        if (isNaN(amount)) {
+          return res.status(400).send("Invalid amount for resell");
+        }
+
+        const betToResell = await betsCollection.findOne({
+          contractAddress,
+          positionInArray,
+        });
+
+        if (!betToResell) {
+          return res.status(404).send("Bet not found");
+        }
+
+        await betsCollection.updateOne(
+          { contractAddress, positionInArray },
+          {
+            $set: {
+              resellPrice: amount,
+              betForSale: true,
+              lastUpdated: new Date(),
+            },
+          }
+        );
+
+        return res
+          .status(200)
+          .json({ message: "Bet listed for resale successfully" });
+
+      case "unlist":
+        // No amount or buyerAmount needed for unlist
+        const betToUnlist = await betsCollection.findOne({
+          contractAddress,
+          positionInArray,
+        });
+
+        if (!betToUnlist) {
+          return res.status(404).send("Bet not found");
+        }
+
+        await betsCollection.updateOne(
+          { contractAddress, positionInArray },
+          {
+            $set: {
+              betForSale: false,
+              resellPrice: null,
+              lastUpdated: new Date(),
+            },
+          }
+        );
+
+        return res.status(200).json({ message: "Bet unlisted successfully" });
+
+      case "edit":
+        // Validate fields specific to edit
+        amount = parseFloat(amount);
+        buyerAmount = parseFloat(buyerAmount);
+        if (isNaN(amount) || isNaN(buyerAmount)) {
+          return res.status(400).send("Invalid amount or buyerAmount for edit");
+        }
+
+        const betToEdit = await betsCollection.findOne({
+          contractAddress,
+          positionInArray,
+        });
+
+        if (!betToEdit) {
+          return res.status(404).send("Bet not found");
+        }
+
+        await betsCollection.updateOne(
+          { contractAddress, positionInArray },
+          {
+            $set: {
+              deployedAmount: amount,
+              buyerAmount: buyerAmount,
+              betForSale: true,
+              lastUpdated: new Date(),
+            },
+          }
+        );
+
+        return res.status(200).json({ message: "Bet edited successfully" });
 
       default:
         return res.status(400).send("Invalid action");
@@ -1341,5 +1671,31 @@ app.post("/api/bets", async (req, res) => {
   } catch (error) {
     console.error(`Error processing ${action}:`, error);
     res.status(500).send(`Error processing ${action}`);
+  }
+});
+
+app.get("/api/user-bets/:address", async (req, res) => {
+  const betsCollection = db.collection("bets");
+  const { address } = req.params;
+  const { contractAddress } = req.query;
+
+  try {
+    // Validate input parameters
+    if (!address || !contractAddress) {
+      return res.status(400).send("Address and contractAddress are required");
+    }
+
+    // Build the query object
+    const query = {
+      contractAddress: contractAddress,
+      $or: [{ deployer: address }, { buyer: address }],
+    };
+
+    const bets = await betsCollection.find(query).toArray();
+
+    res.json(bets);
+  } catch (error) {
+    console.error("Error fetching user bets:", error);
+    res.status(500).send("Error fetching user bets");
   }
 });

@@ -242,33 +242,94 @@ export default function PredMarketPageV2() {
     setShowModal(false);
   };
 
+  // const handleBetAction = async (action, data) => {
+  //   try {
+  //     // Construct the request body by combining the action with the data object
+  //     const requestBody = {
+  //       action,
+  //       ...data,
+  //     };
+
+  //     const response = await fetch(
+  //       `${process.env.NEXT_PUBLIC_API_BASE_URL}/bets`,
+  //       {
+  //         method: "POST",
+  //         headers: {
+  //           "Content-Type": "application/json",
+  //         },
+  //         body: JSON.stringify(requestBody),
+  //       }
+  //     );
+
+  //     if (!response.ok) {
+  //       throw new Error(`Error performing ${action}: ${response.statusText}`);
+  //     }
+
+  //     const result = await response.json();
+
+  //     // Handle the response based on the action
+  //     switch (action) {
+  //       case "deploy":
+  //         console.log("Bet deployed successfully with betId:", result.betId);
+  //         // Store betId if needed for future actions
+  //         return result.betId;
+  //       case "buy":
+  //         console.log("Bet bought successfully");
+  //         break;
+  //       case "resell":
+  //         console.log("Bet listed for resale successfully");
+  //         break;
+  //       case "unlist":
+  //         console.log("Bet unlisted successfully");
+  //         break;
+  //       case "edit":
+  //         console.log("Bet edited successfully");
+  //         break;
+  //       default:
+  //         console.log("Action completed successfully");
+  //     }
+
+  //     // Return the result if needed
+  //     return result;
+  //   } catch (error) {
+  //     console.error(`Error performing ${action}:`, error);
+  //     // You might want to rethrow the error or handle it appropriately
+  //     throw error;
+  //   }
+  // };
+
   const handleBetAction = async (action, data) => {
     try {
-      // Construct the request body by combining the action with the data object
       const requestBody = {
         action,
         ...data,
       };
 
-      const response = await fetch("/api/bets", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
-      });
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}/bets`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(requestBody),
+        }
+      );
 
       if (!response.ok) {
-        throw new Error(`Error performing ${action}: ${response.statusText}`);
+        const errorText = await response.text(); // Get error details as text
+        throw new Error(
+          `Error performing ${action}: ${response.statusText} - ${errorText}`
+        );
       }
 
-      const result = await response.json();
+      const result = await response.json(); // This will now work as expected
+      console.log(result.message); // Output: Bet bought successfully
 
       // Handle the response based on the action
       switch (action) {
         case "deploy":
           console.log("Bet deployed successfully with betId:", result.betId);
-          // Store betId if needed for future actions
           return result.betId;
         case "buy":
           console.log("Bet bought successfully");
@@ -286,15 +347,12 @@ export default function PredMarketPageV2() {
           console.log("Action completed successfully");
       }
 
-      // Return the result if needed
       return result;
     } catch (error) {
       console.error(`Error performing ${action}:`, error);
-      // You might want to rethrow the error or handle it appropriately
-      throw error;
+      throw error; // Rethrow the error for further handling
     }
   };
-
   const bigNumberToString = (bigNumber) =>
     parseInt(bigNumber._hex, 16).toString();
 
@@ -373,14 +431,19 @@ export default function PredMarketPageV2() {
         ? positionsArray
         : [positionsArray];
 
+      console.log(positions, "positions");
+      console.log(positionsArray, "positions Array");
+
       const tx = await contractInstance.unlistBets(positions);
       await tx.wait();
+
       for (const positionInArray of positionsArray) {
         const betData = {
           address: signerAddress,
           contractAddress,
-          positionInArray,
+          positionInArray: positionInArray,
         };
+        console.log(positionInArray, "position Array");
 
         await handleBetAction("unlist", betData);
       }
@@ -429,8 +492,10 @@ export default function PredMarketPageV2() {
           const betData = {
             address: signerAddress,
             contractAddress,
-            positionInArray,
+            positionInArray: bigNumberToNumber(positionInArray),
           };
+
+          console.log(bigNumberToNumber(positionInArray), "position IN Aray");
 
           // Call the backend API
           await handleBetAction("buy", betData);
@@ -463,7 +528,7 @@ export default function PredMarketPageV2() {
           const betData = {
             address: signerAddress,
             contractAddress,
-            positionInArray,
+            positionInArray: bigNumberToNumber(positionInArray),
             amount: askingPrice,
           };
 
@@ -534,7 +599,7 @@ export default function PredMarketPageV2() {
           const betData = {
             address: signerAddress,
             contractAddress,
-            positionInArray,
+            positionInArray: bigNumberToNumber(positionInArray),
             amount: newDeployedPriceInEth, // Use 'amount' for deployed amount
             buyerAmount: newAskingPriceInEth,
           };
@@ -748,6 +813,27 @@ export default function PredMarketPageV2() {
       } catch (error) {
         console.error("Error while changing State:", error);
       }
+    }
+  };
+
+  const fetchUserBets = async () => {
+    try {
+      const response = await fetch(
+        `/api/user-bets/${userAddress}?contractAddress=${contractAddress}`
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Error fetching bets: ${errorText}`);
+      }
+
+      const bets = await response.json();
+
+      // Update your frontend state with the fetched bets
+      setBets(bets);
+    } catch (error) {
+      console.error("Failed to fetch user bets:", error);
+      alert(`Failed to fetch bets: ${error.message}`);
     }
   };
 
