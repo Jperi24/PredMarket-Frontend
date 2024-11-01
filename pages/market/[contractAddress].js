@@ -140,6 +140,33 @@ export default function PredMarketPageV2() {
     return () => clearInterval(interval); // Clean up the interval
   }, []);
 
+  const fetchUserBets = async (saddress, contractAddress) => {
+    if (!saddress || !contractAddress) {
+      console.error("saddress or contractAddress is not defined");
+      return;
+    }
+
+    setIsLoadingBets(true);
+
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}/user-bets/${saddress}?contractAddress=${contractAddress}`
+      );
+
+      if (!response.ok) {
+        throw new Error(`Error fetching bets: ${await response.text()}`);
+      }
+
+      const bets = await response.json();
+      setUserBets(bets);
+      console.log(bets, "these are the user bets");
+    } catch (error) {
+      console.error("Failed to fetch user bets:", error);
+    } finally {
+      setIsLoadingBets(false);
+    }
+  };
+
   useEffect(() => {
     const deployContract = async () => {
       if (
@@ -184,24 +211,7 @@ export default function PredMarketPageV2() {
           } else {
             console.error("Contract or contract.chain.chainId is not defined");
           }
-          setIsLoadingBets(true);
-          try {
-            const response = await fetch(
-              `${process.env.NEXT_PUBLIC_API_BASE_URL}/user-bets/${saddress}?contractAddress=${contractAddress}`
-            );
-
-            if (!response.ok) {
-              throw new Error(`Error fetching bets: ${await response.text()}`);
-            }
-
-            const bets = await response.json();
-            setUserBets(bets);
-            console.log(bets, "these are the user bets");
-          } catch (error) {
-            console.error("Failed to fetch user bets:", error);
-          } finally {
-            setIsLoadingBets(false);
-          }
+          fetchUserBets(saddress, contractAddress);
         }
       }
     };
@@ -807,6 +817,64 @@ export default function PredMarketPageV2() {
     }
   };
 
+  const getBetStatus = (bet, bettingAddress) => {
+    const currentAddress = bettingAddress.toLowerCase();
+
+    // Check if the deployer is the current address
+    if (bet.deployer === currentAddress) {
+      if (bet.buyer === null && bet.betForSale) {
+        return "Bet is Open, No One Accepted";
+      } else if (bet.buyer !== null) {
+        return "Bet Is Accepted and Pending";
+      }
+    }
+
+    // Check if the buyer is the current address
+    if (bet.buyer === currentAddress) {
+      // New condition: if the buyer is the current address, there's at least one reseller,
+      // and the last reseller is not the buyer
+      if (
+        bet.reseller.length > 0 &&
+        bet.reseller[bet.reseller.length - 1] !== bet.buyer
+      ) {
+        return `I bought this Bet for ${
+          bet.resellPrice[bet.resellPrice.length - 1]
+        }`;
+      }
+
+      // Check if the bet is not for sale
+      if (!bet.betForSale) {
+        return "Bet Is Pending";
+      }
+
+      // Check if the bet is for sale
+      if (bet.betForSale) {
+        return `Bet Is For Sale For: ${
+          bet.resellPrice[bet.resellPrice.length - 1]
+        }`;
+      }
+    }
+
+    // Check if the current address is in the reseller array
+    const resellerIndex = bet.reseller.indexOf(currentAddress);
+    if (resellerIndex !== -1) {
+      if (bet.buyer !== currentAddress) {
+        return `Bet Resold For: ${bet.resellPrice[resellerIndex]}`;
+      } else if (resellerIndex === bet.reseller.length - 1) {
+        return `Bet Is For Sale For: ${
+          bet.resellPrice[bet.resellPrice.length - 1]
+        }`;
+      }
+    }
+
+    // Default status if no other conditions are met
+    return bet.betForSale
+      ? bet.deployer === currentAddress
+        ? "No One Bought"
+        : "Re-Selling Not Sold"
+      : "Not Active";
+  };
+
   const changeState = async (state) => {
     if (contractInstance) {
       try {
@@ -833,27 +901,6 @@ export default function PredMarketPageV2() {
       } catch (error) {
         console.error("Error while changing State:", error);
       }
-    }
-  };
-
-  const fetchUserBets = async () => {
-    try {
-      const response = await fetch(
-        `/api/user-bets/${userAddress}?contractAddress=${contractAddress}`
-      );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Error fetching bets: ${errorText}`);
-      }
-
-      const bets = await response.json();
-
-      // Update your frontend state with the fetched bets
-      setBets(bets);
-    } catch (error) {
-      console.error("Failed to fetch user bets:", error);
-      alert(`Failed to fetch bets: ${error.message}`);
     }
   };
 
@@ -998,16 +1045,22 @@ export default function PredMarketPageV2() {
       ];
 
       eventNames.forEach((eventName) => {
-        contractInstance.on(eventName, displayAllBets);
+        contractInstance.on(eventName, () => {
+          displayAllBets();
+          fetchUserBets(signerAddress, contractAddress); // Call fetchUserBets on event
+        });
       });
 
       return () => {
         eventNames.forEach((eventName) => {
           contractInstance.off(eventName, displayAllBets);
+          contractInstance.off(eventName, () =>
+            fetchUserBets(signerAddress, contractAddress)
+          );
         });
       };
     }
-  }, [contractInstance, signer]);
+  }, [contractInstance, signer, signerAddress]);
 
   const handleSelectBet = (position) => {
     setSelectedBets((prevSelectedBets) =>
@@ -1473,56 +1526,71 @@ export default function PredMarketPageV2() {
               <div className="loading-spinner">Loading history...</div>
             ) : userBetsHistory.length > 0 ? (
               <div className="history-list">
-                {userBetsHistory.map((bet, index) => (
-                  <div key={index} className="history-card">
-                    <div className="history-card-header">
-                      <span className="bet-number">
-                        Bet #{bet.positionInArray + 1}
-                      </span>
-                      <span
-                        className={`bet-status ${bet.status?.toLowerCase()}`}
-                      >
-                        {bet.betForSale
-                          ? bet.deployer === signerAddress.toLowerCase()
-                            ? "No One Bought"
-                            : "Re-Selling Not Sold"
-                          : "Not Active"}
-                      </span>
-                    </div>
-                    <div className="history-card-body">
-                      <div className="bet-amount">
-                        <span>Amount Bet:</span>
-                        <strong>
-                          {bet.deployedAmount} {chain?.nativeCurrency?.symbol}
-                        </strong>
+                {userBetsHistory.map((bet, index) => {
+                  const betStatus = signerAddress
+                    ? getBetStatus(bet, signerAddress)
+                    : "Loading...";
+
+                  return (
+                    <div className="history-card" key={index}>
+                      <div className="history-card-header">
+                        <span className="bet-number">
+                          Bet #{bet.positionInArray + 1}
+                        </span>
+                        <span
+                          className={`bet-status ${betStatus
+                            .toLowerCase()
+                            .replace(/[0-9.]/g, "") // Remove numbers and decimal points
+                            .replace(/\s+for:\s+.*$/, "-for-sale") // Replace "for: {price}" with "-for-sale"
+                            .replace(/\s+/g, "-") // Replace remaining spaces with hyphens
+                            .trim()}`}
+                        >
+                          {betStatus}
+                        </span>
                       </div>
-                      <div className="bet-prediction">
-                        <span>My Prediction:</span>
-                        <strong>
-                          {bet.condition === "1"
-                            ? contract.eventA
-                            : contract.eventB}{" "}
-                          Wins
-                        </strong>
-                      </div>
-                      {bet.buyerAmount && (
-                        <div className="potential-return">
-                          <span>Potential Return:</span>
-                          <strong>
-                            {bet.buyerAmount + bet.deployedAmount}{" "}
-                            {chain?.nativeCurrency?.symbol}
-                          </strong>
+
+                      {/* Only show the body if the bet status is not "Bet Resold For" */}
+                      {!betStatus.includes("Bet Resold For") && (
+                        <div className="history-card-body">
+                          <div className="bet-amount">
+                            <span>Amount Bet:</span>
+                            <strong>
+                              {bet.deployedAmount}{" "}
+                              {chain?.nativeCurrency?.symbol}
+                            </strong>
+                          </div>
+
+                          <div className="bet-prediction">
+                            <span>My Prediction:</span>
+                            <strong>
+                              {bet.condition === "1"
+                                ? contract.eventA
+                                : contract.eventB}{" "}
+                              Wins
+                            </strong>
+                          </div>
+
+                          {bet.buyerAmount && (
+                            <div className="potential-return">
+                              <span>Potential Return:</span>
+                              <strong>
+                                {bet.buyerAmount + bet.deployedAmount}{" "}
+                                {chain?.nativeCurrency?.symbol}
+                              </strong>
+                            </div>
+                          )}
+
+                          <div className="bet-timestamp">
+                            <span>Placed:</span>
+                            <time>
+                              {new Date(bet.timestamp).toLocaleDateString()}
+                            </time>
+                          </div>
                         </div>
                       )}
-                      <div className="bet-timestamp">
-                        <span>Placed:</span>
-                        <time>
-                          {new Date(bet.timestamp).toLocaleDateString()}
-                        </time>
-                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="no-history">
@@ -1566,22 +1634,51 @@ export default function PredMarketPageV2() {
           border-radius: 10px;
           padding: 1rem;
           margin-top: 1rem;
+          height: calc(
+            100vh - 200px
+          ); /* Adjust the 200px based on your header height */
+          display: flex;
+          flex-direction: column;
         }
 
         .history-list {
           display: flex;
           flex-direction: column;
           gap: 1rem;
-          max-height: 500px;
           overflow-y: auto;
           padding-right: 0.5rem;
+          flex: 1;
+          /* Add custom scrollbar styling */
+          scrollbar-width: thin;
+          scrollbar-color: rgba(78, 205, 196, 0.5) rgba(255, 255, 255, 0.1);
+        }
+
+        /* Custom scrollbar for webkit browsers */
+        .history-list::-webkit-scrollbar {
+          width: 6px;
+        }
+
+        .history-list::-webkit-scrollbar-track {
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 3px;
+        }
+
+        .history-list::-webkit-scrollbar-thumb {
+          background: rgba(78, 205, 196, 0.5);
+          border-radius: 3px;
+        }
+
+        .history-list::-webkit-scrollbar-thumb:hover {
+          background: rgba(78, 205, 196, 0.7);
         }
 
         .history-card {
+          flex-shrink: 0; /* Prevent cards from shrinking */
           background: rgba(255, 255, 255, 0.08);
           border-radius: 8px;
           overflow: hidden;
           transition: transform 0.2s ease;
+          margin-bottom: 1rem; /* Ensure consistent spacing */
         }
 
         .history-card:hover {
@@ -1606,21 +1703,74 @@ export default function PredMarketPageV2() {
           border-radius: 12px;
           font-size: 0.85rem;
           text-transform: capitalize;
+          font-weight: 600;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+          transition: all 0.3s ease;
         }
 
-        .bet-status.active {
-          background: #4ecdc4;
+        /* Open Bets */
+        .bet-status.bet-is-open-no-one-accepted {
+          background: linear-gradient(135deg, #00b894, #00cec9);
+          color: white;
+        }
+        /* Existing bet-status styles */
+        .bet-status.i-bought-this-bet-for-sale {
+          background: linear-gradient(135deg, #20bf6b, #0fb9b1);
+          color: white;
+          animation: softPulse 2s infinite;
+        }
+
+        @keyframes softPulse {
+          0% {
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+          }
+          50% {
+            box-shadow: 0 4px 8px rgba(32, 191, 107, 0.2);
+          }
+          100% {
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+          }
+        }
+
+        /* Pending Bets */
+        .bet-status.bet-is-accepted-and-pending,
+        .bet-status.bet-is-pending {
+          background: linear-gradient(135deg, #6c5ce7, #a55eea);
+          color: white;
+        }
+
+        /* For Sale Statuses */
+        .bet-status.bet-is-for-sale-for-sale {
+          background: linear-gradient(135deg, #ffd93d, #ff6b6b);
           color: #1a1a2e;
         }
 
-        .bet-status.completed {
-          background: #45b7d1;
-          color: #1a1a2e;
+        /* Resold Status */
+        .bet-status.bet-resold-for-sale {
+          background: linear-gradient(135deg, #4ecdc4, #45b7d1);
+          color: white;
         }
 
-        .bet-status.cancelled {
-          background: #fc5c65;
-          color: #fff;
+        /* Inactive/Default Statuses */
+        .bet-status.no-one-bought {
+          background: linear-gradient(135deg, #636e72, #b2bec3);
+          color: white;
+        }
+
+        .bet-status.re-selling-not-sold {
+          background: linear-gradient(135deg, #fd79a8, #e84393);
+          color: white;
+        }
+
+        .bet-status.not-active {
+          background: linear-gradient(135deg, #2d3436, #636e72);
+          color: white;
+        }
+
+        /* Hover effect for all statuses */
+        .bet-status:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.15);
         }
 
         .history-card-body {
@@ -1835,11 +1985,16 @@ export default function PredMarketPageV2() {
         }
 
         .bet-card {
+          flex-shrink: 0;
           background: rgba(255, 255, 255, 0.08);
           border-radius: 8px;
           padding: 1rem;
           margin-bottom: 1rem;
           transition: all 0.3s ease;
+        }
+
+        .bet-card:last-child {
+          margin-bottom: 0;
         }
 
         .bet-card:hover {
@@ -1898,6 +2053,67 @@ export default function PredMarketPageV2() {
           .bets-list-column {
             min-width: 100%;
           }
+        }
+
+        .bets-list-column {
+          flex: 1;
+          min-width: 300px;
+          background: rgba(255, 255, 255, 0.05);
+          border-radius: 10px;
+          padding: 1rem;
+          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+          height: calc(100vh - 150px); /* Match betting-history-column height */
+          display: flex;
+          flex-direction: column;
+        }
+
+        .bet-filters {
+          flex-shrink: 0; /* Keep filters at top */
+        }
+
+        .bets-list {
+          display: flex;
+          flex-direction: column;
+          gap: 1rem;
+          overflow-y: auto;
+          padding-right: 0.5rem;
+          flex: 1;
+          /* Add custom scrollbar styling */
+          scrollbar-width: thin;
+          scrollbar-color: rgba(78, 205, 196, 0.5) rgba(255, 255, 255, 0.1);
+        }
+
+        /* Custom scrollbar for webkit browsers */
+        .bets-list::-webkit-scrollbar {
+          width: 6px;
+        }
+
+        .bets-list::-webkit-scrollbar-track {
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 3px;
+        }
+
+        .bets-list::-webkit-scrollbar-thumb {
+          background: rgba(78, 205, 196, 0.5);
+          border-radius: 3px;
+        }
+
+        .bets-list::-webkit-scrollbar-thumb:hover {
+          background: rgba(78, 205, 196, 0.7);
+        }
+
+        .bet-card {
+          flex-shrink: 0; /* Prevent cards from shrinking */
+          background: rgba(255, 255, 255, 0.08);
+          border-radius: 8px;
+          padding: 1rem;
+          margin-bottom: 1rem;
+          transition: all 0.3s ease;
+        }
+
+        .unlist-selected-btn {
+          flex-shrink: 0; /* Prevent button from shrinking */
+          margin-bottom: 1rem;
         }
       `}</style>
     </div>
