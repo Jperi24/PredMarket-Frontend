@@ -4,34 +4,52 @@ const rateLimit = require("express-rate-limit");
 const { MongoClient } = require("mongodb");
 const cron = require("node-cron"); // Import node-cron
 const NodeCache = require("node-cache");
+const { ObjectId } = require("mongodb");
 const app = express();
+require("dotenv").config();
+
 app.use(cors({ origin: "http://localhost:3000" }));
 app.use(express.json());
 const apolloClient = require("./apollo-client");
 //when deployed make sure Cors or something is only coming from a specific server
 const myCache = new NodeCache();
 const fetch = require("cross-fetch");
-const uri =
-  "mongodb+srv://Jake:Koolaid20@cluster0.lwaxzbm.mongodb.net/?retryWrites=true&w=majority";
+// const uri =
+//   "mongodb+srv://Jake:Koolaid20@cluster0.lwaxzbm.mongodb.net/?retryWrites=true&w=majority";
+const uri = process.env.MONGOURI;
 const client = new MongoClient(uri);
+const ethers = require("ethers");
+const predMarketArtifact = require("./predMarketV2.json");
+
+// Make sure to import your contract ABI
+
+// You'll need to set up your provider and signer
+const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL);
+const privateKey = process.env.PRIVATE_KEY; // The private key of the wallet that will call declareWinner
+const signer = new ethers.Wallet(privateKey, provider);
 
 let db;
 const PORT = process.env.PORT || 3001;
-
-client
-  .connect()
-  .then(() => {
-    db = client.db("PredMarket");
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-      scheduleTasks();
-      fetchAllTournamentDetails();
-      moveExpiredContracts();
+const setStatuses = new Map();
+if (process.env.NODE_ENV !== "test") {
+  client
+    .connect()
+    .then(() => {
+      db = client.db("PredMarket");
+      app.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+        scheduleTasks();
+        fetchAllTournamentDetails();
+        moveExpiredContracts();
+      });
+    })
+    .catch((err) => {
+      console.error("Failed to connect to MongoDB", err);
     });
-  })
-  .catch((err) => {
-    console.error("Failed to connect to MongoDB", err);
-  });
+} else {
+  console.log("BEGIN TESTING");
+  // For tests, export app without starting the server
+}
 
 async function moveExpiredContracts() {
   try {
@@ -39,7 +57,7 @@ async function moveExpiredContracts() {
     const targetCollection = db.collection("ExpiredContracts");
 
     // Get the current time and subtract 7 days (7 days * 24 hours * 60 minutes * 60 seconds * 1000 milliseconds)
-    const sevenDaysAgo = new Date().getTime() - 7 * 24 * 60 * 60 * 1000;
+    const sevenDaysAgo = new Date().getTime() - 2 * 24 * 60 * 60 * 1000;
     // Convert milliseconds back to seconds for the timestamp comparison in MongoDB
     // const threshold = Math.floor(sevenDaysAgo / 1000);
     const threshold = Math.floor(sevenDaysAgo / 1000);
@@ -123,8 +141,10 @@ app.get("/api/rates", async (req, res) => {
 });
 
 // Initial fetch and setup periodic update
-updateAllRates();
-setInterval(updateAllRates, FETCH_INTERVAL);
+if (process.env.NODE_ENV !== "test") {
+  updateAllRates();
+  setInterval(updateAllRates, FETCH_INTERVAL);
+}
 
 // Endpoint to get ETH to USD rate from the cache
 
@@ -178,27 +198,39 @@ app.post("/addContract", async (req, res) => {
 });
 
 app.post("/moveToDisagreements", async (req, res) => {
+  const { contractAddress, reason } = req.body;
+  const result = await moveContractToDisagreements(contractAddress, reason);
+
+  if (result.success) {
+    res
+      .status(200)
+      .send("Contract moved to Disagreements collection successfully");
+  } else {
+    res.status(500).send(result.error);
+  }
+});
+
+async function moveContractToDisagreements(contractAddress, reason) {
   try {
-    const { contractAddress, reason } = req.body;
     let sourceCollection = db.collection("Contracts");
     const targetCollection = db.collection("Disagreements");
 
-    // Find the contract in the source collection
+    // Find the contract in the Contracts collection
     let contract = await sourceCollection.findOne({ address: contractAddress });
 
-    // If not found in ExpiredContracts, search in Contracts collection
+    // If not found in Contracts, search in ExpiredContracts collection
     if (!contract) {
       sourceCollection = db.collection("ExpiredContracts");
       contract = await sourceCollection.findOne({ address: contractAddress });
 
-      // If still not found, respond with an error
+      // If still not found, return an error
       if (!contract) {
-        return res.status(404).send("Contract not found in collections");
+        console.error("Contract not found in collections");
+        return { error: "Contract not found" };
       }
     }
 
     // Prepare the document to be inserted into the Disagreements collection
-    // Include the disagreementText and update the lastModified field
     const updatedContract = {
       ...contract,
       disagreementText: reason,
@@ -211,14 +243,56 @@ app.post("/moveToDisagreements", async (req, res) => {
     // Remove the original document from its source collection
     await sourceCollection.deleteOne({ address: contractAddress });
 
-    res
-      .status(200)
-      .send("Contract moved to Disagreements collection successfully");
+    console.log("Contract moved to Disagreements collection successfully");
+    return { success: true };
   } catch (error) {
     console.error("Error moving contract to Disagreements:", error);
-    res.status(500).send("Error moving contract");
+    return { error: "Error moving contract" };
   }
-});
+}
+
+// app.post("/moveToDisagreements", async (req, res) => {
+//   try {
+//     const { contractAddress, reason } = req.body;
+//     let sourceCollection = db.collection("Contracts");
+//     const targetCollection = db.collection("Disagreements");
+
+//     // Find the contract in the source collection
+//     let contract = await sourceCollection.findOne({ address: contractAddress });
+
+//     // If not found in ExpiredContracts, search in Contracts collection
+//     if (!contract) {
+//       sourceCollection = db.collection("ExpiredContracts");
+//       contract = await sourceCollection.findOne({ address: contractAddress });
+
+//       // If still not found, respond with an error
+//       if (!contract) {
+//         return res.status(404).send("Contract not found in collections");
+//       }
+//     }
+
+//     // Prepare the document to be inserted into the Disagreements collection
+//     // Include the disagreementText and update the lastModified field
+//     const updatedContract = {
+//       ...contract,
+//       disagreementText: reason,
+//       lastModified: new Date(),
+//     };
+
+//     // Insert the updated document into the Disagreements collection
+//     await targetCollection.insertOne(updatedContract);
+
+//     // Remove the original document from its source collection
+//     await sourceCollection.deleteOne({ address: contractAddress });
+
+//     res
+//       .status(200)
+//       .send("Contract moved to Disagreements collection successfully");
+//   } catch (error) {
+//     console.error("Error moving contract to Disagreements:", error);
+//     res.status(500).send("Error moving contract");
+//   }
+// });
 
 app.post("/moveFromDisagreementsToContracts", async (req, res) => {
   try {
@@ -257,75 +331,63 @@ app.post("/moveFromDisagreementsToContracts", async (req, res) => {
     res.status(500).send("Error moving contract");
   }
 });
-
-// app.get("/getContracts", async (req, res) => {
-//   try {
-//     const collection = db.collection("Contracts");
-//     const contracts = await collection.find({}).toArray();
-//     res.status(200).json(contracts);
-//   } catch (error) {
-//     console.error("Error fetching contracts from MongoDB:", error);
-//     res.status(500).send("Error fetching contracts");
-//   }
-// });
-
-// const contractsCache = new NodeCache(); // This will store the contracts
-
-// async function updateContractsCache() {
-//   const collections = ["Contracts", "ExpiredContracts", "Disagreements"];
-//   let allContracts = [];
-
-//   try {
-//     for (const collectionName of collections) {
-//       const collection = db.collection(collectionName);
-//       const contracts = await collection.find({}).toArray();
-
-//       // Append the collectionName to each contract
-//       const augmentedContracts = contracts.map((contract) => ({
-//         ...contract,
-//         collectionName: collectionName, // Adding collection name to each document
-//       }));
-
-//       allContracts = allContracts.concat(augmentedContracts);
-//     }
-
-//     // Cache the combined list of contracts with augmented collection name
-//     contractsCache.set("allContracts", allContracts, 600); // Set TTL for 10 minutes
-//     console.log("Contracts cache updated successfully.");
-//   } catch (error) {
-//     console.error("Failed to update contracts cache:", error);
-//   }
-// }
-
 app.get("/getContracts", async (req, res) => {
   try {
-    // List of collections to query from
     const collectionNames = ["Contracts", "ExpiredContracts", "Disagreements"];
 
-    // Function to fetch documents from a collection and add the collection name
     const fetchFromCollection = async (collectionName) => {
       const collection = db.collection(collectionName);
       const documents = await collection.find({}).toArray();
-      // Adding collection name to each document
-      return documents.map((doc) => ({ ...doc, collectionName }));
+      return documents.map((doc) => {
+        // Assuming doc.tags contains the tournament slug, event id, and set id
+        const status = setStatuses.get(doc.setKey) || "upcoming";
+        return { ...doc, collectionName, status };
+      });
     };
 
-    // Execute queries for all collections concurrently
     const contractsPromises = collectionNames.map((collectionName) =>
       fetchFromCollection(collectionName)
     );
     const results = await Promise.all(contractsPromises);
 
-    // Flatten the results array (since each promise returns an array of documents)
     const allContracts = results.flat();
 
-    // Return the combined results
     res.status(200).json(allContracts);
   } catch (error) {
     console.error("Error fetching contracts from MongoDB:", error);
     res.status(500).send("Error fetching contracts");
   }
 });
+
+// app.get("/getContracts", async (req, res) => {
+//   try {
+//     // List of collections to query from
+//     const collectionNames = ["Contracts", "ExpiredContracts", "Disagreements"];
+
+//     // Function to fetch documents from a collection and add the collection name
+//     const fetchFromCollection = async (collectionName) => {
+//       const collection = db.collection(collectionName);
+//       const documents = await collection.find({}).toArray();
+//       // Adding collection name to each document
+//       return documents.map((doc) => ({ ...doc, collectionName }));
+//     };
+
+//     // Execute queries for all collections concurrently
+//     const contractsPromises = collectionNames.map((collectionName) =>
+//       fetchFromCollection(collectionName)
+//     );
+//     const results = await Promise.all(contractsPromises);
+
+//     // Flatten the results array (since each promise returns an array of documents)
+//     const allContracts = results.flat();
+
+//     // Return the combined results
+//     res.status(200).json(allContracts);
+//   } catch (error) {
+//     console.error("Error fetching contracts from MongoDB:", error);
+//     res.status(500).send("Error fetching contracts");
+//   }
+// });
 
 app.get("/api/contracts/:address", async (req, res) => {
   try {
@@ -367,47 +429,6 @@ process.on("SIGINT", () => {
   });
 });
 
-app.post("/api/updateMongoDB", async (req, res) => {
-  const { contractAddress, voteTime } = req.body;
-
-  try {
-    // Use the existing MongoDB client and database connection
-    const collection = db.collection("Contracts");
-
-    // Update the document where the contract address matches
-    // Ensure the field name matches your MongoDB document structure
-    await collection.updateOne(
-      { address: contractAddress }, // filter by the correct field name
-      { $set: { voteTime: voteTime } } // set the new vote time
-    );
-
-    res.status(200).send("Update successful");
-  } catch (error) {
-    console.error("Error updating MongoDB:", error);
-    res.status(500).send("Error updating MongoDB");
-  }
-});
-
-app.post("/api/updateBetterMongoDB", async (req, res) => {
-  const { contractAddress, better } = req.body;
-
-  try {
-    // Use the existing MongoDB client and database connection
-    const collection = db.collection("Contracts");
-
-    // Update the document where the contract address matches
-    // Ensure the field name matches your MongoDB document structure
-    await collection.updateOne(
-      { address: contractAddress }, // filter by the correct field name
-      { $addToSet: { betters: better } }
-    );
-
-    res.status(200).send("Update successful");
-  } catch (error) {
-    console.error("Error updating MongoDB:", error);
-    res.status(500).send("Error updating MongoDB");
-  }
-});
 const {
   GET_ALL_TOURNAMENTS_QUERY,
   GET_FEATURED_TOURNAMENTS_QUERY,
@@ -449,12 +470,13 @@ async function fetchWithRetry(query, variables, retries = 3, delay = 1000) {
 }
 
 async function fetchAllTournamentDetails() {
-  if (isFetchingTournaments) {
+  if (isFetchingTournaments || isUpdatingFrequentCache) {
     console.log("fetchAllTournamentDetails is already running. Exiting.");
     return;
   }
 
   isFetchingTournaments = true;
+  setStatuses.clear();
   console.log("Updating daily cache...");
 
   let allTournaments = [];
@@ -497,7 +519,7 @@ async function fetchAllTournamentDetails() {
   console.log("Finished Querying featured Tourneys");
 
   // Fetch Regular Tournaments if the total is less than 50
-  if (allTournaments.length < 50) {
+  if (allTournaments.length < 1) {
     try {
       const data = await fetchWithRetry(GET_ALL_TOURNAMENTS_QUERY, {
         afterDate3,
@@ -599,7 +621,9 @@ async function fetchAllTournamentDetails() {
               }
 
               console.log(`Caching sets for phaseId: ${phase.id}`);
-              frequentCache.set(phase.id, allSets);
+              console.log(`Caching sets for phaseId: ${phase.id}`);
+              const phaseKey = `phase:${phase.id}`;
+              frequentCache.set(phaseKey, allSets);
             }
           }
         }
@@ -625,266 +649,285 @@ async function fetchAllTournamentDetails() {
 
 let isUpdatingFrequentCache = false;
 
-// async function updateFrequentCache() {
-//   if (isFetchingTournaments || isUpdatingFrequentCache) {
-//     console.log("updateFrequentCache is already running. Exiting.");
-//     return;
-//   }
+async function updateFrequentCache() {
+  if (isFetchingTournaments || isUpdatingFrequentCache) {
+    console.log("updateFrequentCache is already running. Exiting.");
+    return;
+  }
 
-//   isFetchingTournaments = true;
-//   console.log("Updating frequent cache for ongoing tournaments...");
+  isUpdatingFrequentCache = true;
 
-//   const temporaryFrequentCache = new NodeCache({ stdTTL: 0 });
-//   const todayDate = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
-//   let ongoingTournaments = [];
+  console.log("Updating frequent cache for ongoing tournaments...");
 
-//   // Fetch ongoing tournaments from the daily cache
-//   const keysToCheck = dailyCache.keys();
-//   for (const key of keysToCheck) {
-//     const tournament = dailyCache.get(key);
-//     if (
-//       tournament &&
-//       tournament.startAt <= todayDate &&
-//       tournament.endAt >= todayDate
-//     ) {
-//       ongoingTournaments.push(tournament);
-//     }
-//   }
+  const collection = db.collection("Contracts");
+  const documents = await collection.find({}).toArray();
 
-//   console.log("Ongoing tournaments to update:", ongoingTournaments.length);
+  const temporaryFrequentCache = new NodeCache({ stdTTL: 0 });
+  const currentTime = Math.floor(Date.now() / 1000);
 
-//   for (const tournament of ongoingTournaments) {
-//     await sleep(100); // Updated sleep from 10 to 100
-//     try {
-//       // Fetch the updated tournament details
-//       const tournamentDetailResponse = await fetchWithRetry(
-//         GET_TOURNAMENT_QUERY,
-//         {
-//           slug: tournament.slug,
-//         }
-//       );
-//       const detailedTournament = tournamentDetailResponse.tournament;
-//       temporaryFrequentCache.set(
-//         tournament.slug.toLowerCase(),
-//         detailedTournament
-//       );
+  let ongoingTournaments = [];
+  const keysToCheck = dailyCache.keys();
 
-//       if (detailedTournament.events) {
-//         for (const event of detailedTournament.events) {
-//           if (event.phases) {
-//             for (const phase of event.phases) {
-//               await sleep(100); // Updated sleep from 10 to 100
-//               let allSets = [];
-//               let page2 = 1;
-//               let hasMore2 = true;
-//               const phaseId = phase.id;
+  // Fetch ongoing tournaments from the daily cache
+  for (const key of keysToCheck) {
+    const tournament = dailyCache.get(key);
+    if (tournament) {
+      const startAt = Number(tournament.startAt);
+      const endAt = Number(tournament.endAt);
 
-//               while (hasMore2) {
-//                 await sleep(100); // Updated sleep from 10 to 100
-//                 try {
-//                   const phaseData = await fetchWithRetry(
-//                     GET_SETS_BY_PHASE_QUERY,
-//                     {
-//                       phaseId,
-//                       page: page2,
-//                       perPage: 100, // Assuming 100 per page
-//                     }
-//                   );
-//                   allSets = [...allSets, ...phaseData.phase.sets.nodes];
-//                   hasMore2 = phaseData.phase.sets.nodes.length === 100; // Adjust this based on perPage setting
-//                   page2 += 1;
-//                   if (phaseId === "1571426" || phaseId === 1571426) {
-//                     console.log("Smash Ult Top 8:", phaseData);
-//                   }
-//                 } catch (error) {
-//                   console.error(
-//                     "Error fetching sets for phase:",
-//                     phase.id,
-//                     error
-//                   );
-//                   hasMore2 = false;
-//                 }
-//               }
+      // Add a 1-day (24 hours) buffer to startAt and endAt
+      const startAtWithBuffer = startAt - 86400; // Subtract 1 day (in seconds)
+      const endAtWithBuffer = endAt + 86400; // Add 1 day (in seconds)
 
-//               console.log(`Caching sets for phaseId: ${phase.id}`);
-//               temporaryFrequentCache.set(phase.id, allSets);
-//             }
-//           }
-//         }
-//       }
-//     } catch (error) {
-//       console.error("Error handling tournament:", tournament.slug, error);
-//     }
-//     console.log("Updated tournament:", tournament.slug);
-//   }
+      // Perform the comparison using the buffered values
+      if (startAtWithBuffer <= currentTime && endAtWithBuffer >= currentTime) {
+        console.log(`Tournament ${key} is ongoing.`);
+        ongoingTournaments.push(tournament);
+      }
+    }
+  }
 
-//   // Clear the entire frequentCache and then replace it with new entries
-//   frequentCache.flushAll(); // Completely clear the frequent cache
+  console.log("Ongoing tournaments:", ongoingTournaments);
 
-//   // Replace with new entries from the temporaryFrequentCache using mset
-//   const keysToUpdate = temporaryFrequentCache.keys();
-//   frequentCache.mset(
-//     keysToUpdate.map((key) => ({ key, val: temporaryFrequentCache.get(key) }))
-//   );
+  for (const tournament of ongoingTournaments) {
+    await sleep(100);
+    try {
+      const tournamentDetailResponse = await fetchWithRetry(
+        GET_TOURNAMENT_QUERY,
+        { slug: tournament.slug }
+      );
+      const detailedTournament = tournamentDetailResponse.tournament;
 
-//   console.log("Frequent cache updated with ongoing tournaments.");
-//   isFetchingTournaments = false;
-// }
+      if (detailedTournament.events) {
+        for (const event of detailedTournament.events) {
+          if (event.phases) {
+            for (const phase of event.phases) {
+              await sleep(100);
+              let allSets = [];
+              let page = 1;
+              let hasMore = true;
+              const phaseId = phase.id;
 
-// async function updateFrequentCache() {
-//   if (isFetchingTournaments || isUpdatingFrequentCache) {
-//     console.log("updateFrequentCache is already running. Exiting.");
-//     return;
-//   }
+              while (hasMore) {
+                await sleep(100);
+                try {
+                  const phaseData = await fetchWithRetry(
+                    GET_SETS_BY_PHASE_QUERY,
+                    {
+                      phaseId,
+                      page,
+                      perPage: 100,
+                    }
+                  );
+                  allSets = [...allSets, ...phaseData.phase.sets.nodes];
+                  hasMore = phaseData.phase.sets.nodes.length === 100;
+                  page += 1;
+                } catch (error) {
+                  console.error(
+                    "Error fetching sets for phase:",
+                    phase.id,
+                    error
+                  );
+                  hasMore = false;
+                }
+              }
 
-//   isUpdatingFrequentCache = true;
-//   setStatuses.clear();
-//   console.log("Updating frequent cache for ongoing tournaments...");
+              for (const set of allSets) {
+                const setKey = `${tournament.slug}-${event.id}-${set.id}`;
 
-//   const temporaryFrequentCache = new NodeCache({ stdTTL: 0 });
-//   const currentTime = Math.floor(Date.now() / 1000);
-//   let ongoingTournaments = [];
+                const cacheSetKey = `set:${setKey}`;
+                const normalizeString = (str) =>
+                  str ? str.trim().toLowerCase() : "";
 
-//   // Fetch ongoing tournaments from the daily cache
-//   const keysToCheck = dailyCache.keys();
-//   const phaseIdsToDelete = [];
-//   for (const key of keysToCheck) {
-//     const tournament = dailyCache.get(key);
-//     if (tournament) {
-//       let startAt = Number(tournament.startAt);
-//       let endAt = Number(tournament.endAt);
+                const matchingDocument = documents.find((docSet) => {
+                  return (
+                    normalizeString(docSet.eventA) ===
+                      normalizeString(set.slots[0]?.entrant?.name) &&
+                    normalizeString(docSet.eventB) ===
+                      normalizeString(set.slots[1]?.entrant?.name) &&
+                    normalizeString(docSet.fullName) ===
+                      normalizeString(set.fullRoundText)
+                  );
+                });
 
-//       // Check if endAt is at midnight (00:00:00)
-//       const endAtDate = new Date(endAt * 1000); // Convert to milliseconds
-//       if (
-//         endAtDate.getHours() === 0 &&
-//         endAtDate.getMinutes() === 0 &&
-//         endAtDate.getSeconds() === 0
-//       ) {
-//         // Adjust endAt to 23:59:59 of the same day
-//         endAtDate.setHours(23, 59, 59, 999);
-//         endAt = Math.floor(endAtDate.getTime() / 1000);
-//       }
+                // Check if a matching document is found
+                const doesSetExist = !!matchingDocument;
 
-//       // Now perform the comparison
-//       if (startAt <= currentTime && endAt >= currentTime) {
-//         ongoingTournaments.push(tournament);
-//       }
-//     }
-//   }
+                // Log the set data
+                if (doesSetExist) {
+                  console.log("SET FOUND");
+                  const currentEntrants = set.slots.map(
+                    (slot) => slot.entrant?.name || "Unknown"
+                  );
 
-//   console.log("Ongoing tournaments to update:", ongoingTournaments.length);
+                  // Fetch the original entrants from frequentCache before updating
+                  const originalSet = frequentCache.get(cacheSetKey);
+                  const originalEntrants = originalSet
+                    ? originalSet.slots.map(
+                        (slot) => slot.entrant?.name || "Unknown"
+                      )
+                    : currentEntrants; // Use currentEntrants if originalSet is undefined
 
-//   for (const tournament of ongoingTournaments) {
-//     await sleep(100); // Updated sleep from 10 to 100
-//     try {
-//       // Fetch the updated tournament details
-//       const tournamentDetailResponse = await fetchWithRetry(
-//         GET_TOURNAMENT_QUERY,
-//         {
-//           slug: tournament.slug,
-//         }
-//       );
-//       const detailedTournament = tournamentDetailResponse.tournament;
-//       temporaryFrequentCache.set(
-//         tournament.slug.toLowerCase(),
-//         detailedTournament
-//       );
+                  // Check if the entrants have changed
+                  const entrantsChanged =
+                    originalEntrants.length !== currentEntrants.length ||
+                    !originalEntrants.every(
+                      (entrant, index) => entrant === currentEntrants[index]
+                    );
 
-//       if (detailedTournament.events) {
-//         for (const event of detailedTournament.events) {
-//           if (event.phases) {
-//             for (const phase of event.phases) {
-//               phaseIdsToDelete.push(phase.id.toString());
-//               await sleep(100); // Updated sleep from 10 to 100
-//               let allSets = [];
-//               let page2 = 1;
-//               let hasMore2 = true;
-//               const phaseId = phase.id;
+                  if (entrantsChanged) {
+                    console.log(
+                      `Set ${cacheSetKey} has changed entrants or no longer exists with original entrants.`
+                    );
 
-//               while (hasMore2) {
-//                 await sleep(100); // Updated sleep from 10 to 100
-//                 try {
-//                   const phaseData = await fetchWithRetry(
-//                     GET_SETS_BY_PHASE_QUERY,
-//                     {
-//                       phaseId,
-//                       page: page2,
-//                       perPage: 100, // Assuming 100 per page
-//                     }
-//                   );
-//                   allSets = [...allSets, ...phaseData.phase.sets.nodes];
-//                   hasMore2 = phaseData.phase.sets.nodes.length === 100; // Adjust this based on perPage setting
-//                   page2 += 1;
-//                 } catch (error) {
-//                   console.error(
-//                     "Error fetching sets for phase:",
-//                     phase.id,
-//                     error
-//                   );
-//                   hasMore2 = false;
-//                 }
-//               }
+                    const contract = new ethers.Contract(
+                      matchingDocument.address,
+                      predMarketArtifact.abi,
+                      signer
+                    );
 
-//               console.log(`Caching sets for phaseId: ${phase.id}`);
-//               temporaryFrequentCache.set(phase.id, allSets);
-//               for (const set of allSets) {
-//                 const setKey = `${tournament.slug}-${event.id}-${set.id}`;
-//                 const inGame = set.slots.every(
-//                   (slot) => slot.standing?.placement === 2
-//                 );
-//                 const hasWinner = set.slots.some(
-//                   (slot) => slot.standing?.placement === 1
-//                 );
-//                 const hasUnknownEntrant = set.slots.some(
-//                   (slot) => !slot.entrant || slot.entrant.name === "Unknown"
-//                 );
-//                 const winnerName =
-//                   set.slots.find((slot) => slot.standing?.placement === 1)
-//                     ?.entrant?.name || "Unknown";
+                    // Call the declareWinner function
+                    const tx = await contract.changeState(2);
+                    await tx.wait();
 
-//                 if (inGame && !hasWinner) {
-//                   setStatuses.set(setKey, { status: "ongoing", winner: null });
-//                 } else if (!inGame && !hasWinner && !hasUnknownEntrant) {
-//                   setStatuses.set(setKey, { status: "upcoming", winner: null });
-//                 } else if (hasWinner) {
-//                   setStatuses.set(setKey, {
-//                     status: "completed",
-//                     winner: winnerName,
-//                   });
-//                   await updateMongoDBWithWinner(setKey, winnerName);
-//                 } else {
-//                   setStatuses.set(setKey, { status: "other", winner: null });
-//                 }
-//               }
-//             }
-//           }
-//         }
-//       }
-//     } catch (error) {
-//       console.error("Error handling tournament:", tournament.slug, error);
-//     }
-//     console.log("Updated tournament:", tournament.slug);
-//   }
+                    await moveContractToDisagreements(
+                      matchingDocument.address,
+                      "Entrants have changed or are no longer valid"
+                    );
+                    setStatuses.set(cacheSetKey, {
+                      status: "canceled",
+                      winner: 3,
+                    });
+                  } else {
+                    // Adjusted logic
+                    const hasWinner = !!set.winnerId;
+                    const winnerSlot = set.slots.find(
+                      (slot) => slot.entrant?.id === set.winnerId
+                    );
+                    const winnerName = winnerSlot?.entrant?.name || "Unknown";
 
-//   // Remove only the keys corresponding to ongoing tournaments in the frequentCache
-//   for (const tournament of ongoingTournaments) {
-//     frequentCache.del(tournament.slug.toLowerCase());
-//   }
-//   frequentCache.del(phaseIdsToDelete);
+                    const inGame = set.slots.every(
+                      (slot) => slot.standing?.placement === 2
+                    );
+                    const hasUnknownEntrant = set.slots.some(
+                      (slot) => !slot.entrant || slot.entrant.name === "Unknown"
+                    );
 
-//   // Replace with new entries from the temporaryFrequentCache using mset
-//   const keysToUpdate = temporaryFrequentCache.keys();
-//   frequentCache.mset(
-//     keysToUpdate.map((key) => ({ key, val: temporaryFrequentCache.get(key) }))
-//   );
+                    console.log(`Processing set ${cacheSetKey}`);
+                    console.log(`inGame: ${inGame}`);
+                    console.log(`hasWinner: ${hasWinner}`);
+                    console.log(`hasUnknownEntrant: ${hasUnknownEntrant}`);
+                    console.log(`winnerName: ${winnerName}`);
 
-//   console.log("Frequent cache updated with ongoing tournaments.");
-//   isUpdatingFrequentCache = false;
-// }
+                    if (inGame && !hasWinner) {
+                      setStatuses.set(cacheSetKey, {
+                        status: "ongoing",
+                        winner: null,
+                      });
+                    } else if (!inGame && !hasWinner && !hasUnknownEntrant) {
+                      setStatuses.set(cacheSetKey, {
+                        status: "upcoming",
+                        winner: null,
+                      });
+                    } else if (hasWinner) {
+                      setStatuses.set(cacheSetKey, {
+                        status: "completed",
+                        winner: winnerName,
+                      });
+                      await updateMongoDBWithWinner(cacheSetKey, winnerName);
+                    } else {
+                      setStatuses.set(cacheSetKey, {
+                        status: "other",
+                        winner: null,
+                      });
+                    }
+                  }
+                }
+                // Update the temporaryFrequentCache with the current set data
+                temporaryFrequentCache.set(cacheSetKey, set);
+
+                // Also update the phase sets in frequentCache
+                const phaseKey = `phase:${phaseId}`;
+                if (frequentCache.has(phaseKey)) {
+                  const phaseSets = frequentCache.get(phaseKey);
+                  const setIndex = phaseSets.findIndex((s) => s.id === set.id);
+                  if (setIndex !== -1) {
+                    phaseSets[setIndex] = set; // Update the set
+                    frequentCache.set(phaseKey, phaseSets); // Save back to cache
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Update temporaryFrequentCache with the detailed tournament data
+      temporaryFrequentCache.set(
+        `phase:${tournament.slug.toLowerCase()}`,
+        detailedTournament
+      );
+    } catch (error) {
+      console.error("Error handling tournament:", tournament.slug, error);
+    }
+    console.log("Updated tournament:", tournament.slug);
+  }
+
+  // Now update the frequentCache with the new data from temporaryFrequentCache
+  const keysToUpdate = temporaryFrequentCache.keys();
+  frequentCache.mset(
+    keysToUpdate.map((key) => ({
+      key,
+      val: temporaryFrequentCache.get(key),
+    }))
+  );
+
+  console.log("Frequent cache updated with ongoing tournaments.");
+  isUpdatingFrequentCache = false;
+}
 
 cron.schedule("0 */15 * * * *", updateFrequentCache); // Update frequent cache every 20 minutes
 cron.schedule("0 0 */24 * * *", fetchAllTournamentDetails);
+
+async function updateMongoDBWithWinner(setKey, winnerName) {
+  try {
+    const collection = db.collection("Contracts");
+
+    // Find the document where the tags match the setKey
+    const document = await collection.findOne({ setKey });
+
+    if (!document) {
+      console.log(`No contract found for set ${setKey}`);
+      return;
+    }
+
+    // Create contract instance
+    const contract = new ethers.Contract(
+      document.address,
+      predMarketArtifact.abi,
+      signer
+    );
+
+    // Determine which participant won
+    let winnerNumber;
+    if (winnerName === document.eventA) {
+      winnerNumber = 1;
+    } else if (winnerName === document.eventB) {
+      winnerNumber = 2;
+    } else {
+      winnerNumber = 3; // DQ or other scenario
+    }
+
+    // Call the declareWinner function
+    const tx = await contract.declareWinner(winnerNumber);
+    await tx.wait();
+    console.log(
+      `Successfully called declareWinner(${winnerNumber}) for contract ${document.address}`
+    );
+  } catch (error) {
+    console.error("Error calling declareWinner:", error);
+  }
+}
 
 app.get("/api/tournament/:slug", (req, res) => {
   const { slug } = req.params;
@@ -903,11 +946,11 @@ app.get("/api/tournament/:slug", (req, res) => {
 
 app.get("/api/phase-sets/:phaseId", (req, res) => {
   const { phaseId } = req.params;
-  console.log(`Requested phaseId: ${phaseId}`);
-  if (frequentCache.has(phaseId.toLowerCase())) {
-    const set = frequentCache.get(phaseId.toLowerCase());
+  const phaseKey = `phase:${phaseId.toString()}`; // Consistent key format
 
-    res.json(set);
+  if (frequentCache.has(phaseKey)) {
+    const sets = frequentCache.get(phaseKey);
+    res.json(sets);
   } else {
     console.log(`Cache miss for phaseId: ${phaseId}`);
     res
@@ -915,6 +958,278 @@ app.get("/api/phase-sets/:phaseId", (req, res) => {
       .send(
         "phaseId not found in cache. Please wait until the next cache refresh."
       );
+  }
+});
+
+app.get("/getUserContracts/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Pagination parameters
+    const limit = parseInt(req.query.limit) || 100; // Default 100 results
+    const skip = parseInt(req.query.skip) || 0;
+
+    // Step 1: Fetch user and get deployer and better arrays
+    const usersCollection = db.collection("Users");
+    const user = await usersCollection.findOne({ userId });
+
+    if (!user) {
+      return res.status(404).send("User not found");
+    }
+
+    // Separate deployer and better contracts
+    const deployerContracts = user.deployer || [];
+    const betterContracts = user.better || [];
+
+    // Create a roles map to associate each contract address with the user's role(s)
+    const rolesMap = {};
+
+    // Map deployer contracts
+    deployerContracts.forEach((address) => {
+      rolesMap[address] = rolesMap[address] || [];
+      if (!rolesMap[address].includes("deployer")) {
+        rolesMap[address].push("deployer");
+      }
+    });
+
+    // Map better contracts
+    betterContracts.forEach((address) => {
+      rolesMap[address] = rolesMap[address] || [];
+      if (!rolesMap[address].includes("better")) {
+        rolesMap[address].push("better");
+      }
+    });
+
+    // Combine all contract addresses
+    const contractAddresses = Object.keys(rolesMap);
+
+    if (contractAddresses.length === 0) {
+      return res.status(200).json([]);
+    }
+
+    // Step 2: Fetch contracts for this user's contracts
+    const fetchUserContracts = async (collectionName) => {
+      const collection = db.collection(collectionName);
+
+      // Fetch contracts where address is in contractAddresses
+      const contracts = await collection
+        .find({ address: { $in: contractAddresses } })
+        .skip(skip)
+        .limit(limit)
+        .toArray();
+
+      // Add collectionName and role to each contract
+      contracts.forEach((contract) => {
+        contract.collectionName = collectionName;
+        contract.role = rolesMap[contract.address];
+      });
+
+      return contracts;
+    };
+
+    // Step 3: Fetch contracts from all collections
+    const collectionNames = ["Contracts", "ExpiredContracts", "Disagreements"];
+    const contractsPromises = collectionNames.map(fetchUserContracts);
+    const results = await Promise.all(contractsPromises);
+
+    // Step 4: Combine results and send response
+    const allUserContracts = results.flat();
+    res.status(200).json(allUserContracts);
+  } catch (error) {
+    console.error("Error fetching contracts for user:", error);
+    res.status(500).send("Error fetching contracts");
+  }
+});
+
+// async function cleanUpUserBets(userId) {
+//   try {
+//     const userCollection = db.collection("Users");
+//     const relevantCollections = [
+//       "Contracts",
+//       "ExpiredContracts",
+//       "Disagreements",
+//     ];
+
+//     // Find the user by userId
+//     const user = await userCollection.findOne({ userId: userId });
+
+//     if (!user) {
+//       console.log("User not found");
+//       return;
+//     }
+
+//     const deployerArray = user.deployer || [];
+//     const betterArray = user.better || [];
+
+//     const updatedDeployerArray = [];
+//     const updatedBetterArray = [];
+
+//     // Helper function to check if an address exists in any collection
+//     const addressExistsInCollections = async (address) => {
+//       for (let collectionName of relevantCollections) {
+//         const collection = db.collection(collectionName);
+//         const addressExists = await collection.findOne({ address: address }); // Check 'address' field in the collection
+//         if (addressExists) return true;
+//       }
+//       return false;
+//     };
+
+//     // Check the deployer array
+//     for (let contractAddress of deployerArray) {
+//       const addressFound = await addressExistsInCollections(contractAddress);
+//       if (addressFound) {
+//         updatedDeployerArray.push(contractAddress); // Keep the address if found
+//       }
+//     }
+
+//     // Check the better array
+//     for (let contractAddress of betterArray) {
+//       const addressFound = await addressExistsInCollections(contractAddress);
+//       if (addressFound) {
+//         updatedBetterArray.push(contractAddress); // Keep the address if found
+//       }
+//     }
+
+//     // Update user object with cleaned up deployer and better arrays
+//     await userCollection.updateOne(
+//       { userId: userId },
+//       { $set: { deployer: updatedDeployerArray, better: updatedBetterArray } }
+//     );
+
+//     console.log("User object cleaned up");
+//   } catch (error) {
+//     console.error("Error cleaning up user object:", error);
+//   }
+// }
+
+async function cleanUpUserBets(userId) {
+  try {
+    const userCollection = db.collection("Users");
+    const relevantCollections = [
+      "Contracts",
+      "ExpiredContracts",
+      "Disagreements",
+    ];
+
+    // Find the user by userId
+    const user = await userCollection.findOne({ userId: userId });
+
+    if (!user) {
+      console.log("User not found");
+      return;
+    }
+
+    const deployerArray = user.deployer || [];
+    const betterArray = user.better || [];
+
+    // Helper function to check if an address exists in any collection
+    const addressExistsInCollections = async (address) => {
+      for (let collectionName of relevantCollections) {
+        const collection = db.collection(collectionName);
+        const addressExists = await collection.findOne({ address: address });
+        if (addressExists) return true;
+      }
+      return false;
+    };
+
+    // Use Promise.all to check all addresses concurrently
+    const deployerPromises = deployerArray.map(async (contractAddress) => {
+      const addressFound = await addressExistsInCollections(contractAddress);
+      return addressFound ? contractAddress : null;
+    });
+
+    const betterPromises = betterArray.map(async (contractAddress) => {
+      const addressFound = await addressExistsInCollections(contractAddress);
+      return addressFound ? contractAddress : null;
+    });
+
+    // Wait for all promises to resolve
+    const updatedDeployerArray = (await Promise.all(deployerPromises)).filter(
+      Boolean
+    );
+    const updatedBetterArray = (await Promise.all(betterPromises)).filter(
+      Boolean
+    );
+
+    // Update user object with cleaned-up deployer and better arrays
+    await userCollection.updateOne(
+      { userId: userId },
+      { $set: { deployer: updatedDeployerArray, better: updatedBetterArray } }
+    );
+
+    console.log("User object cleaned up");
+  } catch (error) {
+    console.error("Error cleaning up user object:", error);
+  }
+}
+
+app.get("/api/existingUser/:address", async (req, res) => {
+  const { address } = req.params;
+  const collection = db.collection("Users");
+
+  try {
+    const existingUser = await collection.findOne({ userId: address });
+
+    if (existingUser) {
+      await cleanUpUserBets(address);
+      // User exists, return 200 OK
+      res.sendStatus(200);
+    } else {
+      // Insert a new user if the address does not exist
+      const newUser = {
+        userId: address,
+        deployer: [], // Initialize deployer array
+        better: [], // Initialize better array
+      };
+      await collection.insertOne(newUser);
+      // Return 201 Created
+      res.sendStatus(201);
+    }
+  } catch (error) {
+    console.error("Error fetching or creating user:", error);
+    res.status(500).send("Server Error: Unable to fetch or create user.");
+  }
+});
+
+app.post("/api/updateUserContract", async (req, res) => {
+  const { contractAddress, userId, role } = req.body;
+
+  try {
+    const collection = db.collection("Users");
+
+    // Find the user by userId
+    const user = await collection.findOne({ userId });
+
+    if (!user) {
+      res.status(404).send("User not found");
+      return;
+    }
+
+    // Determine which array to update based on the role
+    let arrayToUpdate;
+    if (role === "better") {
+      arrayToUpdate = "better";
+    } else if (role === "deployer") {
+      arrayToUpdate = "deployer";
+    } else {
+      res.status(400).send("Invalid role specified");
+      return;
+    }
+
+    // Check if the contractAddress already exists in the corresponding array
+    if (!user[arrayToUpdate].includes(contractAddress)) {
+      // Push the new value if it does not exist
+      await collection.updateOne(
+        { userId },
+        { $push: { [arrayToUpdate]: contractAddress } }
+      );
+      res.status(200).send("Update successful");
+    } else {
+      res.status(200).send("No update needed: Value already exists.");
+    }
+  } catch (error) {
+    console.error("Error updating MongoDB:", error);
+    res.status(500).send("Error updating MongoDB");
   }
 });
 
@@ -935,5 +1250,491 @@ app.get("/api/tournament-details", (req, res) => {
       .send(
         "No tournament details available. Please wait until the next cache refresh."
       );
+  }
+});
+
+// app.post("/api/bets", async (req, res) => {
+//   const betsCollection = db.collection("bets");
+//   let {
+//     action,
+//     address,
+//     amount,
+//     buyerAmount,
+//     condition,
+//     contractAddress,
+//     positionInArray,
+//   } = req.body;
+
+//   contractAddress = String(contractAddress).toLowerCase();
+
+//   // Ensure positionInArray is an integer
+//   positionInArray = parseInt(positionInArray, 10);
+//   amount = parseFloat(amount);
+//   buyerAmount = parseFloat(buyerAmount);
+
+//   try {
+//     switch (action) {
+//       case "deploy":
+//         // Validate required fields
+//         if (
+//           !address ||
+//           amount === undefined ||
+//           buyerAmount === undefined ||
+//           !condition ||
+//           !contractAddress ||
+//           positionInArray === undefined
+//         ) {
+//           return res.status(400).send("Missing required fields for deploy");
+//         }
+
+//         // Check if the bet already exists
+//         const existingBet = await betsCollection.findOne({
+//           contractAddress,
+//           positionInArray,
+//         });
+
+//         if (existingBet) {
+//           return res.status(400).send("Bet already exists");
+//         }
+
+//         // Create the bet document
+//         const bet = {
+//           contractAddress,
+//           positionInArray,
+//           deployer: address,
+//           condition,
+//           deployedAmount: amount,
+//           buyerAmount,
+//           buyer: null,
+//           resellPrice: null,
+//           betForSale: true,
+//           timestamp: new Date(),
+//           lastUpdated: new Date(),
+//         };
+
+//         await betsCollection.insertOne(bet);
+
+//         return res.status(201).json({
+//           message: "Bet deployed successfully",
+//         });
+
+//       case "buy":
+//         if (!address || !contractAddress || positionInArray === undefined) {
+//           return res.status(400).send("Missing required fields for buy");
+//         }
+//         console.log("Searching for bet with:", {
+//           contractAddress,
+//           positionInArray,
+//         });
+
+//         const betToBuy = await betsCollection.findOne({
+//           contractAddress,
+//           positionInArray,
+//         });
+
+//         console.log(betToBuy);
+
+//         if (!betToBuy) {
+//           return res.status(404).send("Bet not found");
+//         }
+
+//         if (betToBuy.buyer) {
+//           return res.status(400).send("Bet already bought");
+//         }
+
+//         if (!betToBuy.betForSale) {
+//           return res.status(400).send("Bet is not for sale");
+//         }
+
+//         // Update the bet document
+//         await betsCollection.updateOne(
+//           { contractAddress, positionInArray },
+//           {
+//             $set: {
+//               buyer: address,
+
+//               betForSale: false,
+//               lastUpdated: new Date(),
+//             },
+//           }
+//         );
+
+//         return res.status(200).send("Bet bought successfully");
+
+//       case "resell":
+//         if (
+//           !address ||
+//           !contractAddress ||
+//           positionInArray === undefined ||
+//           amount === undefined
+//         ) {
+//           return res.status(400).send("Missing required fields for resell");
+//         }
+
+//         const betToResell = await betsCollection.findOne({
+//           contractAddress,
+//           positionInArray,
+//         });
+
+//         if (!betToResell) {
+//           return res.status(404).send("Bet not found");
+//         }
+
+//         if (betToResell.owner !== address) {
+//           return res.status(403).send("You are not the owner of this bet");
+//         }
+
+//         // Update the bet document
+//         await betsCollection.updateOne(
+//           { contractAddress, positionInArray },
+//           {
+//             $set: {
+//               resellPrice: amount,
+//               betForSale: true,
+//               lastUpdated: new Date(),
+//             },
+//           }
+//         );
+
+//         return res.status(200).send("Bet listed for resale successfully");
+
+//       case "unlist":
+//         if (!address || !contractAddress || positionInArray === undefined) {
+//           return res.status(400).send("Missing required fields for unlist");
+//         }
+
+//         const betToUnlist = await betsCollection.findOne({
+//           contractAddress,
+//           positionInArray,
+//         });
+
+//         if (!betToUnlist) {
+//           return res.status(404).send("Bet not found");
+//         }
+
+//         if (betToUnlist.owner !== address) {
+//           return res.status(403).send("You are not the owner of this bet");
+//         }
+
+//         if (!betToUnlist.betForSale) {
+//           return res.status(400).send("Bet is not currently for sale");
+//         }
+
+//         // Update the bet document
+//         await betsCollection.updateOne(
+//           { contractAddress, positionInArray },
+//           {
+//             $set: {
+//               betForSale: false,
+//               resellPrice: null,
+//               lastUpdated: new Date(),
+//             },
+//           }
+//         );
+
+//         return res.status(200).send("Bet unlisted successfully");
+
+//       case "edit":
+//         if (
+//           !address ||
+//           !contractAddress ||
+//           positionInArray === undefined ||
+//           amount === undefined ||
+//           buyerAmount === undefined
+//         ) {
+//           return res.status(400).send("Missing required fields for edit");
+//         }
+
+//         const betToEdit = await betsCollection.findOne({
+//           contractAddress,
+//           positionInArray,
+//         });
+
+//         if (!betToEdit) {
+//           return res.status(404).send("Bet not found");
+//         }
+
+//         if (betToEdit.deployer !== address) {
+//           return res.status(403).send("You cannot edit this bet");
+//         }
+
+//         // Update the bet document
+//         await betsCollection.updateOne(
+//           { contractAddress, positionInArray },
+//           {
+//             $set: {
+//               deployedAmount: amount,
+//               buyerAmount: buyerAmount,
+//               betForSale: true,
+//               lastUpdated: new Date(),
+//             },
+//           }
+//         );
+
+//         return res.status(200).send("Bet edited successfully");
+
+//       default:
+//         return res.status(400).send("Invalid action");
+//     }
+//   } catch (error) {
+//     console.error(`Error processing ${action}:`, error);
+//     res.status(500).send(`Error processing ${action}`);
+//   }
+// });
+
+app.post("/api/bets", async (req, res) => {
+  const betsCollection = db.collection("bets");
+  let {
+    action,
+    address,
+    amount,
+    buyerAmount,
+    condition,
+    contractAddress,
+    positionInArray,
+  } = req.body;
+
+  contractAddress = String(contractAddress).toLowerCase();
+  address = String(address).toLowerCase();
+  positionInArray = parseInt(positionInArray, 10);
+
+  // Basic validation for common fields
+  if (!address || typeof address !== "string") {
+    return res.status(400).send("Invalid address");
+  }
+
+  if (!contractAddress || typeof contractAddress !== "string") {
+    return res.status(400).send("Invalid contract address");
+  }
+
+  if (isNaN(positionInArray)) {
+    return res.status(400).send("Invalid positionInArray");
+  }
+
+  // Action-specific validation
+  try {
+    switch (action) {
+      case "deploy":
+        // Validate fields specific to deploy
+        amount = parseFloat(amount);
+        buyerAmount = parseFloat(buyerAmount);
+
+        if (isNaN(amount) || isNaN(buyerAmount)) {
+          return res
+            .status(400)
+            .send("Invalid amount or buyerAmount for deploy");
+        }
+
+        if (!condition || typeof condition !== "string") {
+          return res.status(400).send("Invalid condition for deploy");
+        }
+
+        const existingBet = await betsCollection.findOne({
+          contractAddress,
+          positionInArray,
+        });
+
+        if (existingBet) {
+          return res.status(400).send("Bet already exists");
+        }
+
+        // Create and insert bet
+        const bet = {
+          contractAddress,
+          positionInArray,
+          deployer: address,
+          condition,
+          deployedAmount: amount,
+          buyerAmount,
+          buyer: null,
+          resellPrice: [],
+          reseller: [],
+          betForSale: true,
+          timestamp: new Date(),
+          lastUpdated: new Date(),
+        };
+
+        await betsCollection.insertOne(bet);
+        return res.status(201).json({ message: "Bet deployed successfully" });
+
+      case "buy":
+        // No need to validate amount for buy
+        const betToBuy = await betsCollection.findOne({
+          contractAddress,
+          positionInArray,
+        });
+
+        if (!betToBuy) {
+          return res.status(404).send("Bet not found");
+        }
+
+        // Update the bet document
+        await betsCollection.updateOne(
+          { contractAddress, positionInArray },
+          {
+            $set: {
+              buyer: address,
+              betForSale: false,
+              lastUpdated: new Date(),
+            },
+          }
+        );
+
+        return res.status(200).json({ message: "Bet bought successfully" });
+
+      case "resell":
+        // Validate amount for resell
+        amount = parseFloat(amount);
+        if (isNaN(amount)) {
+          return res.status(400).send("Invalid amount for resell");
+        }
+
+        const betToResell = await betsCollection.findOne({
+          contractAddress,
+          positionInArray,
+        });
+
+        if (!betToResell) {
+          return res.status(404).send("Bet not found");
+        }
+
+        if (
+          betToResell?.reseller?.length > 0 &&
+          betToResell.reseller[betToResell.reseller.length - 1] === address
+        ) {
+          // If the last element in the `reseller` array matches the current address, update the last element in `resellPrice`
+          await betsCollection.updateOne(
+            { contractAddress, positionInArray },
+            {
+              $set: {
+                [`resellPrice.${betToResell.resellPrice.length - 1}`]: amount, // Update last element of resellPrice
+                lastUpdated: new Date(),
+              },
+            }
+          );
+        } else {
+          // If it doesn't match, push the new values to both arrays
+          await betsCollection.updateOne(
+            { contractAddress, positionInArray },
+            {
+              $push: {
+                resellPrice: amount,
+                reseller: address,
+              },
+              $set: {
+                betForSale: true,
+                lastUpdated: new Date(),
+              },
+            }
+          );
+        }
+
+        return res
+          .status(200)
+          .json({ message: "Bet listed for resale successfully" });
+
+      case "unlist":
+        // No amount or buyerAmount needed for unlist
+        const betToUnlist = await betsCollection.findOne({
+          contractAddress,
+          positionInArray,
+        });
+
+        if (!betToUnlist) {
+          return res.status(404).send("Bet not found");
+        }
+
+        await betsCollection.updateOne(
+          { contractAddress, positionInArray },
+          {
+            $set: {
+              betForSale: false,
+
+              lastUpdated: new Date(),
+            },
+          }
+        );
+
+        return res.status(200).json({ message: "Bet unlisted successfully" });
+
+      case "edit":
+        // Validate fields specific to edit
+        amount = parseFloat(amount);
+        buyerAmount = parseFloat(buyerAmount);
+        if (isNaN(amount) || isNaN(buyerAmount)) {
+          return res.status(400).send("Invalid amount or buyerAmount for edit");
+        }
+
+        const betToEdit = await betsCollection.findOne({
+          contractAddress,
+          positionInArray,
+        });
+
+        if (!betToEdit) {
+          return res.status(404).send("Bet not found");
+        }
+
+        await betsCollection.updateOne(
+          { contractAddress, positionInArray },
+          {
+            $set: {
+              deployedAmount: amount,
+              buyerAmount: buyerAmount,
+              betForSale: true,
+              lastUpdated: new Date(),
+            },
+          }
+        );
+
+        return res.status(200).json({ message: "Bet edited successfully" });
+
+      default:
+        return res.status(400).send("Invalid action");
+    }
+  } catch (error) {
+    console.error(`Error processing ${action}:`, error);
+    res.status(500).send(`Error processing ${action}`);
+  }
+});
+
+app.get("/api/user-bets/:address", async (req, res) => {
+  const betsCollection = db.collection("bets");
+  let { address } = req.params;
+  let { contractAddress } = req.query;
+
+  address = String(address).toLowerCase();
+  contractAddress = String(contractAddress).toLowerCase();
+
+  try {
+    // Validate input parameters
+    if (!address || !contractAddress) {
+      return res.status(400).send("Address and contractAddress are required");
+    }
+
+    console.log(
+      "Querying for contractADdress: ",
+      contractAddress,
+      "And address: ",
+      address
+    );
+
+    // Build the query object
+    const query = {
+      contractAddress: contractAddress,
+      $or: [
+        { deployer: address },
+        { buyer: address },
+        { reseller: address }, // Checks if `address` is in the `reseller` array
+      ],
+    };
+
+    const bets = await betsCollection.find(query).toArray();
+
+    console.log(bets);
+
+    res.json(bets);
+  } catch (error) {
+    console.error("Error fetching user bets:", error);
+    res.status(500).send("Error fetching user bets");
   }
 });
