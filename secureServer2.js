@@ -275,108 +275,30 @@ function scheduleTasks() {
   cron.schedule("*/5 * * * *", moveExpiredContracts); // every 5 mins
 }
 
-app.post(
-  "/addContract",
-  limiter, // Apply rate limiting
-  [
-    // Validation and sanitization rules
-    body("address")
-      .isEthereumAddress()
-      .withMessage("Invalid Ethereum address."),
-    body("NameofMarket")
-      .isString()
-      .trim()
-      .notEmpty()
-      .withMessage("Market name is required."),
-    body("eventA")
-      .isString()
-      .trim()
-      .escape()
-      .withMessage("Event A must be a string."),
-    body("eventB")
-      .isString()
-      .trim()
-      .escape()
-      .withMessage("Event B must be a string."),
-    body("tags")
-      .isString()
-      .trim()
-      .escape()
-      .withMessage("Tags must be a comma-separated string."),
-    body("deployerAddress")
-      .isEthereumAddress()
-      .withMessage("Invalid deployer address."),
-    body("fullName")
-      .isString()
-      .trim()
-      .notEmpty()
-      .withMessage("Full name is required."),
-    body("endsAt")
-      .isInt({ min: Math.floor(Date.now() / 1000) })
-      .withMessage("End time must be in the future."),
-
-    body("setKey")
-      .isString()
-      .trim()
-      .notEmpty()
-      .withMessage("Set key is required."),
-  ],
-  async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    try {
-      const collection = db.collection("Contracts");
-      const contract = req.body;
-      await collection.insertOne(contract);
-      res.status(201).send("Contract added successfully");
-    } catch (error) {
-      console.error("Error adding contract to MongoDB:", error);
-      res.status(500).send("Error adding contract");
-    }
+app.post("/addContract", limiter, async (req, res) => {
+  try {
+    const collection = db.collection("Contracts");
+    const contract = req.body;
+    await collection.insertOne(contract);
+    res.status(201).send("Contract added successfully");
+  } catch (error) {
+    console.error("Error adding contract to MongoDB:", error);
+    res.status(500).send("Error adding contract");
   }
-);
+});
 
-app.post(
-  "/moveToDisagreements",
-  limiter, // Apply rate limiting
-  [
-    // Validation and sanitization rules
-    body("contractAddress")
-      .isEthereumAddress()
-      .withMessage("Invalid Ethereum address format for contract."),
-    body("reason")
-      .isString()
-      .trim()
-      .escape()
-      .isLength({ min: 1, max: 500 })
-      .withMessage("Reason must be between 1 and 500 characters."),
-  ],
-  async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
+app.post("/moveToDisagreements", limiter, async (req, res) => {
+  const { contractAddress, reason } = req.body;
+  const result = await moveContractToDisagreements(contractAddress, reason);
 
-    const { contractAddress, reason } = req.body;
-
-    try {
-      const result = await moveContractToDisagreements(contractAddress, reason);
-      if (result.success) {
-        res
-          .status(200)
-          .send("Contract moved to Disagreements collection successfully");
-      } else {
-        res.status(500).send(result.error);
-      }
-    } catch (error) {
-      console.error("Error moving contract to Disagreements:", error);
-      res.status(500).send("Server error occurred while moving contract.");
-    }
+  if (result.success) {
+    res
+      .status(200)
+      .send("Contract moved to Disagreements collection successfully");
+  } else {
+    res.status(500).send(result.error);
   }
-);
+});
 
 async function moveContractToDisagreements(contractAddress, reason) {
   try {
@@ -419,65 +341,43 @@ async function moveContractToDisagreements(contractAddress, reason) {
   }
 }
 
-app.post(
-  "/moveFromDisagreementsToContracts",
-  limiter, // Apply rate limiting
-  [
-    // Validation and sanitization rules
-    body("contractAddress")
-      .isEthereumAddress()
-      .withMessage("Invalid Ethereum address format for contract."),
-  ],
-  async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
+app.post("/moveFromDisagreementsToContracts", limiter, async (req, res) => {
+  try {
     const { contractAddress } = req.body;
+    const targetCollection = db.collection("Contracts");
+    let sourceCollection = db.collection("Disagreements");
 
-    try {
-      const targetCollection = db.collection("Contracts");
-      let sourceCollection = db.collection("Disagreements");
+    // Find the contract in the source collection
+    let contract = await sourceCollection.findOne({ address: contractAddress });
 
-      // Find the contract in the source collection
-      let contract = await sourceCollection.findOne({
-        address: contractAddress,
-      });
-
-      // If not found, try ExpiredContracts collection
+    if (!contract) {
+      sourceCollection = db.collection("ExpiredContracts");
+      contract = await sourceCollection.findOne({ address: contractAddress });
       if (!contract) {
-        sourceCollection = db.collection("ExpiredContracts");
-        contract = await sourceCollection.findOne({ address: contractAddress });
-
-        if (!contract) {
-          return res.status(404).send("Contract not found in collections");
-        }
+        return res.status(404).send("Contract not found in collections");
       }
-
-      // Prepare the document to be inserted into the Contracts collection, excluding sensitive fields
-      const updatedContract = {
-        ...contract,
-        lastModified: new Date(),
-      };
-      delete updatedContract.disagreementText; // Remove disagreementText field if it exists
-
-      // Insert the sanitized document into the Contracts collection
-      await targetCollection.insertOne(updatedContract);
-
-      // Remove the original document from its source collection
-      await sourceCollection.deleteOne({ address: contractAddress });
-
-      res
-        .status(200)
-        .send("Contract moved to Contracts collection successfully");
-    } catch (error) {
-      console.error("Error moving contract to Contracts:", error);
-      res.status(500).send("Error moving contract");
     }
-  }
-);
 
+    // Prepare the document to be inserted into the Contracts collection
+    // Removing the disagreementText field
+    const updatedContract = {
+      ...contract,
+      lastModified: new Date(),
+    };
+    delete updatedContract.disagreementText; // Deletes the disagreementText field
+
+    // Insert the updated document into the Contracts collection
+    await targetCollection.insertOne(updatedContract);
+
+    // Remove the original document from its source collection
+    await sourceCollection.deleteOne({ address: contractAddress });
+
+    res.status(200).send("Contract moved to Contracts collection successfully");
+  } catch (error) {
+    console.error("Error moving contract to Contracts:", error);
+    res.status(500).send("Error moving contract");
+  }
+});
 app.get("/getContracts", limiter, async (req, res) => {
   try {
     const collectionNames = ["Contracts", "ExpiredContracts", "Disagreements"];
@@ -506,54 +406,38 @@ app.get("/getContracts", limiter, async (req, res) => {
   }
 });
 
-app.get(
-  "/api/contracts/:address",
-  limiter,
-  [
-    // Validation and sanitization rules
-    param("address")
-      .isEthereumAddress()
-      .withMessage("Invalid Ethereum address format for contract."),
-  ],
-  async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+app.get("/api/contracts/:address", limiter, async (req, res) => {
+  try {
+    const address = req.params.address;
+    const contractsCollection = db.collection("Contracts");
+    const disagreementsCollection = db.collection("Disagreements");
+    const expiredContractsCollection = db.collection("ExpiredContracts");
+
+    // First try to find the contract in the Contracts collection
+    let contract = await contractsCollection.findOne({ address: address });
+
+    // If not found in Contracts, try the Disagreements collection
+    if (!contract) {
+      contract = await disagreementsCollection.findOne({ address: address });
     }
-    try {
-      const address = req.params.address;
-      const contractsCollection = db.collection("Contracts");
-      const disagreementsCollection = db.collection("Disagreements");
-      const expiredContractsCollection = db.collection("ExpiredContracts");
 
-      // First try to find the contract in the Contracts collection
-      let contract = await contractsCollection.findOne({ address: address });
-
-      // If not found in Contracts, try the Disagreements collection
-      if (!contract) {
-        contract = await disagreementsCollection.findOne({ address: address });
-      }
-
-      // If not found in Disagreements, try the ExpiredContracts collection
-      if (!contract) {
-        contract = await expiredContractsCollection.findOne({
-          address: address,
-        });
-      }
-
-      // Return the contract if found
-      if (contract) {
-        res.status(200).json(contract);
-      } else {
-        // If the contract is not found in any of the collections
-        res.status(404).send("Contract not found");
-      }
-    } catch (error) {
-      console.error("Error fetching contract from MongoDB:", error);
-      res.status(500).send("Error fetching contract");
+    // If not found in Disagreements, try the ExpiredContracts collection
+    if (!contract) {
+      contract = await expiredContractsCollection.findOne({ address: address });
     }
+
+    // Return the contract if found
+    if (contract) {
+      res.status(200).json(contract);
+    } else {
+      // If the contract is not found in any of the collections
+      res.status(404).send("Contract not found");
+    }
+  } catch (error) {
+    console.error("Error fetching contract from MongoDB:", error);
+    res.status(500).send("Error fetching contract");
   }
-);
+});
 
 process.on("SIGINT", () => {
   client.close().then(() => {
@@ -1062,163 +946,117 @@ async function updateMongoDBWithWinner(setKey, winnerName) {
   }
 }
 
-app.get(
-  "/api/tournament/:slug",
-  [
-    // Validation and sanitization rules for "slug"
-    param("slug")
-      .isSlug()
-      .withMessage(
-        "Invalid tournament slug format. Only use alphanumeric characters, dashes, and underscores."
-      ),
-  ],
-  (req, res) => {
-    // Check for validation errors
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
+app.get("/api/tournament/:slug", (req, res) => {
+  const { slug } = req.params;
+  const tournament = dailyCache.get(slug.toLowerCase());
 
-    const { slug } = req.params;
-    const tournament = dailyCache.get(slug.toLowerCase());
-
-    if (tournament) {
-      res.json(tournament);
-    } else {
-      res
-        .status(404)
-        .send(
-          "Tournament not found in cache. Please wait until the next cache refresh."
-        );
-    }
+  if (tournament) {
+    res.json(tournament);
+  } else {
+    res
+      .status(404)
+      .send(
+        "Tournament not found in cache. Please wait until the next cache refresh."
+      );
   }
-);
+});
 
-app.get(
-  "/api/phase-sets/:phaseId",
-  [
-    // Validation for "phaseId" to ensure it is a numeric value
-    param("phaseId")
-      .isInt()
-      .withMessage("Invalid phase ID format. It must be a numeric value."),
-  ],
-  (req, res) => {
-    // Check for validation errors
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
+app.get("/api/phase-sets/:phaseId", (req, res) => {
+  const { phaseId } = req.params;
+  const phaseKey = `phase:${phaseId.toString()}`; // Consistent key format
 
-    const { phaseId } = req.params;
-    const phaseKey = `phase:${phaseId.toString()}`; // Consistent key format
-
-    if (frequentCache.has(phaseKey)) {
-      const sets = frequentCache.get(phaseKey);
-      res.json(sets);
-    } else {
-      console.log(`Cache miss for phaseId: ${phaseId}`);
-      res
-        .status(404)
-        .send(
-          "phaseId not found in cache. Please wait until the next cache refresh."
-        );
-    }
+  if (frequentCache.has(phaseKey)) {
+    const sets = frequentCache.get(phaseKey);
+    res.json(sets);
+  } else {
+    console.log(`Cache miss for phaseId: ${phaseId}`);
+    res
+      .status(404)
+      .send(
+        "phaseId not found in cache. Please wait until the next cache refresh."
+      );
   }
-);
+});
 
-app.get(
-  "/getUserContracts/:userId",
-  limiter,
-  [
-    // Validate that "userId" is a valid Ethereum address
-    param("userId")
-      .isEthereumAddress()
-      .withMessage("Invalid Ethereum address format for user ID."),
-  ],
-  async (req, res) => {
-    try {
-      const { userId } = req.params;
+app.get("/getUserContracts/:userId", limiter, async (req, res) => {
+  try {
+    const { userId } = req.params;
 
-      // Pagination parameters
-      const limit = parseInt(req.query.limit) || 100; // Default 100 results
-      const skip = parseInt(req.query.skip) || 0;
+    // Pagination parameters
+    const limit = parseInt(req.query.limit) || 100; // Default 100 results
+    const skip = parseInt(req.query.skip) || 0;
 
-      // Step 1: Fetch user and get deployer and better arrays
-      const usersCollection = db.collection("Users");
-      const user = await usersCollection.findOne({ userId });
+    // Step 1: Fetch user and get deployer and better arrays
+    const usersCollection = db.collection("Users");
+    const user = await usersCollection.findOne({ userId });
 
-      if (!user) {
-        return res.status(404).send("User not found");
+    if (!user) {
+      return res.status(404).send("User not found");
+    }
+
+    // Separate deployer and better contracts
+    const deployerContracts = user.deployer || [];
+    const betterContracts = user.better || [];
+
+    // Create a roles map to associate each contract address with the user's role(s)
+    const rolesMap = {};
+
+    // Map deployer contracts
+    deployerContracts.forEach((address) => {
+      rolesMap[address] = rolesMap[address] || [];
+      if (!rolesMap[address].includes("deployer")) {
+        rolesMap[address].push("deployer");
       }
+    });
 
-      // Separate deployer and better contracts
-      const deployerContracts = user.deployer || [];
-      const betterContracts = user.better || [];
+    // Map better contracts
+    betterContracts.forEach((address) => {
+      rolesMap[address] = rolesMap[address] || [];
+      if (!rolesMap[address].includes("better")) {
+        rolesMap[address].push("better");
+      }
+    });
 
-      // Create a roles map to associate each contract address with the user's role(s)
-      const rolesMap = {};
+    // Combine all contract addresses
+    const contractAddresses = Object.keys(rolesMap);
 
-      // Map deployer contracts
-      deployerContracts.forEach((address) => {
-        rolesMap[address] = rolesMap[address] || [];
-        if (!rolesMap[address].includes("deployer")) {
-          rolesMap[address].push("deployer");
-        }
+    if (contractAddresses.length === 0) {
+      return res.status(200).json([]);
+    }
+
+    // Step 2: Fetch contracts for this user's contracts
+    const fetchUserContracts = async (collectionName) => {
+      const collection = db.collection(collectionName);
+
+      // Fetch contracts where address is in contractAddresses
+      const contracts = await collection
+        .find({ address: { $in: contractAddresses } })
+        .skip(skip)
+        .limit(limit)
+        .toArray();
+
+      // Add collectionName and role to each contract
+      contracts.forEach((contract) => {
+        contract.collectionName = collectionName;
+        contract.role = rolesMap[contract.address];
       });
 
-      // Map better contracts
-      betterContracts.forEach((address) => {
-        rolesMap[address] = rolesMap[address] || [];
-        if (!rolesMap[address].includes("better")) {
-          rolesMap[address].push("better");
-        }
-      });
+      return contracts;
+    };
 
-      // Combine all contract addresses
-      const contractAddresses = Object.keys(rolesMap);
+    // Step 3: Fetch contracts from all collections
+    const collectionNames = ["Contracts", "ExpiredContracts", "Disagreements"];
+    const contractsPromises = collectionNames.map(fetchUserContracts);
+    const results = await Promise.all(contractsPromises);
 
-      if (contractAddresses.length === 0) {
-        return res.status(200).json([]);
-      }
-
-      // Step 2: Fetch contracts for this user's contracts
-      const fetchUserContracts = async (collectionName) => {
-        const collection = db.collection(collectionName);
-
-        // Fetch contracts where address is in contractAddresses
-        const contracts = await collection
-          .find({ address: { $in: contractAddresses } })
-          .skip(skip)
-          .limit(limit)
-          .toArray();
-
-        // Add collectionName and role to each contract
-        contracts.forEach((contract) => {
-          contract.collectionName = collectionName;
-          contract.role = rolesMap[contract.address];
-        });
-
-        return contracts;
-      };
-
-      // Step 3: Fetch contracts from all collections
-      const collectionNames = [
-        "Contracts",
-        "ExpiredContracts",
-        "Disagreements",
-      ];
-      const contractsPromises = collectionNames.map(fetchUserContracts);
-      const results = await Promise.all(contractsPromises);
-
-      // Step 4: Combine results and send response
-      const allUserContracts = results.flat();
-      res.status(200).json(allUserContracts);
-    } catch (error) {
-      console.error("Error fetching contracts for user:", error);
-      res.status(500).send("Error fetching contracts");
-    }
+    // Step 4: Combine results and send response
+    const allUserContracts = results.flat();
+    res.status(200).json(allUserContracts);
+  } catch (error) {
+    console.error("Error fetching contracts for user:", error);
+    res.status(500).send("Error fetching contracts");
   }
-);
+});
 
 // async function cleanUpUserBets(userId) {
 //   try {
@@ -1342,108 +1180,75 @@ async function cleanUpUserBets(userId) {
   }
 }
 
-app.get(
-  "/api/existingUser/:address",
-  limiter,
-  [
-    // Validate that "address" is a valid Ethereum address
-    param("address")
-      .isEthereumAddress()
-      .withMessage("Invalid Ethereum address format."),
-  ], // Middleware to prevent address spoofing
-  async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
+app.get("/api/existingUser/:address", limiter, async (req, res) => {
+  const { address } = req.params;
+  const collection = db.collection("Users");
 
-    const { address } = req.params;
+  try {
+    const existingUser = await collection.findOne({ userId: address });
+
+    if (existingUser) {
+      await cleanUpUserBets(address);
+      // User exists, return 200 OK
+      res.sendStatus(200);
+    } else {
+      // Insert a new user if the address does not exist
+      const newUser = {
+        userId: address,
+        deployer: [], // Initialize deployer array
+        better: [], // Initialize better array
+      };
+      await collection.insertOne(newUser);
+      // Return 201 Created
+      res.sendStatus(201);
+    }
+  } catch (error) {
+    console.error("Error fetching or creating user:", error);
+    res.status(500).send("Server Error: Unable to fetch or create user.");
+  }
+});
+
+app.post("/api/updateUserContract", limiter, async (req, res) => {
+  const { contractAddress, userId, role } = req.body;
+
+  try {
     const collection = db.collection("Users");
 
-    try {
-      const existingUser = await collection.findOne({ userId: address });
+    // Find the user by userId
+    const user = await collection.findOne({ userId });
 
-      if (existingUser) {
-        await cleanUpUserBets(address);
-        res.sendStatus(200); // User exists, return 200 OK
-      } else {
-        // Insert a new user if the address does not exist
-        const newUser = {
-          userId: address,
-          deployer: [],
-          better: [],
-        };
-        await collection.insertOne(newUser);
-        res.sendStatus(201); // Return 201 Created
-      }
-    } catch (error) {
-      console.error("Error fetching or creating user:", error);
-      res.status(500).send("Server Error: Unable to fetch or create user.");
+    if (!user) {
+      res.status(404).send("User not found");
+      return;
     }
+
+    // Determine which array to update based on the role
+    let arrayToUpdate;
+    if (role === "better") {
+      arrayToUpdate = "better";
+    } else if (role === "deployer") {
+      arrayToUpdate = "deployer";
+    } else {
+      res.status(400).send("Invalid role specified");
+      return;
+    }
+
+    // Check if the contractAddress already exists in the corresponding array
+    if (!user[arrayToUpdate].includes(contractAddress)) {
+      // Push the new value if it does not exist
+      await collection.updateOne(
+        { userId },
+        { $push: { [arrayToUpdate]: contractAddress } }
+      );
+      res.status(200).send("Update successful");
+    } else {
+      res.status(200).send("No update needed: Value already exists.");
+    }
+  } catch (error) {
+    console.error("Error updating MongoDB:", error);
+    res.status(500).send("Error updating MongoDB");
   }
-);
-
-app.post(
-  "/api/updateUserContract",
-  limiter,
-  [
-    // Validate that userId is a valid Ethereum address
-    body("userId")
-      .isEthereumAddress()
-      .withMessage("Invalid Ethereum address format."),
-
-    // Validate contractAddress to be a non-empty string (or address format if appropriate)
-    body("contractAddress")
-      .isString()
-      .notEmpty()
-      .withMessage("Contract address is required."),
-  ],
-  async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-    const { contractAddress, userId, role } = req.body;
-
-    try {
-      const collection = db.collection("Users");
-
-      // Find the user by userId
-      const user = await collection.findOne({ userId });
-
-      if (!user) {
-        res.status(404).send("User not found");
-        return;
-      }
-
-      // Determine which array to update based on the role
-      let arrayToUpdate;
-      if (role === "better") {
-        arrayToUpdate = "better";
-      } else if (role === "deployer") {
-        arrayToUpdate = "deployer";
-      } else {
-        res.status(400).send("Invalid role specified");
-        return;
-      }
-
-      // Check if the contractAddress already exists in the corresponding array
-      if (!user[arrayToUpdate].includes(contractAddress)) {
-        // Push the new value if it does not exist
-        await collection.updateOne(
-          { userId },
-          { $push: { [arrayToUpdate]: contractAddress } }
-        );
-        res.status(200).send("Update successful");
-      } else {
-        res.status(200).send("No update needed: Value already exists.");
-      }
-    } catch (error) {
-      console.error("Error updating MongoDB:", error);
-      res.status(500).send("Error updating MongoDB");
-    }
-  }
-);
+});
 
 app.get("/api/tournament-details", (req, res) => {
   const allTournaments = [];
@@ -1465,316 +1270,259 @@ app.get("/api/tournament-details", (req, res) => {
   }
 });
 
-app.post(
-  "/api/bets",
-  limiter,
-  [
-    // Validation and sanitization for request fields
-    body("action")
-      .isIn(["deploy", "buy", "resell", "unlist", "edit"])
-      .withMessage("Invalid action specified."),
-    body("address")
-      .isEthereumAddress()
-      .withMessage("Invalid Ethereum address format."),
-    body("contractAddress")
-      .isEthereumAddress()
-      .withMessage("Invalid contract address format."),
-    body("amount")
-      .optional()
-      .isFloat({ gt: 0 })
-      .withMessage("Amount must be a positive number."),
-    body("buyerAmount")
-      .optional()
-      .isFloat({ gt: 0 })
-      .withMessage("Buyer amount must be a positive number."),
-    body("condition")
-      .optional()
-      .isString()
-      .trim()
-      .escape()
-      .withMessage("Invalid condition format."),
-    body("positionInArray")
-      .isInt({ min: 0 })
-      .withMessage("Position in array must be a non-negative integer."),
-    // Middleware to prevent spoofing
-  ],
-  async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-    const betsCollection = db.collection("bets");
-    let {
-      action,
-      address,
-      amount,
-      buyerAmount,
-      condition,
-      contractAddress,
-      positionInArray,
-    } = req.body;
+app.post("/api/bets", limiter, async (req, res) => {
+  const betsCollection = db.collection("bets");
+  let {
+    action,
+    address,
+    amount,
+    buyerAmount,
+    condition,
+    contractAddress,
+    positionInArray,
+  } = req.body;
 
-    contractAddress = String(contractAddress).toLowerCase();
-    address = String(address).toLowerCase();
-    positionInArray = parseInt(positionInArray, 10);
+  contractAddress = String(contractAddress).toLowerCase();
+  address = String(address).toLowerCase();
+  positionInArray = parseInt(positionInArray, 10);
 
-    // Basic validation for common fields
-    if (!address || typeof address !== "string") {
-      return res.status(400).send("Invalid address");
-    }
+  // Basic validation for common fields
+  if (!address || typeof address !== "string") {
+    return res.status(400).send("Invalid address");
+  }
 
-    if (!contractAddress || typeof contractAddress !== "string") {
-      return res.status(400).send("Invalid contract address");
-    }
+  if (!contractAddress || typeof contractAddress !== "string") {
+    return res.status(400).send("Invalid contract address");
+  }
 
-    if (isNaN(positionInArray)) {
-      return res.status(400).send("Invalid positionInArray");
-    }
+  if (isNaN(positionInArray)) {
+    return res.status(400).send("Invalid positionInArray");
+  }
 
-    // Action-specific validation
-    try {
-      switch (action) {
-        case "deploy":
-          // Validate fields specific to deploy
-          amount = parseFloat(amount);
-          buyerAmount = parseFloat(buyerAmount);
+  // Action-specific validation
+  try {
+    switch (action) {
+      case "deploy":
+        // Validate fields specific to deploy
+        amount = parseFloat(amount);
+        buyerAmount = parseFloat(buyerAmount);
 
-          if (isNaN(amount) || isNaN(buyerAmount)) {
-            return res
-              .status(400)
-              .send("Invalid amount or buyerAmount for deploy");
-          }
-
-          if (!condition || typeof condition !== "string") {
-            return res.status(400).send("Invalid condition for deploy");
-          }
-
-          const existingBet = await betsCollection.findOne({
-            contractAddress,
-            positionInArray,
-          });
-
-          if (existingBet) {
-            return res.status(400).send("Bet already exists");
-          }
-
-          // Create and insert bet
-          const bet = {
-            contractAddress,
-            positionInArray,
-            deployer: address,
-            condition,
-            deployedAmount: amount,
-            buyerAmount,
-            buyer: null,
-            resellPrice: [],
-            reseller: [],
-            betForSale: true,
-            timestamp: new Date(),
-            lastUpdated: new Date(),
-          };
-
-          await betsCollection.insertOne(bet);
-          return res.status(201).json({ message: "Bet deployed successfully" });
-
-        case "buy":
-          // No need to validate amount for buy
-          const betToBuy = await betsCollection.findOne({
-            contractAddress,
-            positionInArray,
-          });
-
-          if (!betToBuy) {
-            return res.status(404).send("Bet not found");
-          }
-
-          // Update the bet document
-          await betsCollection.updateOne(
-            { contractAddress, positionInArray },
-            {
-              $set: {
-                buyer: address,
-                betForSale: false,
-                lastUpdated: new Date(),
-              },
-            }
-          );
-
-          return res.status(200).json({ message: "Bet bought successfully" });
-
-        case "resell":
-          // Validate amount for resell
-          amount = parseFloat(amount);
-          if (isNaN(amount)) {
-            return res.status(400).send("Invalid amount for resell");
-          }
-
-          const betToResell = await betsCollection.findOne({
-            contractAddress,
-            positionInArray,
-          });
-
-          if (!betToResell) {
-            return res.status(404).send("Bet not found");
-          }
-
-          if (
-            betToResell?.reseller?.length > 0 &&
-            betToResell.reseller[betToResell.reseller.length - 1] === address
-          ) {
-            // If the last element in the `reseller` array matches the current address, update the last element in `resellPrice`
-            await betsCollection.updateOne(
-              { contractAddress, positionInArray },
-              {
-                $set: {
-                  [`resellPrice.${betToResell.resellPrice.length - 1}`]: amount, // Update last element of resellPrice
-                  lastUpdated: new Date(),
-                },
-              }
-            );
-          } else {
-            // If it doesn't match, push the new values to both arrays
-            await betsCollection.updateOne(
-              { contractAddress, positionInArray },
-              {
-                $push: {
-                  resellPrice: amount,
-                  reseller: address,
-                },
-                $set: {
-                  betForSale: true,
-                  lastUpdated: new Date(),
-                },
-              }
-            );
-          }
-
+        if (isNaN(amount) || isNaN(buyerAmount)) {
           return res
-            .status(200)
-            .json({ message: "Bet listed for resale successfully" });
+            .status(400)
+            .send("Invalid amount or buyerAmount for deploy");
+        }
 
-        case "unlist":
-          // No amount or buyerAmount needed for unlist
-          const betToUnlist = await betsCollection.findOne({
-            contractAddress,
-            positionInArray,
-          });
+        if (!condition || typeof condition !== "string") {
+          return res.status(400).send("Invalid condition for deploy");
+        }
 
-          if (!betToUnlist) {
-            return res.status(404).send("Bet not found");
+        const existingBet = await betsCollection.findOne({
+          contractAddress,
+          positionInArray,
+        });
+
+        if (existingBet) {
+          return res.status(400).send("Bet already exists");
+        }
+
+        // Create and insert bet
+        const bet = {
+          contractAddress,
+          positionInArray,
+          deployer: address,
+          condition,
+          deployedAmount: amount,
+          buyerAmount,
+          buyer: null,
+          resellPrice: [],
+          reseller: [],
+          betForSale: true,
+          timestamp: new Date(),
+          lastUpdated: new Date(),
+        };
+
+        await betsCollection.insertOne(bet);
+        return res.status(201).json({ message: "Bet deployed successfully" });
+
+      case "buy":
+        // No need to validate amount for buy
+        const betToBuy = await betsCollection.findOne({
+          contractAddress,
+          positionInArray,
+        });
+
+        if (!betToBuy) {
+          return res.status(404).send("Bet not found");
+        }
+
+        // Update the bet document
+        await betsCollection.updateOne(
+          { contractAddress, positionInArray },
+          {
+            $set: {
+              buyer: address,
+              betForSale: false,
+              lastUpdated: new Date(),
+            },
           }
+        );
 
+        return res.status(200).json({ message: "Bet bought successfully" });
+
+      case "resell":
+        // Validate amount for resell
+        amount = parseFloat(amount);
+        if (isNaN(amount)) {
+          return res.status(400).send("Invalid amount for resell");
+        }
+
+        const betToResell = await betsCollection.findOne({
+          contractAddress,
+          positionInArray,
+        });
+
+        if (!betToResell) {
+          return res.status(404).send("Bet not found");
+        }
+
+        if (
+          betToResell?.reseller?.length > 0 &&
+          betToResell.reseller[betToResell.reseller.length - 1] === address
+        ) {
+          // If the last element in the `reseller` array matches the current address, update the last element in `resellPrice`
           await betsCollection.updateOne(
             { contractAddress, positionInArray },
             {
               $set: {
-                betForSale: false,
-
+                [`resellPrice.${betToResell.resellPrice.length - 1}`]: amount, // Update last element of resellPrice
                 lastUpdated: new Date(),
               },
             }
           );
-
-          return res.status(200).json({ message: "Bet unlisted successfully" });
-
-        case "edit":
-          // Validate fields specific to edit
-          amount = parseFloat(amount);
-          buyerAmount = parseFloat(buyerAmount);
-          if (isNaN(amount) || isNaN(buyerAmount)) {
-            return res
-              .status(400)
-              .send("Invalid amount or buyerAmount for edit");
-          }
-
-          const betToEdit = await betsCollection.findOne({
-            contractAddress,
-            positionInArray,
-          });
-
-          if (!betToEdit) {
-            return res.status(404).send("Bet not found");
-          }
-
+        } else {
+          // If it doesn't match, push the new values to both arrays
           await betsCollection.updateOne(
             { contractAddress, positionInArray },
             {
+              $push: {
+                resellPrice: amount,
+                reseller: address,
+              },
               $set: {
-                deployedAmount: amount,
-                buyerAmount: buyerAmount,
                 betForSale: true,
                 lastUpdated: new Date(),
               },
             }
           );
+        }
 
-          return res.status(200).json({ message: "Bet edited successfully" });
+        return res
+          .status(200)
+          .json({ message: "Bet listed for resale successfully" });
 
-        default:
-          return res.status(400).send("Invalid action");
-      }
-    } catch (error) {
-      console.error(`Error processing ${action}:`, error);
-      res.status(500).send(`Error processing ${action}`);
+      case "unlist":
+        // No amount or buyerAmount needed for unlist
+        const betToUnlist = await betsCollection.findOne({
+          contractAddress,
+          positionInArray,
+        });
+
+        if (!betToUnlist) {
+          return res.status(404).send("Bet not found");
+        }
+
+        await betsCollection.updateOne(
+          { contractAddress, positionInArray },
+          {
+            $set: {
+              betForSale: false,
+
+              lastUpdated: new Date(),
+            },
+          }
+        );
+
+        return res.status(200).json({ message: "Bet unlisted successfully" });
+
+      case "edit":
+        // Validate fields specific to edit
+        amount = parseFloat(amount);
+        buyerAmount = parseFloat(buyerAmount);
+        if (isNaN(amount) || isNaN(buyerAmount)) {
+          return res.status(400).send("Invalid amount or buyerAmount for edit");
+        }
+
+        const betToEdit = await betsCollection.findOne({
+          contractAddress,
+          positionInArray,
+        });
+
+        if (!betToEdit) {
+          return res.status(404).send("Bet not found");
+        }
+
+        await betsCollection.updateOne(
+          { contractAddress, positionInArray },
+          {
+            $set: {
+              deployedAmount: amount,
+              buyerAmount: buyerAmount,
+              betForSale: true,
+              lastUpdated: new Date(),
+            },
+          }
+        );
+
+        return res.status(200).json({ message: "Bet edited successfully" });
+
+      default:
+        return res.status(400).send("Invalid action");
     }
+  } catch (error) {
+    console.error(`Error processing ${action}:`, error);
+    res.status(500).send(`Error processing ${action}`);
   }
-);
+});
 
-app.get(
-  "/api/user-bets/:address",
-  limiter,
-  [
-    // Validation and sanitization rules
-    param("address")
-      .isEthereumAddress()
-      .withMessage("Invalid Ethereum address format."),
-    query("contractAddress")
-      .isEthereumAddress()
-      .withMessage("Invalid Ethereum address format."),
-  ],
-  async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+app.get("/api/user-bets/:address", limiter, async (req, res) => {
+  const betsCollection = db.collection("bets");
+  let { address } = req.params;
+  let { contractAddress } = req.query;
+
+  address = String(address).toLowerCase();
+  contractAddress = String(contractAddress).toLowerCase();
+
+  try {
+    // Validate input parameters
+    if (!address || !contractAddress) {
+      return res.status(400).send("Address and contractAddress are required");
     }
-    const betsCollection = db.collection("bets");
-    let { address } = req.params;
-    let { contractAddress } = req.query;
 
-    address = String(address).toLowerCase();
-    contractAddress = String(contractAddress).toLowerCase();
+    console.log(
+      "Querying for contractADdress: ",
+      contractAddress,
+      "And address: ",
+      address
+    );
 
-    try {
-      // Validate input parameters
-      if (!address || !contractAddress) {
-        return res.status(400).send("Address and contractAddress are required");
-      }
+    // Build the query object
+    const query = {
+      contractAddress: contractAddress,
+      $or: [
+        { deployer: address },
+        { buyer: address },
+        { reseller: address }, // Checks if `address` is in the `reseller` array
+      ],
+    };
 
-      console.log(
-        "Querying for contractADdress: ",
-        contractAddress,
-        "And address: ",
-        address
-      );
+    const bets = await betsCollection.find(query).toArray();
 
-      // Build the query object
-      const query = {
-        contractAddress: contractAddress,
-        $or: [
-          { deployer: address },
-          { buyer: address },
-          { reseller: address }, // Checks if `address` is in the `reseller` array
-        ],
-      };
+    console.log(bets);
 
-      const bets = await betsCollection.find(query).toArray();
-
-      console.log(bets);
-
-      res.json(bets);
-    } catch (error) {
-      console.error("Error fetching user bets:", error);
-      res.status(500).send("Error fetching user bets");
-    }
+    res.json(bets);
+  } catch (error) {
+    console.error("Error fetching user bets:", error);
+    res.status(500).send("Error fetching user bets");
   }
-);
+});

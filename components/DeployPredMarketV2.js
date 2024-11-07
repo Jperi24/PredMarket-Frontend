@@ -18,7 +18,7 @@ export async function deployPredMarket(
   }
 
   const deployerAddress = await signer.getAddress();
-  const chain = signer?.provider?.network || "";
+  const chain = signer?.provider?.network || "No Chain";
 
   console.log(
     endsAt,

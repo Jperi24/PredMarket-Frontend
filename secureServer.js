@@ -53,7 +53,10 @@ app.use(hpp());
 app.use(compression());
 
 // Implement CORS with specific origins
-const allowedOrigins = ["https://your-production-domain.com"]; // Replace with your domain
+const allowedOrigins =
+  process.env.NODE_ENV === "production"
+    ? ["https://your-production-domain.com"]
+    : ["http://localhost:3000"];
 app.use(
   cors({
     origin: function (origin, callback) {
@@ -70,16 +73,20 @@ app.use(
 // Body parser, reading data from the body into req.body
 app.use(express.json({ limit: "10kb" })); // Limit body size to prevent DOS attacks
 
-if (process.env.NODE_ENV === "development") {
-  res.status(err.status || 500).json({
-    message: err.message,
-    stack: err.stack,
-  });
-} else {
-  res.status(err.status || 500).json({
-    message: "An unexpected error occurred.",
-  });
-}
+// Centralized error handling middleware
+app.use((err, req, res, next) => {
+  console.error("Unhandled Error:", err);
+  if (process.env.NODE_ENV === "development") {
+    res.status(err.status || 500).json({
+      message: err.message,
+      stack: err.stack,
+    });
+  } else {
+    res.status(err.status || 500).json({
+      message: "An unexpected error occurred.",
+    });
+  }
+});
 
 // Secure environment variables (use secrets manager in production)
 const myCache = new NodeCache();
@@ -121,6 +128,7 @@ if (process.env.NODE_ENV !== "test") {
       db = client.db("PredMarket");
       app.listen(PORT, () => {
         console.log(`Server running on port ${PORT}`);
+        fetchAllTournamentDetails();
         scheduleTasks();
         updateAllRates();
         moveExpiredContracts();
@@ -288,33 +296,28 @@ app.get(
 );
 
 // Endpoint to add a contract (protected)
-app.post(
-  "/addContract",
-  authenticateToken,
-  validateContractInput,
-  async (req, res) => {
-    // Validate input
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    try {
-      const collection = db.collection("Contracts");
-      const contract = req.body;
-      await collection.insertOne(contract);
-      res.status(201).send("Contract added successfully");
-    } catch (error) {
-      console.error("Error adding contract to MongoDB:", error);
-      res.status(500).send("Error adding contract");
-    }
+app.post("/addContract", limiter, validateContractInput, async (req, res) => {
+  // Validate input
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
   }
-);
+
+  try {
+    const collection = db.collection("Contracts");
+    const contract = req.body;
+    await collection.insertOne(contract);
+    res.status(201).send("Contract added successfully");
+  } catch (error) {
+    console.error("Error adding contract to MongoDB:", error);
+    res.status(500).send("Error adding contract");
+  }
+});
 
 // Endpoint to move a contract to disagreements (protected)
 app.post(
   "/moveToDisagreements",
-  authenticateToken,
+  limiter,
   [
     body("contractAddress").notEmpty().trim().escape(),
     body("reason").optional().trim().escape(),
@@ -405,7 +408,7 @@ async function moveContractToDisagreements(contractAddress, reason) {
 // Endpoint to move a contract from Disagreements to Contracts (protected)
 app.post(
   "/moveFromDisagreementsToContracts",
-  authenticateToken,
+  limiter,
   [body("contractAddress").notEmpty().trim().escape()],
   async (req, res) => {
     // Validate input
@@ -461,7 +464,7 @@ app.post(
 );
 
 // Endpoint to get all contracts (protected)
-app.get("/getContracts", authenticateToken, async (req, res) => {
+app.get("/getContracts", limiter, async (req, res) => {
   try {
     const collectionNames = ["Contracts", "ExpiredContracts", "Disagreements"];
 
@@ -492,7 +495,7 @@ app.get("/getContracts", authenticateToken, async (req, res) => {
 // Endpoint to get a contract by address (protected)
 app.get(
   "/api/contracts/:address",
-  authenticateToken,
+  limiter,
   param("address").notEmpty().trim().escape(),
   async (req, res) => {
     // Validate input
@@ -1178,7 +1181,7 @@ async function updateMongoDBWithWinner(setKey, winnerName) {
 // Endpoint to get a tournament by slug (protected)
 app.get(
   "/api/tournament/:slug",
-  authenticateToken,
+  limiter,
   param("slug").trim().escape(),
   (req, res) => {
     // Validate input
@@ -1205,7 +1208,7 @@ app.get(
 // Endpoint to get phase sets by phaseId (protected)
 app.get(
   "/api/phase-sets/:phaseId",
-  authenticateToken,
+  limiter,
   param("phaseId").isInt().toInt(),
   (req, res) => {
     // Validate input
@@ -1234,7 +1237,7 @@ app.get(
 // Endpoint to get user contracts (protected)
 app.get(
   "/getUserContracts/:userId",
-  authenticateToken,
+  limiter,
   [
     param("userId").trim().escape(),
     query("limit").optional().isInt({ min: 1, max: 100 }).toInt(),
@@ -1418,7 +1421,7 @@ async function cleanUpUserBets(userId) {
 // Endpoint to check if a user exists or create a new user (protected)
 app.get(
   "/api/existingUser/:address",
-  authenticateToken,
+  limiter,
   param("address").trim().escape(),
   async (req, res) => {
     // Validate input
@@ -1461,7 +1464,7 @@ app.get(
 // Endpoint to update user contracts (protected)
 app.post(
   "/api/updateUserContract",
-  authenticateToken,
+  limiter,
   [
     body("contractAddress").notEmpty().trim().escape(),
     body("userId").notEmpty().trim().escape(),
@@ -1511,7 +1514,7 @@ app.post(
 );
 
 // Endpoint to get all tournament details (protected)
-app.get("/api/tournament-details", authenticateToken, (req, res) => {
+app.get("/api/tournament-details", limiter, (req, res) => {
   const allTournaments = [];
   dailyCache.keys().forEach((key) => {
     const tournament = dailyCache.get(key);
@@ -1534,7 +1537,7 @@ app.get("/api/tournament-details", authenticateToken, (req, res) => {
 // Endpoint to handle bets (protected)
 app.post(
   "/api/bets",
-  authenticateToken,
+  limiter,
   [
     body("action")
       .isIn(["deploy", "buy", "resell", "unlist", "edit"])
@@ -1753,7 +1756,7 @@ app.post(
 // Endpoint to get user bets (protected)
 app.get(
   "/api/user-bets/:address",
-  authenticateToken,
+  limiter,
   [
     param("address")
       .trim()
@@ -1803,12 +1806,6 @@ app.get(
 );
 
 // Centralized error handling middleware
-app.use((err, req, res, next) => {
-  console.error("Unhandled Error:", err);
-  res.status(err.status || 500).json({
-    message: err.message || "An unexpected error occurred.",
-  });
-});
 
 // Export app for testing if necessary
 module.exports = app;
