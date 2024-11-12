@@ -70,7 +70,7 @@ process.on("SIGINT", () => {
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP per windowMs
+  max: 500, // limit each IP per windowMs
   standardHeaders: true,
   legacyHeaders: false,
   message: "Too many requests from this IP, please try again later.",
@@ -1471,7 +1471,7 @@ app.post(
   [
     // Validation and sanitization for request fields
     body("action")
-      .isIn(["deploy", "buy", "resell", "unlist", "edit"])
+      .isIn(["deploy", "buy", "resell", "unlist", "edit", "cancel"])
       .withMessage("Invalid action specified."),
     body("address")
       .isEthereumAddress()
@@ -1572,6 +1572,7 @@ app.post(
             betForSale: true,
             timestamp: new Date(),
             lastUpdated: new Date(),
+            isActive: true,
           };
 
           await betsCollection.insertOne(bet);
@@ -1596,6 +1597,32 @@ app.post(
                 buyer: address,
                 betForSale: false,
                 lastUpdated: new Date(),
+              },
+            }
+          );
+
+          return res.status(200).json({ message: "Bet bought successfully" });
+
+        case "cancel":
+          // No need to validate amount for buy
+          const betToCancel = await betsCollection.findOne({
+            contractAddress,
+            positionInArray,
+          });
+
+          if (!betToCancel) {
+            return res.status(404).send("Bet not found");
+          }
+          if (!betToCancel.isActive) {
+            return res.status(406).send("Bet already cancelled");
+          }
+
+          // Update the bet document
+          await betsCollection.updateOne(
+            { contractAddress, positionInArray },
+            {
+              $set: {
+                isActive: false,
               },
             }
           );
