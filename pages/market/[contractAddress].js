@@ -103,6 +103,9 @@ export default function PredMarketPageV2() {
   const [userBetsHistory, setUserBets] = useState([]);
   const [isLoadingBets, setIsLoadingBets] = useState(false);
 
+  const [cryptoRates, setCryptoRates] = useState({}); // State for crypto rates
+  const [usdEquivalents, setUsdEquivalents] = useState({}); // State for USD equivalents
+
   const [bets_balance, setBetsBalance] = useState({
     allbets: [],
     endTime: 0,
@@ -272,61 +275,59 @@ export default function PredMarketPageV2() {
     setShowModal(false);
   };
 
-  // const handleBetAction = async (action, data) => {
-  //   try {
-  //     // Construct the request body by combining the action with the data object
-  //     const requestBody = {
-  //       action,
-  //       ...data,
-  //     };
+  useEffect(() => {
+    // Fetch rates from the server
+    const fetchRates = async () => {
+      try {
+        const response = await fetch(
+          `${process.env.NEXT_PUBLIC_API_BASE_URL}/rates`
+        );
+        const data = await response.json();
+        setCryptoRates(data); // Store rates in state
+      } catch (error) {
+        console.error("Error fetching rates:", error);
+      }
+    };
 
-  //     const response = await fetch(
-  //       `${process.env.NEXT_PUBLIC_API_BASE_URL}/bets`,
-  //       {
-  //         method: "POST",
-  //         headers: {
-  //           "Content-Type": "application/json",
-  //         },
-  //         body: JSON.stringify(requestBody),
-  //       }
-  //     );
+    fetchRates();
+  }, []);
 
-  //     if (!response.ok) {
-  //       throw new Error(`Error performing ${action}: ${response.statusText}`);
-  //     }
+  // Function to calculate USD equivalent
+  const calculateUsdEquivalent = (amount, currency) => {
+    const rate = cryptoRates[currency.toUpperCase() + "_RATE"]; // Get the rate for the selected currency
+    if (rate) {
+      return (amount * rate).toFixed(2); // Calculate and format to 2 decimal places
+    }
+    return 0;
+  };
 
-  //     const result = await response.json();
+  // Update the input change handler for different fields
+  const handleCryptoInputChange = (e, fieldName) => {
+    const value = e.target.value;
+    const amount = parseFloat(value);
+    const currency = chain?.nativeCurrency?.symbol; // Assuming the same currency for all fields
 
-  //     // Handle the response based on the action
-  //     switch (action) {
-  //       case "deploy":
-  //         console.log("Bet deployed successfully with betId:", result.betId);
-  //         // Store betId if needed for future actions
-  //         return result.betId;
-  //       case "buy":
-  //         console.log("Bet bought successfully");
-  //         break;
-  //       case "resell":
-  //         console.log("Bet listed for resale successfully");
-  //         break;
-  //       case "unlist":
-  //         console.log("Bet unlisted successfully");
-  //         break;
-  //       case "edit":
-  //         console.log("Bet edited successfully");
-  //         break;
-  //       default:
-  //         console.log("Action completed successfully");
-  //     }
+    // Update the specific field's state
+    if (fieldName === "myLocked") {
+      setmyLocked(value); // Update myLocked state
+    } else if (fieldName === "buyInIChoose") {
+      setbuyInIChoose(value); // Update buyInIChoose state
+    }
 
-  //     // Return the result if needed
-  //     return result;
-  //   } catch (error) {
-  //     console.error(`Error performing ${action}:`, error);
-  //     // You might want to rethrow the error or handle it appropriately
-  //     throw error;
-  //   }
-  // };
+    // Calculate and update the USD equivalent
+    if (!isNaN(amount)) {
+      const usdValue = calculateUsdEquivalent(amount, currency);
+      setUsdEquivalents((prev) => ({
+        ...prev,
+        [fieldName]: usdValue, // Update the specific field's USD equivalent
+      }));
+    } else {
+      setUsdEquivalents((prev) => ({
+        ...prev,
+        [fieldName]: 0, // Reset if input is not a valid number
+      }));
+    }
+  };
 
   const handleBetAction = async (action, data) => {
     try {
@@ -402,7 +403,7 @@ export default function PredMarketPageV2() {
         const valueInWeiBuyIn = ethers.utils.parseEther(buyIn.toString());
 
         setModalContent(
-          `<p>You are depositing <strong>${myBet} ETH</strong>. If <strong>${selectedName}</strong> wins and another user buys this bet for <strong>${buyIn} ETH</strong>, you will be rewarded <strong>${total} ETH</strong>. If another user does not buy in by the time the deployer of the bet declares a winner, you will be refunded <strong>${myBet} ETH</strong>. You are eligible to unlist this bet at any time. Do you accept the terms?</p>`
+          `<p>You are depositing <strong>${myBet} ${chain?.nativeCurrency?.symbol}</strong>. If <strong>${selectedName}</strong> wins and another user buys this bet for <strong>${buyIn} ${chain?.nativeCurrency?.symbol}</strong>, you will be rewarded <strong>${total} ${chain?.nativeCurrency?.symbol}</strong>. If another user does not buy in by the time the deployer of the bet declares a winner, you will be refunded <strong>${myBet} ${chain?.nativeCurrency?.symbol}</strong>. You are eligible to unlist this bet at any time. Do you accept the terms?</p>`
         );
         setModalAction(() => async () => {
           try {
@@ -587,7 +588,7 @@ export default function PredMarketPageV2() {
       const valueInWei = ethers.utils.parseEther(askingPrice.toString());
 
       setModalContent(
-        `<p>You are selling this bet for <strong>${askingPrice} ETH</strong> and will no longer be participating. Do you agree?</p>`
+        `<p>You are selling this bet for <strong>${askingPrice} ${chain?.nativeCurrency?.symbol}</strong> and will no longer be participating. Do you agree?</p>`
       );
       setModalAction(() => async () => {
         try {
@@ -650,7 +651,7 @@ export default function PredMarketPageV2() {
 
       // Prepare modal content for user confirmation
       setModalContent(
-        `<p>The new amount that you will have locked up is <strong>${newDeployedPriceInEth} ETH</strong> and the new purchase price for this bet is <strong>${newAskingPriceInEth} ETH</strong>. Do you agree?</p>`
+        `<p>The new amount that you will have locked up is <strong>${newDeployedPriceInEth} ${chain?.nativeCurrency?.symbol}</strong> and the new purchase price for this bet is <strong>${newAskingPriceInEth} ${chain?.nativeCurrency?.symbol}</strong>. Do you agree?</p>`
       );
 
       // Define action for the modal confirmation
@@ -1226,7 +1227,7 @@ export default function PredMarketPageV2() {
             <div className="betting-actions">
               {bets_balance.state === 0 && (
                 <div className="countdown-container">
-                  <h3>Time left to bet</h3>
+                  <h3>Tournament Ends:</h3>
                   <CountdownTimer
                     endTime={contract.endsAt}
                     className="countdown-timer"
@@ -1247,10 +1248,16 @@ export default function PredMarketPageV2() {
                         <input
                           className="input-field"
                           value={myLocked}
-                          onChange={(e) => setmyLocked(e.target.value)}
+                          onChange={(e) =>
+                            handleCryptoInputChange(e, "myLocked")
+                          } // Pass field identifier
                           placeholder={`Your Bet (${chain?.nativeCurrency?.symbol})`}
                           maxLength={20}
                         />
+                        <p>
+                          Equivalent in USD: ${usdEquivalents["myLocked"] || 0}
+                        </p>{" "}
+                        {/* Display the USD equivalent for this field */}
                         <input
                           className="input-field"
                           value={buyInIChoose}
@@ -1408,7 +1415,7 @@ export default function PredMarketPageV2() {
                     })
                     .map((bet, index) => (
                       <div key={index} className="bet-card">
-                        <h3>Bet #{index + 1}</h3>
+                        <h3>BetsGG</h3>
                         <div className="bet-details">
                           <p>
                             Potential Win:{" "}
@@ -1597,9 +1604,7 @@ export default function PredMarketPageV2() {
                   return (
                     <div className="history-card" key={index}>
                       <div className="history-card-header">
-                        <span className="bet-number">
-                          Bet #{bet.positionInArray + 1}
-                        </span>
+                        <span className="bet-number">BetsGG</span>
                         <span
                           className={`bet-status ${betStatus
                             .toLowerCase()
@@ -1692,7 +1697,7 @@ export default function PredMarketPageV2() {
         }
         .betting-history-column {
           flex: 1;
-          min-width: 300px;
+          min-width: 250px;
           background: rgba(255, 255, 255, 0.05);
           border-radius: 10px;
           padding: 1rem;
@@ -1915,7 +1920,7 @@ export default function PredMarketPageV2() {
         .betting-interface-column,
         .bets-list-column {
           flex: 1;
-          min-width: 300px;
+          min-width: 250px;
           background: rgba(255, 255, 255, 0.05);
           border-radius: 10px;
           padding: 1rem;
@@ -2120,7 +2125,7 @@ export default function PredMarketPageV2() {
 
         .bets-list-column {
           flex: 1;
-          min-width: 300px;
+          min-width: 250px;
           background: rgba(255, 255, 255, 0.05);
           border-radius: 10px;
           padding: 1rem;

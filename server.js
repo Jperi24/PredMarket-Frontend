@@ -223,6 +223,7 @@ async function updateAllRates() {
 
 app.get("/api/rates", async (req, res) => {
   let rates = {};
+  console.log(rateCache);
   // Assuming 'rateCache' is a Map or similar structure
   rateCache.forEach((value, key) => {
     rates[key] = value;

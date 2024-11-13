@@ -373,6 +373,8 @@ export default function PredMarketPageV2() {
         case "edit":
           console.log("Bet edited successfully");
           break;
+        case "cancel":
+          console.log("Bet Cancelled Successfully");
         default:
           console.log("Action completed successfully");
       }
@@ -400,7 +402,7 @@ export default function PredMarketPageV2() {
         const valueInWeiBuyIn = ethers.utils.parseEther(buyIn.toString());
 
         setModalContent(
-          `<p>You are depositing <strong>${myBet} ETH</strong>. If <strong>${selectedName}</strong> wins and another user buys this bet for <strong>${buyIn} ETH</strong>, you will be rewarded <strong>${total} ETH</strong>. If another user does not buy in by the time the deployer of the bet declares a winner, you will be refunded <strong>${myBet} ETH</strong>. You are eligible to unlist this bet at any time. Do you accept the terms?</p>`
+          `<p>You are depositing <strong>${myBet} ${chain?.nativeCurrency?.symbol}</strong>. If <strong>${selectedName}</strong> wins and another user buys this bet for <strong>${buyIn} ${chain?.nativeCurrency?.symbol}</strong>, you will be rewarded <strong>${total} ${chain?.nativeCurrency?.symbol}</strong>. If another user does not buy in by the time the deployer of the bet declares a winner, you will be refunded <strong>${myBet} ${chain?.nativeCurrency?.symbol}</strong>. You are eligible to unlist this bet at any time. Do you accept the terms?</p>`
         );
         setModalAction(() => async () => {
           try {
@@ -484,17 +486,18 @@ export default function PredMarketPageV2() {
     }
   };
 
-  const buyBet = async (positionInArray, purchasePrice) => {
+  const buyBet = async (positionInArray, purchasePrice, index) => {
     try {
+      console.log("Position Array: ", bets_balance.allbets);
       const selectedName =
-        bets_balance.allbets[positionInArray].conditionForBuyerToWin === 1
+        bets_balance.allbets[index].conditionForBuyerToWin === 1
           ? contract.eventA
           : contract.eventB;
-
+      console.log("error");
       const buyerPrice =
-        bets_balance.allbets[positionInArray].amountBuyerLocked > 0
-          ? bets_balance.allbets[positionInArray].amountBuyerLocked
-          : bets_balance.allbets[positionInArray].amountToBuyFor;
+        bets_balance.allbets[index].amountBuyerLocked > 0
+          ? bets_balance.allbets[index].amountBuyerLocked
+          : bets_balance.allbets[index].amountToBuyFor;
 
       // Assuming you already have a web3 instance initialized
       const buyerPriceEth = ethers.utils.formatEther(buyerPrice, "ether");
@@ -502,7 +505,7 @@ export default function PredMarketPageV2() {
       const winnings =
         parseFloat(
           ethers.utils.formatEther(
-            bets_balance.allbets[positionInArray].amountDeployerLocked
+            bets_balance.allbets[index].amountDeployerLocked
           )
         ) + parseFloat(ethers.utils.formatEther(buyerPrice));
 
@@ -541,12 +544,50 @@ export default function PredMarketPageV2() {
     }
   };
 
+  const cancelBet = async (positionInArray) => {
+    try {
+      // Set the content of the modal to ask for user confirmation
+      setModalContent(
+        `<p>Are you sure you want to cancel this bet? This action is irreversible and you will no longer participate in this bet.</p>`
+      );
+
+      // Set the action to be executed when the user confirms the modal
+      setModalAction(() => async () => {
+        try {
+          // Call the cancelOwnedBet function from the contract
+          const tx = await contractInstance.cancelOwnedBet(positionInArray);
+          await tx.wait();
+
+          const betData = {
+            address: signerAddress,
+            contractAddress,
+            positionInArray: bigNumberToNumber(positionInArray),
+          };
+
+          // Call the backend API to process the cancellation
+          await handleBetAction("cancel", betData);
+
+          alert("Bet has been successfully canceled.");
+        } catch (error) {
+          // Log the error or display a message to the user
+          console.error("Error occurred during cancellation:", error);
+          alert("Failed to cancel the bet. Please try again.");
+        }
+      });
+
+      // Show the modal to the user
+      setShowModal(true);
+    } catch (error) {
+      console.log("Unable to initiate bet cancellation:", error);
+    }
+  };
+
   const listBetForSale = async (positionInArray, askingPrice) => {
     try {
       const valueInWei = ethers.utils.parseEther(askingPrice.toString());
 
       setModalContent(
-        `<p>You are selling this bet for <strong>${askingPrice} ETH</strong> and will no longer be participating. Do you agree?</p>`
+        `<p>You are selling this bet for <strong>${askingPrice} ${chain?.nativeCurrency?.symbol}</strong> and will no longer be participating. Do you agree?</p>`
       );
       setModalAction(() => async () => {
         try {
@@ -609,7 +650,7 @@ export default function PredMarketPageV2() {
 
       // Prepare modal content for user confirmation
       setModalContent(
-        `<p>The new amount that you will have locked up is <strong>${newDeployedPriceInEth} ETH</strong> and the new purchase price for this bet is <strong>${newAskingPriceInEth} ETH</strong>. Do you agree?</p>`
+        `<p>The new amount that you will have locked up is <strong>${newDeployedPriceInEth} ${chain?.nativeCurrency?.symbol}</strong> and the new purchase price for this bet is <strong>${newAskingPriceInEth} ${chain?.nativeCurrency?.symbol}</strong>. Do you agree?</p>`
       );
 
       // Define action for the modal confirmation
@@ -822,6 +863,9 @@ export default function PredMarketPageV2() {
 
     // Check if the deployer is the current address
     if (bet.deployer === currentAddress) {
+      if (!bet.isActive) {
+        return "Bet Has Been Cancelled And Refunded";
+      }
       if (bet.buyer === null && bet.betForSale) {
         return "Bet is Open, No One Accepted";
       } else if (bet.buyer !== null) {
@@ -1033,6 +1077,7 @@ export default function PredMarketPageV2() {
 
   useEffect(() => {
     if (contractInstance && signer) {
+      // Define the event names
       const eventNames = [
         "userCreatedABet",
         "BetUnlisted",
@@ -1042,25 +1087,28 @@ export default function PredMarketPageV2() {
         "userVoted",
         "userWithdrew",
         "BetEdited",
+        "BetCancelled",
       ];
 
+      // Define handler functions for the events
+      const eventHandler = () => {
+        displayAllBets();
+        fetchUserBets(signerAddress, contractAddress);
+      };
+
+      // Attach event listeners
       eventNames.forEach((eventName) => {
-        contractInstance.on(eventName, () => {
-          displayAllBets();
-          fetchUserBets(signerAddress, contractAddress); // Call fetchUserBets on event
-        });
+        contractInstance.on(eventName, eventHandler);
       });
 
+      // Cleanup function
       return () => {
         eventNames.forEach((eventName) => {
-          contractInstance.off(eventName, displayAllBets);
-          contractInstance.off(eventName, () =>
-            fetchUserBets(signerAddress, contractAddress)
-          );
+          contractInstance.off(eventName, eventHandler);
         });
       };
     }
-  }, [contractInstance, signer, signerAddress]);
+  }, [contractInstance, signer, signerAddress, contractAddress]);
 
   const handleSelectBet = (position) => {
     setSelectedBets((prevSelectedBets) =>
@@ -1178,7 +1226,7 @@ export default function PredMarketPageV2() {
             <div className="betting-actions">
               {bets_balance.state === 0 && (
                 <div className="countdown-container">
-                  <h3>Time left to bet</h3>
+                  <h3>Tournament Ends:</h3>
                   <CountdownTimer
                     endTime={contract.endsAt}
                     className="countdown-timer"
@@ -1360,7 +1408,7 @@ export default function PredMarketPageV2() {
                     })
                     .map((bet, index) => (
                       <div key={index} className="bet-card">
-                        <h3>Bet #{index + 1}</h3>
+                        <h3>BetsGG</h3>
                         <div className="bet-details">
                           <p>
                             Potential Win:{" "}
@@ -1410,7 +1458,11 @@ export default function PredMarketPageV2() {
                             <button
                               className="buy-bet-btn"
                               onClick={() =>
-                                buyBet(bet.positionInArray, bet.amountToBuyFor)
+                                buyBet(
+                                  bet.positionInArray,
+                                  bet.amountToBuyFor,
+                                  index
+                                )
                               }
                             >
                               Buy This Bet
@@ -1508,6 +1560,17 @@ export default function PredMarketPageV2() {
                               >
                                 Save Changes
                               </button>
+                              <button
+                                className="cancel-bet-btn"
+                                style={{
+                                  marginLeft: "10px",
+                                  backgroundColor: "red",
+                                  color: "white",
+                                }}
+                                onClick={() => cancelBet(bet.positionInArray)}
+                              >
+                                Cancel Bet
+                              </button>
                             </div>
                           )}
                       </div>
@@ -1534,9 +1597,7 @@ export default function PredMarketPageV2() {
                   return (
                     <div className="history-card" key={index}>
                       <div className="history-card-header">
-                        <span className="bet-number">
-                          Bet #{bet.positionInArray + 1}
-                        </span>
+                        <span className="bet-number">BetsGG</span>
                         <span
                           className={`bet-status ${betStatus
                             .toLowerCase()
@@ -1629,7 +1690,7 @@ export default function PredMarketPageV2() {
         }
         .betting-history-column {
           flex: 1;
-          min-width: 300px;
+          min-width: 250px;
           background: rgba(255, 255, 255, 0.05);
           border-radius: 10px;
           padding: 1rem;
@@ -1852,7 +1913,7 @@ export default function PredMarketPageV2() {
         .betting-interface-column,
         .bets-list-column {
           flex: 1;
-          min-width: 300px;
+          min-width: 250px;
           background: rgba(255, 255, 255, 0.05);
           border-radius: 10px;
           padding: 1rem;
@@ -2057,7 +2118,7 @@ export default function PredMarketPageV2() {
 
         .bets-list-column {
           flex: 1;
-          min-width: 300px;
+          min-width: 250px;
           background: rgba(255, 255, 255, 0.05);
           border-radius: 10px;
           padding: 1rem;
