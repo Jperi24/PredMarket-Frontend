@@ -362,6 +362,7 @@ const TournamentInfo = ({ slug }) => {
       137: "PolygonLogo.png",
       43114: "avalancheLogo.jpg",
       250: "fantomLogo.png",
+      8453: "BaseLogo.png",
       31337: "hardHatLogo.png", // Assumes local Hardhat testnet uses the same rate as Ethereum
     };
 

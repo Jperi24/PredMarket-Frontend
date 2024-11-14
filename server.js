@@ -181,61 +181,123 @@ async function moveExpiredContracts() {
   }
 }
 
-const rateCache = new NodeCache();
 const RATE_KEY = "ethToUsdRate";
-const FETCH_INTERVAL = 60000; // 6 seconds in milliseconds
 
-// Function to fetch the rate from CoinGecko and update the cache
+let rateCache = new NodeCache();
+
+const FETCH_INTERVAL = 60000; // Set an interval to avoid frequent requests
+let updatingRates = false;
+
 async function updateAllRates() {
+  if (updatingRates) return;
+
+  updatingRates = true;
+
   const chainInfo = {
     1: { name: "ethereum", coingeckoId: "ethereum" },
     56: { name: "binance-smart-chain", coingeckoId: "binancecoin" },
     137: { name: "polygon", coingeckoId: "matic-network" },
     43114: { name: "avalanche", coingeckoId: "avalanche-2" },
     250: { name: "fantom", coingeckoId: "fantom" },
-    31337: { name: "hardhat", coingeckoId: "ethereum" }, // Assumes local Hardhat testnet uses the same rate as Ethereum
+    31337: { name: "hardhat", coingeckoId: "ethereum", useEthereumRate: true },
+    8453: { name: "Base", coingeckoId: "ethereum", useEthereumRate: true },
   };
 
-  const ratePromises = Object.entries(chainInfo).map(
-    async ([chainId, chain]) => {
-      const url = `https://api.coingecko.com/api/v3/simple/price?ids=${chain.coingeckoId}&vs_currencies=usd`;
+  const newRates = {}; // Temporary object to hold new rates
+  let allSuccessful = true;
+  const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  // Fetch rate with retry logic
+  async function fetchRateWithRetry(chainId, chain) {
+    // If the chain should use the Ethereum rate, reuse it from newRates if already available
+    if (chain.useEthereumRate) {
+      if (newRates["1_RATE"] != null) {
+        newRates[`${chainId}_RATE`] = newRates["1_RATE"]; // Use Ethereum rate for specific chain ID
+        console.log(
+          `Reused Ethereum rate for ${chain.name} (chain ID: ${chainId}): $${newRates["1_RATE"]}`
+        );
+      } else {
+        console.log(
+          `Ethereum rate not available yet for ${chain.name} (chain ID: ${chainId}). Skipping fetch.`
+        );
+        allSuccessful = false;
+      }
+      return;
+    }
+
+    // Standard fetch logic for chains that do not use the Ethereum rate
+    const url = `https://api.coingecko.com/api/v3/simple/price?ids=${chain.coingeckoId}&vs_currencies=usd`;
+    let attempts = 0;
+    const maxAttempts = 8;
+
+    while (attempts < maxAttempts) {
       try {
         const response = await fetch(url);
         if (!response.ok) {
           console.error(
-            `Failed to fetch from CoinGecko for ${chain.name}: ${response.status} ${response.statusText}`
+            `Failed to fetch ${chain.name} (chain ID: ${chainId}): ${response.status} ${response.statusText}`
           );
-          return;
+          allSuccessful = false;
+          return; // Exit if fetch failed
         }
         const data = await response.json();
-        const rate = data[chain.coingeckoId].usd;
-        rateCache.set(`${chain.name.toUpperCase()}_RATE`, rate);
-        console.log(`Updated ${chain.name} rate to $${rate}`);
+        newRates[`${chainId}_RATE`] = data[chain.coingeckoId].usd; // Store rate by chain ID
+        console.log(
+          `Fetched ${chain.name} rate (chain ID: ${chainId}): $${
+            data[chain.coingeckoId].usd
+          }`
+        );
+        return; // Exit on successful fetch
       } catch (error) {
-        console.error("Error updating rate for", chain.name, ":", error);
+        attempts++;
+        console.error("Error fetching", chain.name, ":", error);
+        if (attempts < maxAttempts) {
+          await delay(Math.pow(5, attempts) * 1000); // Exponential backoff delay
+        } else {
+          allSuccessful = false;
+        }
       }
     }
-  );
+  }
 
-  await Promise.all(ratePromises);
-  console.log("All rates updated");
+  const chains = Object.entries(chainInfo);
+  const maxConcurrentRequests = 2; // Limit of concurrent requests
+
+  for (let i = 0; i < chains.length; i += maxConcurrentRequests) {
+    const batch = chains.slice(i, i + maxConcurrentRequests);
+    await Promise.all(
+      batch.map(([chainId, chain]) => fetchRateWithRetry(chainId, chain))
+    );
+    await delay(2000); // Small delay between batches
+  }
+
+  // Update the rateCache if all fetches were successful
+  if (allSuccessful) {
+    for (const [key, value] of Object.entries(newRates)) {
+      rateCache.set(key, value);
+      console.log(`Updated ${key} in rateCache to $${value}`);
+    }
+    console.log("All rates updated in cache");
+  } else {
+    console.log("Rate update failed; cache not updated.");
+  }
+
+  updatingRates = false;
 }
+
+// Run the update function at regular intervals
+setInterval(updateAllRates, FETCH_INTERVAL);
 
 app.get("/api/rates", async (req, res) => {
   let rates = {};
-  console.log(rateCache);
-  // Assuming 'rateCache' is a Map or similar structure
-  rateCache.forEach((value, key) => {
-    rates[key] = value;
+
+  // Assuming 'rateCache' is a NodeCache instance
+  const keys = rateCache.keys(); // Get all keys from the cache
+  keys.forEach((key) => {
+    rates[key] = rateCache.get(key); // Use get() to retrieve the value for each key
   });
   res.json(rates);
 });
-
-// Initial fetch and setup periodic update
-if (process.env.NODE_ENV !== "test") {
-  updateAllRates();
-  setInterval(updateAllRates, FETCH_INTERVAL);
-}
 
 // Endpoint to get ETH to USD rate from the cache
 

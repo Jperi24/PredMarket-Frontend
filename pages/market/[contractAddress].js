@@ -284,6 +284,7 @@ export default function PredMarketPageV2() {
         );
         const data = await response.json();
         setCryptoRates(data); // Store rates in state
+        console.log("crypyto rate data:", data);
       } catch (error) {
         console.error("Error fetching rates:", error);
       }
@@ -294,7 +295,8 @@ export default function PredMarketPageV2() {
 
   // Function to calculate USD equivalent
   const calculateUsdEquivalent = (amount, currency) => {
-    const rate = cryptoRates[currency.toUpperCase() + "_RATE"]; // Get the rate for the selected currency
+    const rate = cryptoRates[currency + "_RATE"]; // Get the rate for the selected currency
+    console.log("Currency is:", currency, "Rate is: ", rate);
     if (rate) {
       return (amount * rate).toFixed(2); // Calculate and format to 2 decimal places
     }
@@ -305,7 +307,10 @@ export default function PredMarketPageV2() {
   const handleCryptoInputChange = (e, fieldName) => {
     const value = e.target.value;
     const amount = parseFloat(value);
-    const currency = chain?.nativeCurrency?.symbol; // Assuming the same currency for all fields
+
+    console.log("Chain is", contract.chain.chainId);
+    const currency = contract?.chain?.chainId.toString();
+    console.log("Currency:", currency); // Assuming the same currency for all fields
 
     // Update the specific field's state
     if (fieldName === "myLocked") {
@@ -1247,7 +1252,7 @@ export default function PredMarketPageV2() {
                       <div className="bet-form">
                         <input
                           className="input-field"
-                          value={myLocked}
+                          value={myLocked || ""}
                           onChange={(e) =>
                             handleCryptoInputChange(e, "myLocked")
                           } // Pass field identifier
@@ -1260,7 +1265,7 @@ export default function PredMarketPageV2() {
                         {/* Display the USD equivalent for this field */}
                         <input
                           className="input-field"
-                          value={buyInIChoose}
+                          value={buyInIChoose || ""}
                           onChange={(e) => setbuyInIChoose(e.target.value)}
                           placeholder={`Opponent's Bet (${chain?.nativeCurrency?.symbol})`}
                           maxLength={20}
