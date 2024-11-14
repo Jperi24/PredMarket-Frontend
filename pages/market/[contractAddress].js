@@ -102,6 +102,7 @@ export default function PredMarketPageV2() {
   const [selectedState, setSelectedState] = useState("");
   const [userBetsHistory, setUserBets] = useState([]);
   const [isLoadingBets, setIsLoadingBets] = useState(false);
+  const [editingBetId, setEditingBetId] = useState(null);
 
   const [cryptoRates, setCryptoRates] = useState({}); // State for crypto rates
   const [usdEquivalents, setUsdEquivalents] = useState({}); // State for USD equivalents
@@ -310,13 +311,27 @@ export default function PredMarketPageV2() {
 
     console.log("Chain is", contract.chain.chainId);
     const currency = contract?.chain?.chainId.toString();
-    console.log("Currency:", currency); // Assuming the same currency for all fields
+    console.log("Currency:", currency);
 
-    // Update the specific field's state
+    // Update the specific field's state based on fieldName
     if (fieldName === "myLocked") {
-      setmyLocked(value); // Update myLocked state
+      setmyLocked(value);
     } else if (fieldName === "buyInIChoose") {
-      setbuyInIChoose(value); // Update buyInIChoose state
+      setbuyInIChoose(value);
+    } else if (fieldName.startsWith("editDeployed-")) {
+      // Extract the position from the fieldName (e.g., "editDeployed-123")
+      const position = fieldName.split("-")[1];
+      setNewDeployedPrices((prev) => ({
+        ...prev,
+        [position]: value,
+      }));
+    } else if (fieldName.startsWith("editAsking-")) {
+      // Extract the position from the fieldName (e.g., "editAsking-123")
+      const position = fieldName.split("-")[1];
+      setNewAskingPrices((prev) => ({
+        ...prev,
+        [position]: value,
+      }));
     }
 
     // Calculate and update the USD equivalent
@@ -324,12 +339,12 @@ export default function PredMarketPageV2() {
       const usdValue = calculateUsdEquivalent(amount, currency);
       setUsdEquivalents((prev) => ({
         ...prev,
-        [fieldName]: usdValue, // Update the specific field's USD equivalent
+        [fieldName]: usdValue,
       }));
     } else {
       setUsdEquivalents((prev) => ({
         ...prev,
-        [fieldName]: 0, // Reset if input is not a valid number
+        [fieldName]: 0,
       }));
     }
   };
@@ -719,6 +734,23 @@ export default function PredMarketPageV2() {
       ...prevPrices,
       [index]: value,
     }));
+
+    // Add USD equivalent calculation
+    const amount = parseFloat(value);
+    const currency = contract?.chain?.chainId.toString();
+
+    if (!isNaN(amount)) {
+      const usdValue = calculateUsdEquivalent(amount, currency);
+      setUsdEquivalents((prev) => ({
+        ...prev,
+        [`resellPrice-${index}`]: usdValue,
+      }));
+    } else {
+      setUsdEquivalents((prev) => ({
+        ...prev,
+        [`resellPrice-${index}`]: 0,
+      }));
+    }
   }
 
   const BigNumber = require("bignumber.js");
@@ -1152,6 +1184,14 @@ export default function PredMarketPageV2() {
             Switch to {contract?.chain?.name}
           </button>
         </div>
+      ) : isBettingOpen !== true && isBettingOpen !== false ? (
+        <div className="loading-container">
+          <h2 className="loading-text">Loading...</h2>
+          <div className="loading-spinner"></div>
+          <p className="loading-message">
+            Please wait while we prepare the betting arena for you!
+          </p>
+        </div>
       ) : (
         <div className="betting-arena">
           <div className="market-info-column">
@@ -1165,10 +1205,22 @@ export default function PredMarketPageV2() {
               </div>
               {bets_balance.state === 0 ? (
                 <div className="potential-winnings">
-                  <h3>Total Potential Winnings</h3>
-                  <p>
-                    {totalWinnings} {chain?.nativeCurrency?.symbol}
-                  </p>
+                  <h2>Potential Winnings:</h2>
+                  <div className="winnings-amount">
+                    <span className="crypto-amount">
+                      {totalWinnings} {chain?.nativeCurrency?.symbol}
+                    </span>
+                    <div className="usd-equivalent-display">
+                      <span className="usd-symbol">$</span>
+                      <span className="usd-amount">
+                        {calculateUsdEquivalent(
+                          totalWinnings,
+                          contract?.chain?.chainId.toString()
+                        )}
+                      </span>
+                      <span className="usd-label">USD</span>
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <div className="winner-announcement">
@@ -1250,26 +1302,43 @@ export default function PredMarketPageV2() {
                     </button>
                     {showInputs && (
                       <div className="bet-form">
-                        <input
-                          className="input-field"
-                          value={myLocked || ""}
-                          onChange={(e) =>
-                            handleCryptoInputChange(e, "myLocked")
-                          } // Pass field identifier
-                          placeholder={`Your Bet (${chain?.nativeCurrency?.symbol})`}
-                          maxLength={20}
-                        />
-                        <p>
-                          Equivalent in USD: ${usdEquivalents["myLocked"] || 0}
-                        </p>{" "}
-                        {/* Display the USD equivalent for this field */}
-                        <input
-                          className="input-field"
-                          value={buyInIChoose || ""}
-                          onChange={(e) => setbuyInIChoose(e.target.value)}
-                          placeholder={`Opponent's Bet (${chain?.nativeCurrency?.symbol})`}
-                          maxLength={20}
-                        />
+                        <div className="bet-input-group">
+                          <input
+                            className="input-field"
+                            value={myLocked || ""}
+                            onChange={(e) =>
+                              handleCryptoInputChange(e, "myLocked")
+                            }
+                            placeholder={`Your Bet (${chain?.nativeCurrency?.symbol})`}
+                            maxLength={20}
+                          />
+                          <div className="usd-equivalent">
+                            <span className="usd-symbol">$</span>
+                            <span className="usd-amount">
+                              {usdEquivalents["myLocked"] || 0}
+                            </span>
+                            <span className="usd-label">USD</span>
+                          </div>
+                        </div>
+
+                        <div className="bet-input-group">
+                          <input
+                            className="input-field"
+                            value={buyInIChoose || ""}
+                            onChange={(e) =>
+                              handleCryptoInputChange(e, "buyInIChoose")
+                            }
+                            placeholder={`Opponent's Bet (${chain?.nativeCurrency?.symbol})`}
+                            maxLength={20}
+                          />
+                          <div className="usd-equivalent">
+                            <span className="usd-symbol">$</span>
+                            <span className="usd-amount">
+                              {usdEquivalents["buyInIChoose"] || 0}
+                            </span>
+                            <span className="usd-label">USD</span>
+                          </div>
+                        </div>
                         <select
                           className="dropdown"
                           value={selectedOutcome}
@@ -1412,7 +1481,10 @@ export default function PredMarketPageV2() {
                         case "deployedByMe":
                           return bet.deployer === signerAddress;
                         case "ownedByMe":
-                          return bet.owner === signerAddress;
+                          return (
+                            bet.owner === signerAddress &&
+                            bet.deployer !== signerAddress
+                          );
                         case "all":
                         default:
                           return true;
@@ -1422,27 +1494,67 @@ export default function PredMarketPageV2() {
                       <div key={index} className="bet-card">
                         <h3>BetsGG</h3>
                         <div className="bet-details">
-                          <p>
-                            Potential Win:{" "}
-                            {ethers.utils.formatEther(
-                              ethers.BigNumber.from(
-                                bet.amountDeployerLocked
-                              ).add(
-                                ethers.BigNumber.from(
-                                  bet.amountBuyerLocked > 0
-                                    ? bet.amountBuyerLocked
-                                    : bet.amountToBuyFor
-                                )
-                              )
-                            )}{" "}
-                            {chain?.nativeCurrency?.symbol}
-                          </p>
+                          <div className="potential-win">
+                            <p>Potential Win:</p>
+                            <div className="win-amount">
+                              <span className="crypto-amount">
+                                {ethers.utils.formatEther(
+                                  ethers.BigNumber.from(
+                                    bet.amountDeployerLocked
+                                  ).add(
+                                    ethers.BigNumber.from(
+                                      bet.amountBuyerLocked > 0
+                                        ? bet.amountBuyerLocked
+                                        : bet.amountToBuyFor
+                                    )
+                                  )
+                                )}{" "}
+                                {chain?.nativeCurrency?.symbol}
+                              </span>
+                              <div className="usd-equivalent-small">
+                                <span className="usd-symbol">$</span>
+                                <span className="usd-amount">
+                                  {calculateUsdEquivalent(
+                                    ethers.utils.formatEther(
+                                      ethers.BigNumber.from(
+                                        bet.amountDeployerLocked
+                                      ).add(
+                                        ethers.BigNumber.from(
+                                          bet.amountBuyerLocked > 0
+                                            ? bet.amountBuyerLocked
+                                            : bet.amountToBuyFor
+                                        )
+                                      )
+                                    ),
+                                    contract?.chain?.chainId.toString()
+                                  )}
+                                </span>
+                                <span className="usd-label">USD</span>
+                              </div>
+                            </div>
+                          </div>
                           {bet.selling && (
-                            <p>
-                              Purchase Cost:{" "}
-                              {ethers.utils.formatEther(bet.amountToBuyFor)}{" "}
-                              {chain?.nativeCurrency?.symbol}
-                            </p>
+                            <div className="purchase-cost">
+                              <p>Purchase Cost:</p>
+                              <div className="cost-amount">
+                                <span className="crypto-amount">
+                                  {ethers.utils.formatEther(bet.amountToBuyFor)}{" "}
+                                  {chain?.nativeCurrency?.symbol}
+                                </span>
+                                <div className="usd-equivalent-small">
+                                  <span className="usd-symbol">$</span>
+                                  <span className="usd-amount">
+                                    {calculateUsdEquivalent(
+                                      ethers.utils.formatEther(
+                                        bet.amountToBuyFor
+                                      ),
+                                      contract?.chain?.chainId.toString()
+                                    )}
+                                  </span>
+                                  <span className="usd-label">USD</span>
+                                </div>
+                              </div>
+                            </div>
                           )}
                           <p>
                             Winning Condition:{" "}
@@ -1484,15 +1596,24 @@ export default function PredMarketPageV2() {
                           bet.owner === signerAddress &&
                           bet.deployer !== signerAddress ? (
                           <div className="relist-bet">
-                            <input
-                              className="relist-price-input"
-                              value={betPrices[index] || ""}
-                              onChange={(e) =>
-                                handleChangePrice(e.target.value, index)
-                              }
-                              placeholder={`Resell Price (${chain?.nativeCurrency?.symbol})`}
-                              maxLength={100}
-                            />
+                            <div className="bet-input-group">
+                              <input
+                                className="relist-price-input"
+                                value={betPrices[index] || ""}
+                                onChange={(e) =>
+                                  handleChangePrice(e.target.value, index)
+                                }
+                                placeholder={`Resell Price (${chain?.nativeCurrency?.symbol})`}
+                                maxLength={100}
+                              />
+                              <div className="usd-equivalent">
+                                <span className="usd-symbol">$</span>
+                                <span className="usd-amount">
+                                  {usdEquivalents[`resellPrice-${index}`] || 0}
+                                </span>
+                                <span className="usd-label">USD</span>
+                              </div>
+                            </div>
                             <button
                               className="relist-btn"
                               onClick={() =>
@@ -1508,81 +1629,144 @@ export default function PredMarketPageV2() {
                         ) : null}
                         {bet.deployer === signerAddress &&
                           bet.owner === signerAddress && (
-                            <div className="edit-bet-section">
-                              <h4>Edit Your Deployed Bet</h4>
-                              <div className="current-values">
-                                <p>
-                                  Current Deployed:{" "}
-                                  {ethers.utils.formatEther(
-                                    bet.amountDeployerLocked
-                                  )}{" "}
-                                  {chain?.nativeCurrency?.symbol}
-                                </p>
-                                <p>
-                                  Current Ask:{" "}
-                                  {ethers.utils.formatEther(bet.amountToBuyFor)}{" "}
-                                  {chain?.nativeCurrency?.symbol}
-                                </p>
-                              </div>
-                              <div className="edit-inputs">
-                                <input
-                                  className="edit-input"
-                                  value={
-                                    newDeployedPrices[bet.positionInArray] || ""
-                                  }
-                                  onChange={(e) =>
-                                    setNewDeployedPrices({
-                                      ...newDeployedPrices,
-                                      [bet.positionInArray]: e.target.value,
-                                    })
-                                  }
-                                  placeholder={`New Deployed (${chain?.nativeCurrency?.symbol})`}
-                                  maxLength={100}
-                                  style={{ width: "80px" }}
-                                />
-                                <input
-                                  className="edit-input"
-                                  value={
-                                    newAskingPrices[bet.positionInArray] || ""
-                                  }
-                                  onChange={(e) =>
-                                    setNewAskingPrices({
-                                      ...newAskingPrices,
-                                      [bet.positionInArray]: e.target.value,
-                                    })
-                                  }
-                                  placeholder={`New Ask (${chain?.nativeCurrency?.symbol})`}
-                                  maxLength={100}
-                                  style={{ width: "80px" }}
-                                />
-                              </div>
-                              <button
-                                className="save-changes-btn"
-                                onClick={() =>
-                                  editADeployedBet(
-                                    bet.positionInArray,
-                                    newDeployedPrices[bet.positionInArray] ||
-                                      bet.amountDeployerLocked,
-                                    newAskingPrices[bet.positionInArray] ||
-                                      ethers.utils.formatEther(
+                            <div className="edit-bet-container">
+                              {editingBetId === bet.positionInArray ? (
+                                <div className="edit-bet-section">
+                                  <div className="edit-header">
+                                    <h4>Edit Your Deployed Bet</h4>
+                                    <button
+                                      className="close-edit-btn"
+                                      onClick={() => setEditingBetId(null)}
+                                    >
+                                      ×
+                                    </button>
+                                  </div>
+                                  <div className="current-values">
+                                    <p>
+                                      Current Deployed:{" "}
+                                      {ethers.utils.formatEther(
+                                        bet.amountDeployerLocked
+                                      )}{" "}
+                                      {chain?.nativeCurrency?.symbol}
+                                    </p>
+                                    <p>
+                                      Current Ask:{" "}
+                                      {ethers.utils.formatEther(
                                         bet.amountToBuyFor
-                                      )
-                                  )
-                                }
-                              >
-                                Save Changes
-                              </button>
-                              <button
-                                className="cancel-bet-btn"
-                                style={{
-                                  marginLeft: "10px",
-                                  backgroundColor: "red",
-                                  color: "white",
-                                }}
-                                onClick={() => cancelBet(bet.positionInArray)}
-                              >
-                                Cancel Bet
-                              </button>
+                                      )}{" "}
+                                      {chain?.nativeCurrency?.symbol}
+                                    </p>
+                                  </div>
+                                  <div className="edit-inputs">
+                                    <div className="bet-input-group">
+                                      <input
+                                        className="edit-input"
+                                        value={
+                                          newDeployedPrices[
+                                            bet.positionInArray
+                                          ] || ""
+                                        }
+                                        onChange={(e) => {
+                                          setNewDeployedPrices({
+                                            ...newDeployedPrices,
+                                            [bet.positionInArray]:
+                                              e.target.value,
+                                          });
+                                          handleCryptoInputChange(
+                                            e,
+                                            `editDeployed-${bet.positionInArray}`
+                                          );
+                                        }}
+                                        placeholder={`New Deployed (${chain?.nativeCurrency?.symbol})`}
+                                        maxLength={100}
+                                      />
+                                      <div className="usd-equivalent">
+                                        <span className="usd-symbol">$</span>
+                                        <span className="usd-amount">
+                                          {usdEquivalents[
+                                            `editDeployed-${bet.positionInArray}`
+                                          ] || 0}
+                                        </span>
+                                        <span className="usd-label">USD</span>
+                                      </div>
+                                    </div>
+
+                                    <div className="bet-input-group">
+                                      <input
+                                        className="edit-input"
+                                        value={
+                                          newAskingPrices[
+                                            bet.positionInArray
+                                          ] || ""
+                                        }
+                                        onChange={(e) => {
+                                          setNewAskingPrices({
+                                            ...newAskingPrices,
+                                            [bet.positionInArray]:
+                                              e.target.value,
+                                          });
+                                          handleCryptoInputChange(
+                                            e,
+                                            `editAsking-${bet.positionInArray}`
+                                          );
+                                        }}
+                                        placeholder={`New Ask (${chain?.nativeCurrency?.symbol})`}
+                                        maxLength={100}
+                                      />
+                                      <div className="usd-equivalent">
+                                        <span className="usd-symbol">$</span>
+                                        <span className="usd-amount">
+                                          {usdEquivalents[
+                                            `editAsking-${bet.positionInArray}`
+                                          ] || 0}
+                                        </span>
+                                        <span className="usd-label">USD</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="edit-actions">
+                                    <button
+                                      className="save-changes-btn"
+                                      onClick={() =>
+                                        editADeployedBet(
+                                          bet.positionInArray,
+                                          newDeployedPrices[
+                                            bet.positionInArray
+                                          ] ||
+                                            ethers.utils.formatEther(
+                                              bet.amountDeployerLocked
+                                            ),
+                                          newAskingPrices[
+                                            bet.positionInArray
+                                          ] ||
+                                            ethers.utils.formatEther(
+                                              bet.amountToBuyFor
+                                            )
+                                        )
+                                      }
+                                    >
+                                      Save Changes
+                                    </button>
+                                    <button
+                                      className="cancel-bet-btn"
+                                      onClick={() =>
+                                        cancelBet(bet.positionInArray)
+                                      }
+                                    >
+                                      Cancel Bet
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <button
+                                  className="edit-bet-btn"
+                                  onClick={() =>
+                                    setEditingBetId(bet.positionInArray)
+                                  }
+                                >
+                                  Edit Bet
+                                </button>
+                              )}
                             </div>
                           )}
                       </div>
@@ -1692,6 +1876,31 @@ export default function PredMarketPageV2() {
         content={modalContent}
       />
       <style jsx>{`
+        .loading-container {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          height: 100vh; /* Full height of the viewport */
+          background: rgba(0, 0, 0, 0.7); /* Semi-transparent background */
+          color: #ffffff; /* White text color */
+          text-align: center; /* Center text alignment */
+          padding: 20px; /* Padding around the content */
+          border-radius: 10px; /* Rounded corners */
+        }
+
+        .loading-message {
+          font-size: 1.2rem; /* Slightly smaller font size */
+          color: #e0e0e0; /* Light gray color for the message */
+        }
+
+        .loading-text {
+          font-size: 2rem; /* Larger font size for emphasis */
+          font-weight: bold; /* Bold text */
+          margin-bottom: 20px; /* Space below the text */
+        }
+        /* Add this to your CSS file */
+
         .betting-app {
           display: flex;
           flex-direction: column;
@@ -1699,6 +1908,24 @@ export default function PredMarketPageV2() {
           background: linear-gradient(135deg, #1a1a2e, #16213e);
           color: #e0e0e0;
           font-family: "Roboto", sans-serif;
+        }
+
+        .relist-price-input {
+          width: 100%;
+          padding: 0.75rem;
+          padding-right: 120px; /* Make room for the USD display */
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          background: rgba(255, 255, 255, 0.05);
+          border-radius: 8px;
+          color: #fff;
+          font-size: 1rem;
+          transition: all 0.3s ease;
+        }
+
+        .relist-price-input:focus {
+          outline: none;
+          border-color: rgba(78, 205, 196, 0.5);
+          box-shadow: 0 0 0 2px rgba(78, 205, 196, 0.2);
         }
         .betting-history-column {
           flex: 1;
@@ -1977,13 +2204,115 @@ export default function PredMarketPageV2() {
           gap: 0.5rem;
         }
 
-        .input-field,
-        .dropdown {
-          padding: 0.5rem;
-          border: none;
+        .bet-input-group {
+          position: relative;
+          margin-bottom: 1rem;
+        }
+
+        .input-field {
+          width: 100%;
+          padding: 0.75rem;
+          padding-right: 120px; /* Make room for the USD display */
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          background: rgba(255, 255, 255, 0.05);
+          border-radius: 8px;
+          color: #fff;
+          font-size: 1rem;
+          transition: all 0.3s ease;
+        }
+        .input-field:focus {
+          outline: none;
+          border-color: rgba(78, 205, 196, 0.5);
+          box-shadow: 0 0 0 2px rgba(78, 205, 196, 0.2);
+        }
+
+        .potential-winnings h3 {
+          color: #4ecdc4;
+          margin-bottom: 0.5rem;
+          font-size: 1.1rem;
+        }
+
+        .winnings-amount {
+          display: flex;
+          align-items: center;
+          gap: 1rem;
+        }
+
+        .potential-win {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin: 0.5rem 0;
+        }
+
+        .win-amount {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+        }
+        .purchase-cost {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin: 0.5rem 0;
+        }
+
+        .cost-amount {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+        }
+
+        .crypto-amount {
+          font-weight: bold;
+          color: #4ecdc4;
+        }
+
+        .usd-equivalent-small {
+          background: rgba(78, 205, 196, 0.1);
+          padding: 2px 6px;
           border-radius: 4px;
-          background: rgba(255, 255, 255, 0.1);
-          color: #e0e0e0;
+          font-size: 0.75rem;
+          color: #4ecdc4;
+          display: flex;
+          align-items: center;
+          gap: 2px;
+        }
+        .usd-equivalent {
+          position: absolute;
+          right: 8px;
+          top: 50%;
+          transform: translateY(-50%);
+          background: rgba(78, 205, 196, 0.1);
+          padding: 4px 8px;
+          border-radius: 4px;
+          font-size: 0.85rem;
+          color: #4ecdc4;
+          display: flex;
+          align-items: center;
+          gap: 2px;
+          transition: all 0.3s ease;
+        }
+
+        .usd-symbol {
+          color: #4ecdc4;
+          font-weight: bold;
+        }
+
+        .usd-amount {
+          color: #fff;
+        }
+
+        .usd-label {
+          color: #4ecdc4;
+          font-size: 0.75rem;
+          text-transform: uppercase;
+          margin-left: 2px;
+        }
+
+        /* Optional: Add a hover effect */
+        .bet-input-group:hover .usd-equivalent {
+          background: rgba(78, 205, 196, 0.2);
         }
 
         .submit-bet-btn,
@@ -2079,11 +2408,95 @@ export default function PredMarketPageV2() {
           font-size: 0.9rem;
           color: #b0b0b0;
         }
+        .edit-bet-container {
+          margin-top: 1rem;
+        }
 
         .edit-bet-section {
+          background: rgba(255, 255, 255, 0.05);
+          border-radius: 8px;
+          padding: 1rem;
+          margin-top: 0.5rem;
+        }
+        .close-edit-btn {
+          background: none;
+          border: none;
+          color: #ff6b6b;
+          font-size: 1.5rem;
+          cursor: pointer;
+          padding: 0.2rem 0.5rem;
+          border-radius: 4px;
+          transition: all 0.3s ease;
+        }
+        .close-edit-btn:hover {
+          background: rgba(255, 107, 107, 0.1);
+        }
+        .edit-inputs {
+          display: flex;
+          flex-direction: column; /* Change to column to stack vertically */
+          gap: 1rem;
+          margin: 1rem 0;
+        }
+
+        .edit-input {
+          width: 100%; /* Change from flex: 1 to width: 100% */
+          padding: 0.75rem;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          background: rgba(255, 255, 255, 0.05);
+          border-radius: 8px;
+          color: #fff;
+          font-size: 1rem;
+          transition: all 0.3s ease;
+        }
+
+        .edit-input:focus {
+          outline: none;
+          border-color: rgba(78, 205, 196, 0.5);
+          box-shadow: 0 0 0 2px rgba(78, 205, 196, 0.2);
+        }
+
+        .edit-actions {
+          display: flex;
+          gap: 1rem;
           margin-top: 1rem;
-          padding-top: 1rem;
-          border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .save-changes-btn {
+          background: #4ecdc4;
+          color: #1a1a2e;
+          border: none;
+          padding: 0.5rem 1rem;
+          border-radius: 4px;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          font-weight: bold;
+        }
+
+        .cancel-bet-btn {
+          background: #ff6b6b;
+          color: white;
+          border: none;
+          padding: 0.5rem 1rem;
+          border-radius: 4px;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          font-weight: bold;
+        }
+        .edit-bet-btn {
+          background: #4ecdc4;
+          color: #1a1a2e;
+          border: none;
+          padding: 0.5rem 1rem;
+          border-radius: 4px;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          font-weight: bold;
+        }
+        .edit-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 1rem;
         }
 
         .edit-inputs {
