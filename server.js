@@ -190,114 +190,173 @@ let updatingRates = false;
 
 async function updateAllRates() {
   if (updatingRates) return;
+  try {
+    await cacheLock.acquire();
+    updatingRates = true;
 
-  updatingRates = true;
+    const chainInfo = {
+      1: { name: "ethereum", coingeckoId: "ethereum" },
+      56: { name: "binance-smart-chain", coingeckoId: "binancecoin" },
+      137: { name: "polygon", coingeckoId: "matic-network" },
+      43114: { name: "avalanche", coingeckoId: "avalanche-2" },
+      250: { name: "fantom", coingeckoId: "fantom" },
+      31337: {
+        name: "hardhat",
+        coingeckoId: "ethereum",
+        useEthereumRate: true,
+      },
+      8453: { name: "Base", coingeckoId: "ethereum", useEthereumRate: true },
+    };
 
-  const chainInfo = {
-    1: { name: "ethereum", coingeckoId: "ethereum" },
-    56: { name: "binance-smart-chain", coingeckoId: "binancecoin" },
-    137: { name: "polygon", coingeckoId: "matic-network" },
-    43114: { name: "avalanche", coingeckoId: "avalanche-2" },
-    250: { name: "fantom", coingeckoId: "fantom" },
-    31337: { name: "hardhat", coingeckoId: "ethereum", useEthereumRate: true },
-    8453: { name: "Base", coingeckoId: "ethereum", useEthereumRate: true },
-  };
+    const newRates = {}; // Temporary object to hold new rates
+    let allSuccessful = true;
+    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  const newRates = {}; // Temporary object to hold new rates
-  let allSuccessful = true;
-  const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-  // Fetch rate with retry logic
-  async function fetchRateWithRetry(chainId, chain) {
-    // If the chain should use the Ethereum rate, reuse it from newRates if already available
-    if (chain.useEthereumRate) {
-      if (newRates["1_RATE"] != null) {
-        newRates[`${chainId}_RATE`] = newRates["1_RATE"]; // Use Ethereum rate for specific chain ID
-        console.log(
-          `Reused Ethereum rate for ${chain.name} (chain ID: ${chainId}): $${newRates["1_RATE"]}`
-        );
-      } else {
-        console.log(
-          `Ethereum rate not available yet for ${chain.name} (chain ID: ${chainId}). Skipping fetch.`
-        );
-        allSuccessful = false;
-      }
-      return;
-    }
-
-    // Standard fetch logic for chains that do not use the Ethereum rate
-    const url = `https://api.coingecko.com/api/v3/simple/price?ids=${chain.coingeckoId}&vs_currencies=usd`;
-    let attempts = 0;
-    const maxAttempts = 8;
-
-    while (attempts < maxAttempts) {
-      try {
-        const response = await fetch(url);
-        if (!response.ok) {
-          console.error(
-            `Failed to fetch ${chain.name} (chain ID: ${chainId}): ${response.status} ${response.statusText}`
+    // Fetch rate with retry logic
+    async function fetchRateWithRetry(chainId, chain) {
+      // If the chain should use the Ethereum rate, reuse it from newRates if already available
+      if (chain.useEthereumRate) {
+        if (newRates["1_RATE"] != null) {
+          newRates[`${chainId}_RATE`] = newRates["1_RATE"]; // Use Ethereum rate for specific chain ID
+          console.log(
+            `Reused Ethereum rate for ${chain.name} (chain ID: ${chainId}): $${newRates["1_RATE"]}`
+          );
+        } else {
+          console.log(
+            `Ethereum rate not available yet for ${chain.name} (chain ID: ${chainId}). Skipping fetch.`
           );
           allSuccessful = false;
-          return; // Exit if fetch failed
         }
-        const data = await response.json();
-        newRates[`${chainId}_RATE`] = data[chain.coingeckoId].usd; // Store rate by chain ID
-        console.log(
-          `Fetched ${chain.name} rate (chain ID: ${chainId}): $${
-            data[chain.coingeckoId].usd
-          }`
-        );
-        return; // Exit on successful fetch
-      } catch (error) {
-        attempts++;
-        console.error("Error fetching", chain.name, ":", error);
-        if (attempts < maxAttempts) {
-          await delay(Math.pow(5, attempts) * 1000); // Exponential backoff delay
-        } else {
-          allSuccessful = false;
+        return;
+      }
+
+      // Standard fetch logic for chains that do not use the Ethereum rate
+      const url = `https://api.coingecko.com/api/v3/simple/price?ids=${chain.coingeckoId}&vs_currencies=usd`;
+      let attempts = 0;
+      const maxAttempts = 8;
+
+      while (attempts < maxAttempts) {
+        try {
+          const response = await fetch(url);
+          if (!response.ok) {
+            console.error(
+              `Failed to fetch ${chain.name} (chain ID: ${chainId}): ${response.status} ${response.statusText}`
+            );
+            allSuccessful = false;
+            return; // Exit if fetch failed
+          }
+          const data = await response.json();
+          newRates[`${chainId}_RATE`] = data[chain.coingeckoId].usd; // Store rate by chain ID
+          console.log(
+            `Fetched ${chain.name} rate (chain ID: ${chainId}): $${
+              data[chain.coingeckoId].usd
+            }`
+          );
+          return; // Exit on successful fetch
+        } catch (error) {
+          attempts++;
+          console.error("Error fetching", chain.name, ":", error);
+          if (attempts < maxAttempts) {
+            await delay(Math.pow(6, attempts) * 1000); // Exponential backoff delay
+          } else {
+            allSuccessful = false;
+          }
         }
       }
     }
-  }
 
-  const chains = Object.entries(chainInfo);
-  const maxConcurrentRequests = 2; // Limit of concurrent requests
+    const chains = Object.entries(chainInfo);
+    const maxConcurrentRequests = 1; // Limit of concurrent requests
 
-  for (let i = 0; i < chains.length; i += maxConcurrentRequests) {
-    const batch = chains.slice(i, i + maxConcurrentRequests);
-    await Promise.all(
-      batch.map(([chainId, chain]) => fetchRateWithRetry(chainId, chain))
-    );
-    await delay(2000); // Small delay between batches
-  }
-
-  // Update the rateCache if all fetches were successful
-  if (allSuccessful) {
-    for (const [key, value] of Object.entries(newRates)) {
-      rateCache.set(key, value);
-      console.log(`Updated ${key} in rateCache to $${value}`);
+    for (let i = 0; i < chains.length; i += maxConcurrentRequests) {
+      const batch = chains.slice(i, i + maxConcurrentRequests);
+      await Promise.all(
+        batch.map(([chainId, chain]) => fetchRateWithRetry(chainId, chain))
+      );
+      await delay(4000); // Small delay between batches
     }
-    console.log("All rates updated in cache");
-  } else {
-    console.log("Rate update failed; cache not updated.");
-  }
 
-  updatingRates = false;
+    // Update the rateCache if all fetches were successful
+    if (allSuccessful) {
+      for (const [key, value] of Object.entries(newRates)) {
+        rateCache.set(key, value);
+        console.log(`Updated ${key} in rateCache to $${value}`);
+      }
+      console.log("All rates updated in cache");
+    } else {
+      console.log("Rate update failed; cache not updated.");
+    }
+
+    updatingRates = false;
+  } finally {
+    cacheLock.release();
+  }
 }
 
 // Run the update function at regular intervals
 setInterval(updateAllRates, FETCH_INTERVAL);
 
-app.get("/api/rates", async (req, res) => {
-  let rates = {};
+// app.get("/api/rates", async (req, res) => {
+//   let rates = {};
 
-  // Assuming 'rateCache' is a NodeCache instance
-  const keys = rateCache.keys(); // Get all keys from the cache
-  keys.forEach((key) => {
-    rates[key] = rateCache.get(key); // Use get() to retrieve the value for each key
-  });
-  res.json(rates);
+//   // Assuming 'rateCache' is a NodeCache instance
+//   const keys = rateCache.keys(); // Get all keys from the cache
+//   keys.forEach((key) => {
+//     rates[key] = rateCache.get(key); // Use get() to retrieve the value for each key
+//   });
+//   res.json(rates);
+// });
+
+const safelyReadCache = async (cache, maxRetries = 3, delay = 100) => {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const rates = {};
+      const keys = cache.keys();
+      keys.forEach((key) => {
+        const value = cache.get(key);
+        if (value !== undefined) rates[key] = value;
+      });
+      return rates;
+    } catch (error) {
+      if (i === maxRetries - 1) throw error;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+};
+
+app.get("/api/rates", async (req, res) => {
+  try {
+    const rates = await safelyReadCache(rateCache);
+    if (Object.keys(rates).length === 0) {
+      return res.status(503).json({
+        error:
+          "Rate cache is currently being updated. Please try again shortly.",
+      });
+    }
+    res.json(rates);
+  } catch (error) {
+    console.error("Error reading rates:", error);
+    res.status(500).json({
+      error: "Failed to retrieve rates. Please try again later.",
+    });
+  }
 });
+
+const cacheLock = {
+  updating: false,
+  queue: [],
+  async acquire() {
+    if (this.updating) {
+      await new Promise((resolve) => this.queue.push(resolve));
+    }
+    this.updating = true;
+  },
+  release() {
+    this.updating = false;
+    const next = this.queue.shift();
+    if (next) next();
+  },
+};
 
 // Endpoint to get ETH to USD rate from the cache
 
@@ -715,7 +774,7 @@ async function fetchAllTournamentDetails() {
   console.log("Finished Querying featured Tourneys");
 
   // Fetch Regular Tournaments if the total is less than 50
-  if (allTournaments.length < 1) {
+  if (allTournaments.length < 50) {
     try {
       const data = await fetchWithRetry(GET_ALL_TOURNAMENTS_QUERY, {
         afterDate3,
@@ -734,7 +793,7 @@ async function fetchAllTournamentDetails() {
     }
 
     hasMore = true;
-    while (hasMore && allTournaments.length < 50) {
+    while (hasMore && allTournaments.length < 75) {
       await sleep(100); // Updated sleep from 10 to 100
       try {
         const data = await fetchWithRetry(GET_ALL_TOURNAMENTS_QUERY, {
@@ -747,7 +806,7 @@ async function fetchAllTournamentDetails() {
         console.log("Queried Tourneys non Featured", data);
         const filteredTournaments = data.tournaments.nodes.filter(
           (tournament) =>
-            tournament.endAt >= todayDate && tournament.numAttendees > 50
+            tournament.endAt >= todayDate && tournament.numAttendees > 20
         );
         allTournaments = [...allTournaments, ...filteredTournaments];
         hasMore = page >= 1;
