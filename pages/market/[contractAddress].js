@@ -89,7 +89,7 @@ export default function PredMarketPageV2() {
   const [winnerOfSet, setWinnerOfSet] = useState("0");
   const [selectedOutcome2, setSelectedOutcome2] = useState("0");
   const [deployerLocked, setDeployerLocked] = useState("");
-  const [isBettingOpen, setIsBettingOpen] = useState("");
+  const [isBettingOpen, setIsBettingOpen] = useState(null);
   const [isVotingTime, setIsVotingTime] = useState("");
   const [isBettingClosed, setIsBettingClosed] = useState("");
   const [showModal, setShowModal] = useState(false);
@@ -297,7 +297,7 @@ export default function PredMarketPageV2() {
   // Function to calculate USD equivalent
   const calculateUsdEquivalent = (amount, currency) => {
     const rate = cryptoRates[currency + "_RATE"]; // Get the rate for the selected currency
-    console.log("Currency is:", currency, "Rate is: ", rate);
+
     if (rate) {
       return (amount * rate).toFixed(2); // Calculate and format to 2 decimal places
     }
@@ -447,7 +447,8 @@ export default function PredMarketPageV2() {
                 "NewBetCreated event not found in transaction receipt"
               );
             }
-            const positionInArray = event.args.positionInArray.toNumber();
+
+            const positionInArray = event.args.positionInArray;
 
             // Update the database after the transaction is successful
             await updateBetterMongoDB(contractAddress, signerAddress);
@@ -509,12 +510,13 @@ export default function PredMarketPageV2() {
 
   const buyBet = async (positionInArray, purchasePrice, index) => {
     try {
-      console.log("Position Array: ", bets_balance.allbets);
+      console.log("Position Array: ", typeof positionInArray);
+
       const selectedName =
         bets_balance.allbets[index].conditionForBuyerToWin === 1
           ? contract.eventA
           : contract.eventB;
-      console.log("error");
+
       const buyerPrice =
         bets_balance.allbets[index].amountBuyerLocked > 0
           ? bets_balance.allbets[index].amountBuyerLocked
@@ -546,7 +548,7 @@ export default function PredMarketPageV2() {
           const betData = {
             address: signerAddress,
             contractAddress,
-            positionInArray: bigNumberToNumber(positionInArray),
+            positionInArray: positionInArray,
           };
 
           console.log(bigNumberToNumber(positionInArray), "position IN Aray");
@@ -582,7 +584,7 @@ export default function PredMarketPageV2() {
           const betData = {
             address: signerAddress,
             contractAddress,
-            positionInArray: bigNumberToNumber(positionInArray),
+            positionInArray: positionInArray,
           };
 
           // Call the backend API to process the cancellation
@@ -620,7 +622,7 @@ export default function PredMarketPageV2() {
           const betData = {
             address: signerAddress,
             contractAddress,
-            positionInArray: bigNumberToNumber(positionInArray),
+            positionInArray: positionInArray,
             amount: askingPrice,
           };
 
@@ -691,7 +693,7 @@ export default function PredMarketPageV2() {
           const betData = {
             address: signerAddress,
             contractAddress,
-            positionInArray: bigNumberToNumber(positionInArray),
+            positionInArray: positionInArray,
             amount: newDeployedPriceInEth, // Use 'amount' for deployed amount
             buyerAmount: newAskingPriceInEth,
           };
@@ -1184,7 +1186,7 @@ export default function PredMarketPageV2() {
             Switch to {contract?.chain?.name}
           </button>
         </div>
-      ) : isBettingOpen !== true && isBettingOpen !== false ? (
+      ) : !contractAddress ? (
         <div className="loading-container">
           <h2 className="loading-text">Loading...</h2>
           <div className="loading-spinner"></div>
@@ -1558,9 +1560,13 @@ export default function PredMarketPageV2() {
                           )}
                           <p>
                             Winning Condition:{" "}
-                            {bet.conditionForBuyerToWin === 1
-                              ? contract.eventA
-                              : contract.eventB}{" "}
+                            {filter === "ownedByMe"
+                              ? bet.conditionForBuyerToWin === 1
+                                ? contract.eventA
+                                : contract.eventB
+                              : bet.conditionForBuyerToWin === 1
+                              ? contract.eventB
+                              : contract.eventA}{" "}
                             Wins
                           </p>
                         </div>
@@ -1820,9 +1826,12 @@ export default function PredMarketPageV2() {
                           <div className="bet-prediction">
                             <span>My Prediction:</span>
                             <strong>
-                              {bet.condition === "1"
-                                ? contract.eventA
-                                : contract.eventB}{" "}
+                              {signerAddress &&
+                              (signerAddress === bet.deployer
+                                ? bet.condition === "1"
+                                : bet.condition === "1")
+                                ? contract.eventB
+                                : contract.eventA}{" "}
                               Wins
                             </strong>
                           </div>
