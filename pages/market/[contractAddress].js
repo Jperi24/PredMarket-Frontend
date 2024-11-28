@@ -103,6 +103,7 @@ export default function PredMarketPageV2() {
   const [userBetsHistory, setUserBets] = useState([]);
   const [isLoadingBets, setIsLoadingBets] = useState(false);
   const [editingBetId, setEditingBetId] = useState(null);
+  const [isStillLoading, setisStillLoading] = useState(false);
 
   const [cryptoRates, setCryptoRates] = useState({}); // State for crypto rates
   const [usdEquivalents, setUsdEquivalents] = useState({}); // State for USD equivalents
@@ -240,6 +241,8 @@ export default function PredMarketPageV2() {
           bets_balance.state === 0 && currentTime > bets_balance.endTime
         );
         setIsDisagreementState(bets_balance.state === 2);
+
+        setisStillLoading(true);
       };
       updateStates();
     }
@@ -767,6 +770,7 @@ export default function PredMarketPageV2() {
   };
 
   const calculateTotalWinnings = async (allbets) => {
+    console.log("CalculateTotalWinningsRunning");
     if (!Array.isArray(allbets)) {
       return "0";
     }
@@ -777,7 +781,7 @@ export default function PredMarketPageV2() {
     const amountMadeFromSoldBets = ethers.utils.parseEther(
       ethers.utils.formatEther(amountMadeFromSoldBetsInWei)
     ); // Keep it as a BigNumber
-
+    console.log(amountMadeFromSoldBets, "Amount made from sold Bets");
     // Filter and process bets
     const filteredBets = allbets
       .filter((bet) => {
@@ -803,7 +807,7 @@ export default function PredMarketPageV2() {
 
       return amountDeployerLocked
         .add(amountBuyerLocked)
-        .add(amountMadeFromSoldBets);
+        .add(amountMadeFromSoldBetsInWei);
     });
 
     // Wait for all promises to resolve
@@ -1186,7 +1190,7 @@ export default function PredMarketPageV2() {
             Switch to {contract?.chain?.name}
           </button>
         </div>
-      ) : !contractAddress ? (
+      ) : !setisStillLoading ? (
         <div className="loading-container">
           <h2 className="loading-text">Loading...</h2>
           <div className="loading-spinner"></div>
@@ -1827,11 +1831,13 @@ export default function PredMarketPageV2() {
                             <span>My Prediction:</span>
                             <strong>
                               {signerAddress &&
-                              (signerAddress === bet.deployer
-                                ? bet.condition === "1"
-                                : bet.condition === "1")
-                                ? contract.eventB
-                                : contract.eventA}{" "}
+                                (signerAddress === bet.deployer
+                                  ? bet.condition === "1"
+                                    ? contract.eventB
+                                    : contract.eventA
+                                  : bet.condition === "1"
+                                  ? contract.eventA
+                                  : contract.eventB)}
                               Wins
                             </strong>
                           </div>
