@@ -13,6 +13,9 @@ import { resultKeyNameFromField } from "@apollo/client/utilities";
 // dotenv.config();
 
 export default function PredMarketPageV2() {
+  const router = useRouter();
+  const { contractAddress } = router.query;
+
   const [contractInstance, setContractInstance] = useState(null);
   const signer = useSigner();
   const commonChains = {
@@ -73,13 +76,12 @@ export default function PredMarketPageV2() {
   const [condition, setCondition] = useState(null);
   const [showInputs, setShowInputs] = useState(false);
   const [contract, setContract] = useState(null);
-  const router = useRouter();
 
   const [signerAddress, setSignerAddress] = useState(null);
   const [newPrice, setnewPrice] = useState(null);
   const [totalWinnings, setTotalWinnings] = useState(0);
   const [totalLocked, setTotalLocked] = useState(0);
-  const { contractAddress } = router.query;
+
   const [selectedBets, setSelectedBets] = useState([]);
   const [betPrices, setBetPrices] = useState({});
   const [chain, setChain] = useState(null);
@@ -103,7 +105,7 @@ export default function PredMarketPageV2() {
   const [userBetsHistory, setUserBets] = useState([]);
   const [isLoadingBets, setIsLoadingBets] = useState(false);
   const [editingBetId, setEditingBetId] = useState(null);
-  const [isStillLoading, setisStillLoading] = useState(false);
+  const [isStillLoading, setisStillLoading] = useState(true);
 
   const [cryptoRates, setCryptoRates] = useState({}); // State for crypto rates
   const [usdEquivalents, setUsdEquivalents] = useState({}); // State for USD equivalents
@@ -191,7 +193,6 @@ export default function PredMarketPageV2() {
           setSignerAddress(saddress);
 
           const network = await signer.provider.getNetwork();
-          console.log("This is the network", network);
 
           if (contract && contract.chain && contract.chain.chainId) {
             const expectedChainId = contract.chain.chainId;
@@ -203,8 +204,6 @@ export default function PredMarketPageV2() {
               console.log("Live on chain: ", network.chainId);
               setContractInstance(tempContractInstance);
 
-              displayAllBets();
-
               setChain(commonChains[network.chainId]);
 
               const balance = await signer.provider.getBalance(contractAddress);
@@ -212,11 +211,11 @@ export default function PredMarketPageV2() {
               // ethers.js uses BigNumber to handle large numbers; convert the balance from Wei to Ether
               const balanceInEther = ethers.utils.formatEther(balance);
               setContractBalance(balanceInEther);
+              fetchUserBets(saddress, contractAddress);
             }
           } else {
             console.error("Contract or contract.chain.chainId is not defined");
           }
-          fetchUserBets(saddress, contractAddress);
         }
       }
     };
@@ -228,6 +227,7 @@ export default function PredMarketPageV2() {
 
   useEffect(() => {
     if (contractInstance) {
+      // Check if both contractInstance and currentTime exist
       const updateStates = () => {
         setIsBettingOpen(
           bets_balance.state === 0 && currentTime < bets_balance.endTime
@@ -241,12 +241,30 @@ export default function PredMarketPageV2() {
           bets_balance.state === 0 && currentTime > bets_balance.endTime
         );
         setIsDisagreementState(bets_balance.state === 2);
+        console.log(bets_balance.state, "Bets Balance State");
 
-        setisStillLoading(true);
+        if (bets_balance.state !== null) {
+          setisStillLoading(false); // Set loading to false when state is defined
+          console.log("SetIsStillLoading Is False");
+        }
       };
-      updateStates();
+
+      updateStates(); // Call updateStates whenever currentTime changes
+
+      // Set up an interval to keep updating until loading is false
+      const interval = setInterval(() => {
+        if (!isStillLoading) {
+          clearInterval(interval); // Clear the interval if loading is complete
+        } else {
+          displayAllBets();
+          updateStates(); // Call updateStates again if still loading
+        }
+      }, 1000); // Update every second
+
+      // Cleanup function to clear the interval on component unmount or when dependencies change
+      return () => clearInterval(interval);
     }
-  }, [contractInstance, bets_balance, currentTime, contract]);
+  }, [contractInstance, bets_balance, contractAddress, contract]);
 
   const updateBetterMongoDB = async (address, signerAddress) => {
     try {
@@ -460,7 +478,7 @@ export default function PredMarketPageV2() {
               address: signerAddress,
               amount: myBet,
               buyerAmount: buyIn,
-              condition: reverseSelected,
+              condition: selectedOutcome,
               contractAddress: contractAddress,
               positionInArray: positionInArray,
             };
@@ -1051,21 +1069,38 @@ export default function PredMarketPageV2() {
   };
 
   useEffect(() => {
-    if (contractAddress) {
-      console.log(`Fetching details for contract: ${contractAddress}`);
-      fetchContractDetails(contractAddress)
-        .then((data) => {
+    const fetchContractWithRetries = async (address) => {
+      const maxRetries = 5; // Set the maximum number of retries
+      let attempts = 0; // Initialize the attempt counter
+
+      while (attempts < maxRetries) {
+        console.log(
+          `Fetching details for contract: ${address}, Attempt: ${attempts + 1}`
+        );
+        try {
+          const data = await fetchContractDetails(address);
           if (data) {
             setContract(data);
+            return; // Exit if successful
           } else {
             console.log("Contract data not found or error occurred");
           }
-        })
-        .catch((error) =>
-          console.error("Fetching contract details failed", error)
-        );
+        } catch (error) {
+          console.error("Fetching contract details failed", error);
+        }
+        attempts++;
+        await new Promise((resolve) => setTimeout(resolve, 2000)); // Wait before retrying
+      }
+      console.error("Max retries reached. Unable to fetch contract details.");
+    };
+
+    if (contractAddress && signer) {
+      fetchContractWithRetries(contractAddress);
+      console.log("contractDetails Set");
     } else {
-      console.log("contractAddress is undefined, waiting for it to be set");
+      console.log(
+        "contractAddress or signer is undefined, waiting for them to be set"
+      );
     }
   }, [contractAddress, signer]);
 
@@ -1190,13 +1225,20 @@ export default function PredMarketPageV2() {
             Switch to {contract?.chain?.name}
           </button>
         </div>
-      ) : !setisStillLoading ? (
+      ) : isStillLoading ? (
         <div className="loading-container">
-          <h2 className="loading-text">Loading...</h2>
-          <div className="loading-spinner"></div>
-          <p className="loading-message">
-            Please wait while we prepare the betting arena for you!
-          </p>
+          <div className="loading-content">
+            <h2 className="loading-title">Loading Betting Arena</h2>
+            <div className="loading-spinner-container">
+              <div className="loading-spinner"></div>
+            </div>
+            <p className="loading-message">
+              Preparing your personalized betting experience...
+            </p>
+            <div className="loading-progress">
+              <div className="loading-bar"></div>
+            </div>
+          </div>
         </div>
       ) : (
         <div className="betting-arena">
@@ -1564,13 +1606,13 @@ export default function PredMarketPageV2() {
                           )}
                           <p>
                             Winning Condition:{" "}
-                            {filter === "ownedByMe"
+                            {signerAddress && bet.deployer === signerAddress
                               ? bet.conditionForBuyerToWin === 1
-                                ? contract.eventA
-                                : contract.eventB
+                                ? contract.eventB
+                                : contract.eventA
                               : bet.conditionForBuyerToWin === 1
-                              ? contract.eventB
-                              : contract.eventA}{" "}
+                              ? contract.eventA
+                              : contract.eventB}{" "}
                             Wins
                           </p>
                         </div>
@@ -1816,7 +1858,7 @@ export default function PredMarketPageV2() {
                         </span>
                       </div>
 
-                      {/* Only show the body if the bet status is not "Bet Resold For" */}
+                      {/* Only show the body if the bet status is not "" */}
                       {!betStatus.includes("Bet Resold For") && (
                         <div className="history-card-body">
                           <div className="bet-amount">
@@ -1831,13 +1873,14 @@ export default function PredMarketPageV2() {
                             <span>My Prediction:</span>
                             <strong>
                               {signerAddress &&
-                                (signerAddress === bet.deployer
+                                (signerAddress.toLowerCase() ===
+                                bet.deployer.toLowerCase()
                                   ? bet.condition === "1"
-                                    ? contract.eventB
-                                    : contract.eventA
+                                    ? contract.eventA
+                                    : contract.eventB
                                   : bet.condition === "1"
-                                  ? contract.eventA
-                                  : contract.eventB)}
+                                  ? contract.eventB
+                                  : contract.eventA)}
                               Wins
                             </strong>
                           </div>
@@ -1893,28 +1936,99 @@ export default function PredMarketPageV2() {
       <style jsx>{`
         .loading-container {
           display: flex;
-          flex-direction: column;
-          align-items: center;
           justify-content: center;
-          height: 100vh; /* Full height of the viewport */
-          background: rgba(0, 0, 0, 0.7); /* Semi-transparent background */
-          color: #ffffff; /* White text color */
-          text-align: center; /* Center text alignment */
-          padding: 20px; /* Padding around the content */
-          border-radius: 10px; /* Rounded corners */
+          align-items: center;
+          min-height: 100vh;
+          background: linear-gradient(135deg, #1a1a2e, #16213e);
+          padding: 2rem;
+        }
+
+        .loading-content {
+          background: rgba(255, 255, 255, 0.05);
+          border-radius: 20px;
+          padding: 3rem;
+          text-align: center;
+          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+          backdrop-filter: blur(10px);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          max-width: 500px;
+          width: 100%;
+        }
+        .loading-title {
+          color: #4ecdc4;
+          font-size: 2rem;
+          margin-bottom: 2rem;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 2px;
+        }
+
+        .loading-spinner-container {
+          margin: 2rem 0;
+        }
+
+        .loading-spinner {
+          width: 60px;
+          height: 60px;
+          border: 4px solid rgba(78, 205, 196, 0.1);
+          border-left-color: #4ecdc4;
+          border-radius: 50%;
+          margin: 0 auto;
+          animation: spin 1s linear infinite;
         }
 
         .loading-message {
-          font-size: 1.2rem; /* Slightly smaller font size */
-          color: #e0e0e0; /* Light gray color for the message */
+          color: #b0b0b0;
+          font-size: 1.1rem;
+          margin: 1.5rem 0;
+          line-height: 1.6;
         }
 
-        .loading-text {
-          font-size: 2rem; /* Larger font size for emphasis */
-          font-weight: bold; /* Bold text */
-          margin-bottom: 20px; /* Space below the text */
+        .loading-progress {
+          background: rgba(255, 255, 255, 0.1);
+          height: 4px;
+          border-radius: 2px;
+          overflow: hidden;
+          margin-top: 2rem;
         }
-        /* Add this to your CSS file */
+
+        .loading-bar {
+          height: 100%;
+          width: 30%;
+          background: linear-gradient(90deg, #4ecdc4, #45b7d1);
+          border-radius: 2px;
+          animation: progress 2s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+
+        @keyframes progress {
+          0% {
+            transform: translateX(-100%);
+          }
+          100% {
+            transform: translateX(400%);
+          }
+        }
+
+        @media (max-width: 768px) {
+          .loading-content {
+            padding: 2rem;
+          }
+
+          .loading-title {
+            font-size: 1.5rem;
+          }
+
+          .loading-spinner {
+            width: 40px;
+            height: 40px;
+          }
+        }
 
         .betting-app {
           display: flex;
