@@ -131,6 +131,7 @@ if (process.env.NODE_ENV !== "test") {
         scheduleTasks();
         fetchAllTournamentDetails();
         moveExpiredContracts();
+        deleteOldExpiredContracts();
       });
     })
     .catch((err) => {
@@ -184,15 +185,53 @@ async function moveExpiredContracts() {
 const RATE_KEY = "ethToUsdRate";
 
 let rateCache = new NodeCache();
+let chainRateCaches = new NodeCache({ stdTTL: 300 }); // 5 minutes TTL
 
-const FETCH_INTERVAL = 60000; // Set an interval to avoid frequent requests
+const FETCH_INTERVAL = 100000; // Set an interval to avoid frequent requests
 let updatingRates = false;
 
-async function updateAllRates() {
-  if (updatingRates) return;
+// Helper function to safely read from cache
+async function safelyReadCache(cache) {
+  const rates = {};
+  const keys = chainRateCaches.keys();
+
+  keys.forEach((key) => {
+    if (key.endsWith("_RATE")) {
+      rates[key] = chainRateCaches.get(key);
+    }
+  });
+
+  return rates;
+}
+
+// Rate endpoint
+app.get("/api/rates", async (req, res) => {
   try {
-    await cacheLock.acquire();
-    updatingRates = true;
+    const rates = await safelyReadCache(chainRateCaches);
+
+    if (Object.keys(rates).length === 0) {
+      return res.status(503).json({
+        error:
+          "Rate cache is currently being updated. Please try again shortly.",
+      });
+    }
+
+    res.json(rates);
+  } catch (error) {
+    console.error("Error reading rates:", error);
+    res.status(500).json({
+      error: "Failed to retrieve rates. Please try again later.",
+    });
+  }
+});
+
+// Modified updateAllRates to use proper NodeCache methods
+async function updateAllRates() {
+  const updateKey = "updating_rates";
+  if (chainRateCaches.get(updateKey)) return;
+
+  try {
+    chainRateCaches.set(updateKey, true, 30); // Lock for 30 seconds max
 
     const chainInfo = {
       1: { name: "ethereum", coingeckoId: "ethereum" },
@@ -208,155 +247,233 @@ async function updateAllRates() {
       8453: { name: "Base", coingeckoId: "ethereum", useEthereumRate: true },
     };
 
-    const newRates = {}; // Temporary object to hold new rates
-    let allSuccessful = true;
-    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-    // Fetch rate with retry logic
-    async function fetchRateWithRetry(chainId, chain) {
-      // If the chain should use the Ethereum rate, reuse it from newRates if already available
-      if (chain.useEthereumRate) {
-        if (newRates["1_RATE"] != null) {
-          newRates[`${chainId}_RATE`] = newRates["1_RATE"]; // Use Ethereum rate for specific chain ID
-          console.log(
-            `Reused Ethereum rate for ${chain.name} (chain ID: ${chainId}): $${newRates["1_RATE"]}`
-          );
-        } else {
-          console.log(
-            `Ethereum rate not available yet for ${chain.name} (chain ID: ${chainId}). Skipping fetch.`
-          );
-          allSuccessful = false;
-        }
-        return;
-      }
-
-      // Standard fetch logic for chains that do not use the Ethereum rate
-      const url = `https://api.coingecko.com/api/v3/simple/price?ids=${chain.coingeckoId}&vs_currencies=usd`;
-      let attempts = 0;
-      const maxAttempts = 8;
-
-      while (attempts < maxAttempts) {
+    const results = await Promise.allSettled(
+      Object.entries(chainInfo).map(async ([chainId, chain]) => {
         try {
-          const response = await fetch(url);
-          if (!response.ok) {
-            console.error(
-              `Failed to fetch ${chain.name} (chain ID: ${chainId}): ${response.status} ${response.statusText}`
-            );
-            allSuccessful = false;
-            return; // Exit if fetch failed
+          if (chain.useEthereumRate) {
+            const ethRate = chainRateCaches.get("1_RATE");
+            if (ethRate) {
+              chainRateCaches.set(`${chainId}_RATE`, ethRate);
+              return { chainId, success: true };
+            }
+            return { chainId, success: false };
           }
-          const data = await response.json();
-          newRates[`${chainId}_RATE`] = data[chain.coingeckoId].usd; // Store rate by chain ID
+
+          const rate = await fetchRateWithRetry(chain);
+          if (rate) {
+            chainRateCaches.set(`${chainId}_RATE`, rate);
+            return { chainId, success: true };
+          }
+          return { chainId, success: false };
+        } catch (error) {
+          console.error(`Error fetching ${chain.name} rate:`, error);
+          return { chainId, success: false };
+        }
+      })
+    );
+
+    // Log results without blocking
+    setTimeout(() => {
+      results.forEach((result) => {
+        if (result.status === "fulfilled") {
           console.log(
-            `Fetched ${chain.name} rate (chain ID: ${chainId}): $${
-              data[chain.coingeckoId].usd
+            `Rate update for chain ${result.value.chainId}: ${
+              result.value.success ? "Success" : "Failed"
             }`
           );
-          return; // Exit on successful fetch
-        } catch (error) {
-          attempts++;
-          console.error("Error fetching", chain.name, ":", error);
-          if (attempts < maxAttempts) {
-            await delay(Math.pow(6, attempts) * 1000); // Exponential backoff delay
-          } else {
-            allSuccessful = false;
-          }
         }
-      }
-    }
-
-    const chains = Object.entries(chainInfo);
-    const maxConcurrentRequests = 1; // Limit of concurrent requests
-
-    for (let i = 0; i < chains.length; i += maxConcurrentRequests) {
-      const batch = chains.slice(i, i + maxConcurrentRequests);
-      await Promise.all(
-        batch.map(([chainId, chain]) => fetchRateWithRetry(chainId, chain))
-      );
-      await delay(4000); // Small delay between batches
-    }
-
-    // Update the rateCache if all fetches were successful
-    if (allSuccessful) {
-      for (const [key, value] of Object.entries(newRates)) {
-        rateCache.set(key, value);
-        console.log(`Updated ${key} in rateCache to $${value}`);
-      }
-      console.log("All rates updated in cache");
-    } else {
-      console.log("Rate update failed; cache not updated.");
-    }
-
-    updatingRates = false;
+      });
+    }, 0);
   } finally {
-    cacheLock.release();
+    chainRateCaches.del(updateKey); // Use del instead of delete
   }
 }
 
-// Run the update function at regular intervals
+// Retry logic remains the same but returns the rate directly
+async function fetchRateWithRetry(chain) {
+  const maxAttempts = 8;
+  for (let attempts = 0; attempts < maxAttempts; attempts++) {
+    try {
+      const response = await fetch(
+        `https://api.coingecko.com/api/v3/simple/price?ids=${chain.coingeckoId}&vs_currencies=usd`
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data[chain.coingeckoId].usd;
+    } catch (error) {
+      console.error(`Attempt ${attempts + 1} failed for ${chain.name}:`, error);
+      if (attempts < maxAttempts - 1) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, Math.pow(6, attempts) * 1000)
+        );
+      }
+    }
+  }
+  return null;
+}
 setInterval(updateAllRates, FETCH_INTERVAL);
+// async function updateAllRates() {
+//   if (updatingRates) return;
+//   try {
+//     await cacheLock.acquire();
+//     updatingRates = true;
+
+//     const chainInfo = {
+//       1: { name: "ethereum", coingeckoId: "ethereum" },
+//       56: { name: "binance-smart-chain", coingeckoId: "binancecoin" },
+//       137: { name: "polygon", coingeckoId: "matic-network" },
+//       43114: { name: "avalanche", coingeckoId: "avalanche-2" },
+//       250: { name: "fantom", coingeckoId: "fantom" },
+//       31337: {
+//         name: "hardhat",
+//         coingeckoId: "ethereum",
+//         useEthereumRate: true,
+//       },
+//       8453: { name: "Base", coingeckoId: "ethereum", useEthereumRate: true },
+//     };
+
+//     const newRates = {}; // Temporary object to hold new rates
+//     let allSuccessful = true;
+//     const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+//     // Fetch rate with retry logic
+//     async function fetchRateWithRetry(chainId, chain) {
+//       // If the chain should use the Ethereum rate, reuse it from newRates if already available
+//       if (chain.useEthereumRate) {
+//         if (newRates["1_RATE"] != null) {
+//           newRates[`${chainId}_RATE`] = newRates["1_RATE"]; // Use Ethereum rate for specific chain ID
+//           console.log(
+//             `Reused Ethereum rate for ${chain.name} (chain ID: ${chainId}): $${newRates["1_RATE"]}`
+//           );
+//         } else {
+//           console.log(
+//             `Ethereum rate not available yet for ${chain.name} (chain ID: ${chainId}). Skipping fetch.`
+//           );
+//           allSuccessful = false;
+//         }
+//         return;
+//       }
+
+//       // Standard fetch logic for chains that do not use the Ethereum rate
+//       const url = `https://api.coingecko.com/api/v3/simple/price?ids=${chain.coingeckoId}&vs_currencies=usd`;
+//       let attempts = 0;
+//       const maxAttempts = 8;
+
+//       while (attempts < maxAttempts) {
+//         try {
+//           const response = await fetch(url);
+//           if (!response.ok) {
+//             console.error(
+//               `Failed to fetch ${chain.name} (chain ID: ${chainId}): ${response.status} ${response.statusText}`
+//             );
+//             allSuccessful = false;
+//             return; // Exit if fetch failed
+//           }
+//           const data = await response.json();
+//           newRates[`${chainId}_RATE`] = data[chain.coingeckoId].usd; // Store rate by chain ID
+//           console.log(
+//             `Fetched ${chain.name} rate (chain ID: ${chainId}): $${
+//               data[chain.coingeckoId].usd
+//             }`
+//           );
+//           return; // Exit on successful fetch
+//         } catch (error) {
+//           attempts++;
+//           console.error("Error fetching", chain.name, ":", error);
+//           if (attempts < maxAttempts) {
+//             await delay(Math.pow(6, attempts) * 1000); // Exponential backoff delay
+//           } else {
+//             allSuccessful = false;
+//           }
+//         }
+//       }
+//     }
+
+//     const chains = Object.entries(chainInfo);
+//     const maxConcurrentRequests = 1; // Limit of concurrent requests
+
+//     for (let i = 0; i < chains.length; i += maxConcurrentRequests) {
+//       const batch = chains.slice(i, i + maxConcurrentRequests);
+//       await Promise.all(
+//         batch.map(([chainId, chain]) => fetchRateWithRetry(chainId, chain))
+//       );
+//       await delay(4000); // Small delay between batches
+//     }
+
+//     // Update the rateCache if all fetches were successful
+//     if (allSuccessful) {
+//       for (const [key, value] of Object.entries(newRates)) {
+//         rateCache.set(key, value);
+//         console.log(`Updated ${key} in rateCache to $${value}`);
+//       }
+//       console.log("All rates updated in cache");
+//     } else {
+//       console.log("Rate update failed; cache not updated.");
+//     }
+
+//     updatingRates = false;
+//   } finally {
+//     cacheLock.release();
+//   }
+// }
+
+// // Run the update function at regular intervals
+// setInterval(updateAllRates, FETCH_INTERVAL);
+
+// const safelyReadCache = async (cache, maxRetries = 3, delay = 100) => {
+//   for (let i = 0; i < maxRetries; i++) {
+//     try {
+//       const rates = {};
+//       const keys = cache.keys();
+//       keys.forEach((key) => {
+//         const value = cache.get(key);
+//         if (value !== undefined) rates[key] = value;
+//       });
+//       return rates;
+//     } catch (error) {
+//       if (i === maxRetries - 1) throw error;
+//       await new Promise((resolve) => setTimeout(resolve, delay));
+//     }
+//   }
+// };
 
 // app.get("/api/rates", async (req, res) => {
-//   let rates = {};
-
-//   // Assuming 'rateCache' is a NodeCache instance
-//   const keys = rateCache.keys(); // Get all keys from the cache
-//   keys.forEach((key) => {
-//     rates[key] = rateCache.get(key); // Use get() to retrieve the value for each key
-//   });
-//   res.json(rates);
+//   try {
+//     const rates = await safelyReadCache(rateCache);
+//     if (Object.keys(rates).length === 0) {
+//       return res.status(503).json({
+//         error:
+//           "Rate cache is currently being updated. Please try again shortly.",
+//       });
+//     }
+//     res.json(rates);
+//   } catch (error) {
+//     console.error("Error reading rates:", error);
+//     res.status(500).json({
+//       error: "Failed to retrieve rates. Please try again later.",
+//     });
+//   }
 // });
 
-const safelyReadCache = async (cache, maxRetries = 3, delay = 100) => {
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      const rates = {};
-      const keys = cache.keys();
-      keys.forEach((key) => {
-        const value = cache.get(key);
-        if (value !== undefined) rates[key] = value;
-      });
-      return rates;
-    } catch (error) {
-      if (i === maxRetries - 1) throw error;
-      await new Promise((resolve) => setTimeout(resolve, delay));
-    }
-  }
-};
-
-app.get("/api/rates", async (req, res) => {
-  try {
-    const rates = await safelyReadCache(rateCache);
-    if (Object.keys(rates).length === 0) {
-      return res.status(503).json({
-        error:
-          "Rate cache is currently being updated. Please try again shortly.",
-      });
-    }
-    res.json(rates);
-  } catch (error) {
-    console.error("Error reading rates:", error);
-    res.status(500).json({
-      error: "Failed to retrieve rates. Please try again later.",
-    });
-  }
-});
-
-const cacheLock = {
-  updating: false,
-  queue: [],
-  async acquire() {
-    if (this.updating) {
-      await new Promise((resolve) => this.queue.push(resolve));
-    }
-    this.updating = true;
-  },
-  release() {
-    this.updating = false;
-    const next = this.queue.shift();
-    if (next) next();
-  },
-};
+// const cacheLock = {
+//   updating: false,
+//   queue: [],
+//   async acquire() {
+//     if (this.updating) {
+//       await new Promise((resolve) => this.queue.push(resolve));
+//     }
+//     this.updating = true;
+//   },
+//   release() {
+//     this.updating = false;
+//     const next = this.queue.shift();
+//     if (next) next();
+//   },
+// };
 
 // Endpoint to get ETH to USD rate from the cache
 
@@ -1342,6 +1459,97 @@ app.get(
   }
 );
 
+async function cleanUpUserBets(userId) {
+  try {
+    const userCollection = db.collection("Users");
+    const relevantCollections = [
+      "Contracts",
+      "ExpiredContracts",
+      "Disagreements",
+    ];
+
+    // Use findOne with projection to minimize data transfer
+    const user = await userCollection.findOne(
+      { userId },
+      { projection: { deployer: 1, better: 1 } }
+    );
+
+    if (!user) {
+      console.log("User not found");
+      return;
+    }
+
+    const deployerArray = user.deployer || [];
+    const betterArray = user.better || [];
+
+    // Improved: Check all collections concurrently for each address
+    const addressExistsInCollections = async (address) => {
+      const checks = relevantCollections.map((collectionName) =>
+        db
+          .collection(collectionName)
+          .findOne({ address }, { projection: { _id: 1 } })
+      );
+
+      const results = await Promise.all(checks);
+      return results.some((result) => result !== null);
+    };
+
+    // Batch process addresses in chunks to prevent overwhelming the DB
+    const BATCH_SIZE = 10;
+
+    async function processBatch(addresses) {
+      const batch = addresses.slice(0, BATCH_SIZE);
+      const promises = batch.map(async (address) => {
+        const exists = await addressExistsInCollections(address);
+        return exists ? address : null;
+      });
+      return Promise.all(promises);
+    }
+
+    // Process deployer addresses in batches
+    const updatedDeployer = [];
+    for (let i = 0; i < deployerArray.length; i += BATCH_SIZE) {
+      const batchResults = await processBatch(deployerArray.slice(i));
+      updatedDeployer.push(...batchResults.filter(Boolean));
+    }
+
+    // Process better addresses in batches
+    const updatedBetter = [];
+    for (let i = 0; i < betterArray.length; i += BATCH_SIZE) {
+      const batchResults = await processBatch(betterArray.slice(i));
+      updatedBetter.push(...batchResults.filter(Boolean));
+    }
+
+    // Use updateOne with timeout
+    const updatePromise = userCollection.updateOne(
+      { userId },
+      {
+        $set: {
+          deployer: updatedDeployer,
+          better: updatedBetter,
+        },
+      },
+      { maxTimeMS: 5000 } // 5 second timeout
+    );
+
+    // Add timeout protection
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Update timeout")), 5000)
+    );
+
+    await Promise.race([updatePromise, timeoutPromise]);
+
+    return {
+      success: true,
+      deployerCount: updatedDeployer.length,
+      betterCount: updatedBetter.length,
+    };
+  } catch (error) {
+    console.error("Error cleaning up user object:", error);
+    throw error; // Re-throw to handle at caller level
+  }
+}
+
 // async function cleanUpUserBets(userId) {
 //   try {
 //     const userCollection = db.collection("Users");
@@ -1362,36 +1570,36 @@ app.get(
 //     const deployerArray = user.deployer || [];
 //     const betterArray = user.better || [];
 
-//     const updatedDeployerArray = [];
-//     const updatedBetterArray = [];
-
 //     // Helper function to check if an address exists in any collection
 //     const addressExistsInCollections = async (address) => {
 //       for (let collectionName of relevantCollections) {
 //         const collection = db.collection(collectionName);
-//         const addressExists = await collection.findOne({ address: address }); // Check 'address' field in the collection
+//         const addressExists = await collection.findOne({ address: address });
 //         if (addressExists) return true;
 //       }
 //       return false;
 //     };
 
-//     // Check the deployer array
-//     for (let contractAddress of deployerArray) {
+//     // Use Promise.all to check all addresses concurrently
+//     const deployerPromises = deployerArray.map(async (contractAddress) => {
 //       const addressFound = await addressExistsInCollections(contractAddress);
-//       if (addressFound) {
-//         updatedDeployerArray.push(contractAddress); // Keep the address if found
-//       }
-//     }
+//       return addressFound ? contractAddress : null;
+//     });
 
-//     // Check the better array
-//     for (let contractAddress of betterArray) {
+//     const betterPromises = betterArray.map(async (contractAddress) => {
 //       const addressFound = await addressExistsInCollections(contractAddress);
-//       if (addressFound) {
-//         updatedBetterArray.push(contractAddress); // Keep the address if found
-//       }
-//     }
+//       return addressFound ? contractAddress : null;
+//     });
 
-//     // Update user object with cleaned up deployer and better arrays
+//     // Wait for all promises to resolve
+//     const updatedDeployerArray = (await Promise.all(deployerPromises)).filter(
+//       Boolean
+//     );
+//     const updatedBetterArray = (await Promise.all(betterPromises)).filter(
+//       Boolean
+//     );
+
+//     // Update user object with cleaned-up deployer and better arrays
 //     await userCollection.updateOne(
 //       { userId: userId },
 //       { $set: { deployer: updatedDeployerArray, better: updatedBetterArray } }
@@ -1403,76 +1611,55 @@ app.get(
 //   }
 // }
 
-async function cleanUpUserBets(userId) {
-  try {
-    const userCollection = db.collection("Users");
-    const relevantCollections = [
-      "Contracts",
-      "ExpiredContracts",
-      "Disagreements",
-    ];
+// app.get(
+//   "/api/existingUser/:address",
+//   limiter,
+//   [
+//     // Validate that "address" is a valid Ethereum address
+//     param("address")
+//       .isEthereumAddress()
+//       .withMessage("Invalid Ethereum address format."),
+//   ], // Middleware to prevent address spoofing
+//   async (req, res) => {
+//     const errors = validationResult(req);
+//     if (!errors.isEmpty()) {
+//       return res.status(400).json({ errors: errors.array() });
+//     }
 
-    // Find the user by userId
-    const user = await userCollection.findOne({ userId: userId });
+//     const { address } = req.params;
+//     const collection = db.collection("Users");
 
-    if (!user) {
-      console.log("User not found");
-      return;
-    }
+//     try {
+//       const existingUser = await collection.findOne({ userId: address });
 
-    const deployerArray = user.deployer || [];
-    const betterArray = user.better || [];
-
-    // Helper function to check if an address exists in any collection
-    const addressExistsInCollections = async (address) => {
-      for (let collectionName of relevantCollections) {
-        const collection = db.collection(collectionName);
-        const addressExists = await collection.findOne({ address: address });
-        if (addressExists) return true;
-      }
-      return false;
-    };
-
-    // Use Promise.all to check all addresses concurrently
-    const deployerPromises = deployerArray.map(async (contractAddress) => {
-      const addressFound = await addressExistsInCollections(contractAddress);
-      return addressFound ? contractAddress : null;
-    });
-
-    const betterPromises = betterArray.map(async (contractAddress) => {
-      const addressFound = await addressExistsInCollections(contractAddress);
-      return addressFound ? contractAddress : null;
-    });
-
-    // Wait for all promises to resolve
-    const updatedDeployerArray = (await Promise.all(deployerPromises)).filter(
-      Boolean
-    );
-    const updatedBetterArray = (await Promise.all(betterPromises)).filter(
-      Boolean
-    );
-
-    // Update user object with cleaned-up deployer and better arrays
-    await userCollection.updateOne(
-      { userId: userId },
-      { $set: { deployer: updatedDeployerArray, better: updatedBetterArray } }
-    );
-
-    console.log("User object cleaned up");
-  } catch (error) {
-    console.error("Error cleaning up user object:", error);
-  }
-}
+//       if (existingUser) {
+//         await cleanUpUserBets(address);
+//         res.sendStatus(200); // User exists, return 200 OK
+//       } else {
+//         // Insert a new user if the address does not exist
+//         const newUser = {
+//           userId: address,
+//           deployer: [],
+//           better: [],
+//         };
+//         await collection.insertOne(newUser);
+//         res.sendStatus(201); // Return 201 Created
+//       }
+//     } catch (error) {
+//       console.error("Error fetching or creating user:", error);
+//       res.status(500).send("Server Error: Unable to fetch or create user.");
+//     }
+//   }
+// );
 
 app.get(
   "/api/existingUser/:address",
   limiter,
   [
-    // Validate that "address" is a valid Ethereum address
     param("address")
       .isEthereumAddress()
       .withMessage("Invalid Ethereum address format."),
-  ], // Middleware to prevent address spoofing
+  ],
   async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -1486,17 +1673,35 @@ app.get(
       const existingUser = await collection.findOne({ userId: address });
 
       if (existingUser) {
-        await cleanUpUserBets(address);
-        res.sendStatus(200); // User exists, return 200 OK
+        // Check if cleanup is needed (24 hours have passed)
+        const lastCleanup = existingUser.lastCleanup || 0;
+        const ONE_DAY = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+        const now = Date.now();
+
+        if (now - lastCleanup > ONE_DAY) {
+          // Run cleanup in background without blocking response
+          cleanUpUserBets(address)
+            .then(() => {
+              // Update lastCleanup timestamp after successful cleanup
+              return collection.updateOne(
+                { userId: address },
+                { $set: { lastCleanup: now } }
+              );
+            })
+            .catch((error) => console.error("Cleanup failed:", error));
+        }
+
+        res.sendStatus(200);
       } else {
-        // Insert a new user if the address does not exist
+        // Insert new user with lastCleanup timestamp
         const newUser = {
           userId: address,
           deployer: [],
           better: [],
+          lastCleanup: Date.now(), // Initialize lastCleanup for new users
         };
         await collection.insertOne(newUser);
-        res.sendStatus(201); // Return 201 Created
+        res.sendStatus(201);
       }
     } catch (error) {
       console.error("Error fetching or creating user:", error);
@@ -1927,3 +2132,46 @@ app.get(
     }
   }
 );
+
+async function deleteOldExpiredContracts() {
+  try {
+    const expiredCollection = db.collection("ExpiredContracts");
+    const betsCollection = db.collection("bets");
+
+    // Calculate timestamp for 30 days ago
+    const thirtyDaysAgo = new Date().getTime() - 30 * 24 * 60 * 60 * 1000;
+    const threshold = Math.floor(thirtyDaysAgo / 1000);
+
+    // Find contracts older than 30 days
+    const oldContracts = await expiredCollection
+      .find({
+        endsAt: { $lt: threshold },
+      })
+      .toArray();
+
+    if (oldContracts.length > 0) {
+      // Extract contract addresses for batch deletion of bets
+      const contractAddresses = oldContracts.map((contract) =>
+        contract.address.toLowerCase()
+      );
+
+      // Delete associated bets first
+      const deleteBetsResult = await betsCollection.deleteMany({
+        contractAddress: { $in: contractAddresses },
+      });
+      console.log(`${deleteBetsResult.deletedCount} bets deleted successfully`);
+
+      // Delete the old contracts
+      const deleteContractsResult = await expiredCollection.deleteMany({
+        endsAt: { $lt: threshold },
+      });
+      console.log(
+        `${deleteContractsResult.deletedCount} old expired contracts deleted successfully`
+      );
+    } else {
+      console.log("No old expired contracts found to delete");
+    }
+  } catch (err) {
+    console.error("Error deleting old expired contracts:", err);
+  }
+}

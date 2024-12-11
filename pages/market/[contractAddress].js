@@ -120,6 +120,7 @@ export default function PredMarketPageV2() {
   });
   const [filter, setFilter] = useState("forSale");
   const betsContainerRef = useRef(null);
+  const [balance, setBalance] = useState(null);
 
   useEffect(() => {
     if (betsContainerRef.current) {
@@ -173,6 +174,26 @@ export default function PredMarketPageV2() {
       setIsLoadingBets(false);
     }
   };
+
+  useEffect(() => {
+    const fetchBalance = async () => {
+      try {
+        // Connect to Ethereum provider
+        const provider = new ethers.providers.Web3Provider(window.ethereum);
+        await provider.send("eth_requestAccounts", []); // Request access to user's wallet
+
+        // Fetch the balance of the contract
+        const balance = await provider.getBalance(contractAddress);
+
+        // Convert balance from Wei to Ether
+        setBalance(ethers.utils.formatEther(balance));
+      } catch (error) {
+        console.error("Error fetching contract balance:", error);
+      }
+    };
+
+    fetchBalance();
+  }, [contractAddress]);
 
   useEffect(() => {
     const deployContract = async () => {
@@ -1246,6 +1267,10 @@ export default function PredMarketPageV2() {
             <div className="market-info">
               <h1>{contract.NameofMarket}</h1>
               <h2>{contract.fullName}</h2>
+              <div>
+                <h3>Smart Contract ETH Balance</h3>
+                {balance !== null ? <p>{balance} ETH</p> : <p>Loading...</p>}
+              </div>
               <div className="event-matchup">
                 <span className="event-a">{contract.eventA}</span>
                 <span className="vs">VS</span>
@@ -1797,7 +1822,7 @@ export default function PredMarketPageV2() {
                                         )
                                       }
                                     >
-                                      Save Changes
+                                      Save Changes & List For Sale
                                     </button>
                                     <button
                                       className="cancel-bet-btn"
