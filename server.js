@@ -638,35 +638,38 @@ app.post(
     const { address, deployerAddress, endsAt } = req.body;
 
     try {
-      // Encode the constructor arguments (endsAt) to match the deployed contract's bytecode
-      const encodedConstructorArgs = ethers.utils.defaultAbiCoder.encode(
-        ["uint256"],
-        [endsAt]
-      );
-
-      // Generate the full expected bytecode (including constructor arguments)
-      const fullBytecode = ethers.utils.hexlify(
-        ethers.utils.concat([
-          ethers.utils.arrayify(predMarketArtifact.bytecode),
-          encodedConstructorArgs,
-        ])
-      );
-
-      // Hash the expected bytecode
-      const expectedBytecodeHash = ethers.utils.keccak256(fullBytecode);
-
-      // Fetch the deployed contract bytecode
+      // Fetch deployed bytecode from the blockchain
       const deployedBytecode = await provider.getCode(address);
+      console.log("DeployedByteCode Length:", deployedBytecode.length);
+      // Normalize the bytecode for comparison
 
-      // Hash the deployed bytecode
-      const deployedBytecodeHash = ethers.utils.keccak256(deployedBytecode);
+      const expectedDeployedBytecode = predMarketArtifact.deployedBytecode;
+      const normalizedDeployedBytecode = deployedBytecode.replace(
+        /^0x|0+$/,
+        ""
+      );
+      const normalizedExpectedBytecode = expectedDeployedBytecode.replace(
+        /^0x|0+$/,
+        ""
+      );
 
-      // Compare the hashes
-      console.log("Deployed Bytecode Hash:", deployedBytecodeHash);
-      console.log("Expected Bytecode Hash:", expectedBytecodeHash);
+      console.log(
+        "ExpectedDeployedBytecode Length:",
+        expectedDeployedBytecode.length
+      );
+      if (normalizedDeployedBytecode !== normalizedExpectedBytecode) {
+        return res.status(400).json({
+          error: "Deployed bytecode does not match expected bytecode.",
+        });
+      }
 
-      if (deployedBytecodeHash !== expectedBytecodeHash) {
-        return res.status(400).json({ error: "Invalid contract bytecode." });
+      // Verify constructor arguments
+      const contract = new ethers.Contract(address, abi, provider);
+      const onChainEndTime = await contract.endTime();
+      if (onChainEndTime.toString() !== endsAt.toString()) {
+        return res
+          .status(400)
+          .json({ error: "Constructor argument mismatch." });
       }
 
       // Save contract details to MongoDB

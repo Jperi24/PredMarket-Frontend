@@ -212,6 +212,7 @@ export default function PredMarketPageV2() {
         if (signer) {
           const saddress = await signer.getAddress();
           setSignerAddress(saddress);
+          console.log("Expected Signer", signer);
 
           const network = await signer.provider.getNetwork();
 
@@ -219,12 +220,10 @@ export default function PredMarketPageV2() {
             const expectedChainId = contract.chain.chainId;
 
             if (network.chainId !== expectedChainId) {
-              console.log(network, "Network Chain ID");
-              console.log(expectedChainId, "Network Chain ID Expected");
               setNetworkMismatch(true);
             } else {
               setNetworkMismatch(false);
-              console.log("Live on chain: ", network.chainId);
+
               setContractInstance(tempContractInstance);
 
               setChain(commonChains[network.chainId]);
@@ -238,6 +237,7 @@ export default function PredMarketPageV2() {
             }
           } else {
             console.error("Contract or contract.chain.chainId is not defined");
+            console.log("Expected COntract:", contract);
           }
         }
       }

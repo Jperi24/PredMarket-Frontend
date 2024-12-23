@@ -124,7 +124,8 @@ export async function deployPredMarket(
 
   try {
     const deployerAddress = await signer.getAddress();
-    const chain = signer.provider.network.name || "No Chain";
+    // const chain = signer.provider.network.name || "No Chain";
+    const chain = signer?.provider?.network || "";
 
     console.log(`${endsAt} is the end time passed into the smart contract.`);
 

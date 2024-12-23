@@ -4,7 +4,6 @@ import gql from "graphql-tag";
 import Image from "next/image";
 import TournamentInfo from "../components/tournamentInfo2";
 import Header from "../components/Header";
-import CustomTournamentForm from "../components/CustomTournamentForm"; // Import the new component
 
 function App() {
   const [tournaments, setTournaments] = useState([]);
@@ -119,8 +118,6 @@ function App() {
             }}
           >
             {/* New Component for Custom Input */}
-
-            {isFormVisible && <CustomTournamentForm />}
 
             {filteredTournaments.map((tournament, index) => (
               <div
