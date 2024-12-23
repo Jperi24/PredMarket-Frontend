@@ -219,6 +219,8 @@ export default function PredMarketPageV2() {
             const expectedChainId = contract.chain.chainId;
 
             if (network.chainId !== expectedChainId) {
+              console.log(network, "Network Chain ID");
+              console.log(expectedChainId, "Network Chain ID Expected");
               setNetworkMismatch(true);
             } else {
               setNetworkMismatch(false);

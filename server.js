@@ -18,6 +18,8 @@ require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
 
+const predMarketArtifact = require("./predMarketV2.json");
+
 const { body, validationResult, param, query } = require("express-validator");
 
 // Security: Data sanitization against NoSQL injection attacks
@@ -109,7 +111,7 @@ const fetch = require("cross-fetch");
 const uri = process.env.MONGOURI;
 const client = new MongoClient(uri);
 const ethers = require("ethers");
-const predMarketArtifact = require("./predMarketV2.json");
+// const predMarketArtifact = require("./predMarketV2.json");
 
 // Make sure to import your contract ABI
 
@@ -514,11 +516,79 @@ function scheduleTasks() {
   cron.schedule("*/5 * * * *", moveExpiredContracts); // every 5 mins
 }
 
+// app.post(
+//   "/addContract",
+//   limiter, // Apply rate limiting
+//   [
+//     // Validation and sanitization rules
+//     body("address")
+//       .isEthereumAddress()
+//       .withMessage("Invalid Ethereum address."),
+//     body("NameofMarket")
+//       .isString()
+//       .trim()
+//       .notEmpty()
+//       .withMessage("Market name is required."),
+//     body("eventA")
+//       .isString()
+//       .trim()
+//       .escape()
+//       .withMessage("Event A must be a string."),
+//     body("eventB")
+//       .isString()
+//       .trim()
+//       .escape()
+//       .withMessage("Event B must be a string."),
+//     body("tags")
+//       .isString()
+//       .trim()
+//       .escape()
+//       .withMessage("Tags must be a comma-separated string."),
+//     body("deployerAddress")
+//       .isEthereumAddress()
+//       .withMessage("Invalid deployer address."),
+//     body("fullName")
+//       .isString()
+//       .trim()
+//       .notEmpty()
+//       .withMessage("Full name is required."),
+//     body("endsAt")
+//       .isInt({ min: Math.floor(Date.now() / 1000) })
+//       .withMessage("End time must be in the future."),
+
+//     body("setKey")
+//       .isString()
+//       .trim()
+//       .notEmpty()
+//       .withMessage("Set key is required."),
+//   ],
+//   async (req, res) => {
+//     const errors = validationResult(req);
+//     if (!errors.isEmpty()) {
+//       return res.status(400).json({ errors: errors.array() });
+//     }
+
+//     const isValidBytecode = await validateContractBytecode(req.body.address);
+//     if (!isValidBytecode) {
+//       return res.status(400).json({ error: "Invalid contract bytecode." });
+//     }
+
+//     try {
+//       const collection = db.collection("Contracts");
+//       const contract = req.body;
+//       await collection.insertOne(contract);
+//       res.status(201).send("Contract added successfully");
+//     } catch (error) {
+//       console.error("Error adding contract to MongoDB:", error);
+//       res.status(500).send("Error adding contract");
+//     }
+//   }
+// );
+
 app.post(
   "/addContract",
-  limiter, // Apply rate limiting
+  limiter,
   [
-    // Validation and sanitization rules
     body("address")
       .isEthereumAddress()
       .withMessage("Invalid Ethereum address."),
@@ -553,7 +623,6 @@ app.post(
     body("endsAt")
       .isInt({ min: Math.floor(Date.now() / 1000) })
       .withMessage("End time must be in the future."),
-
     body("setKey")
       .isString()
       .trim()
@@ -566,14 +635,47 @@ app.post(
       return res.status(400).json({ errors: errors.array() });
     }
 
+    const { address, deployerAddress, endsAt } = req.body;
+
     try {
+      // Encode the constructor arguments (endsAt) to match the deployed contract's bytecode
+      const encodedConstructorArgs = ethers.utils.defaultAbiCoder.encode(
+        ["uint256"],
+        [endsAt]
+      );
+
+      // Generate the full expected bytecode (including constructor arguments)
+      const fullBytecode = ethers.utils.hexlify(
+        ethers.utils.concat([
+          ethers.utils.arrayify(predMarketArtifact.bytecode),
+          encodedConstructorArgs,
+        ])
+      );
+
+      // Hash the expected bytecode
+      const expectedBytecodeHash = ethers.utils.keccak256(fullBytecode);
+
+      // Fetch the deployed contract bytecode
+      const deployedBytecode = await provider.getCode(address);
+
+      // Hash the deployed bytecode
+      const deployedBytecodeHash = ethers.utils.keccak256(deployedBytecode);
+
+      // Compare the hashes
+      console.log("Deployed Bytecode Hash:", deployedBytecodeHash);
+      console.log("Expected Bytecode Hash:", expectedBytecodeHash);
+
+      if (deployedBytecodeHash !== expectedBytecodeHash) {
+        return res.status(400).json({ error: "Invalid contract bytecode." });
+      }
+
+      // Save contract details to MongoDB
       const collection = db.collection("Contracts");
-      const contract = req.body;
-      await collection.insertOne(contract);
+      await collection.insertOne(req.body);
       res.status(201).send("Contract added successfully");
     } catch (error) {
-      console.error("Error adding contract to MongoDB:", error);
-      res.status(500).send("Error adding contract");
+      console.error("Error validating or adding contract:", error);
+      res.status(500).send("Server error");
     }
   }
 );
@@ -910,7 +1012,7 @@ async function fetchAllTournamentDetails() {
     }
 
     hasMore = true;
-    while (hasMore && allTournaments.length < 75) {
+    while (hasMore && allTournaments.length < 10) {
       await sleep(100); // Updated sleep from 10 to 100
       try {
         const data = await fetchWithRetry(GET_ALL_TOURNAMENTS_QUERY, {
@@ -1261,11 +1363,49 @@ async function updateFrequentCache() {
 cron.schedule("0 */15 * * * *", updateFrequentCache); // Update frequent cache every 20 minutes
 cron.schedule("0 0 */24 * * *", fetchAllTournamentDetails);
 
+// async function updateMongoDBWithWinner(setKey, winnerName) {
+//   try {
+//     const collection = db.collection("Contracts");
+
+//     // Find the document where the tags match the setKey
+//     const document = await collection.findOne({ setKey });
+
+//     if (!document) {
+//       console.log(`No contract found for set ${setKey}`);
+//       return;
+//     }
+
+//     // Create contract instance
+//     const contract = new ethers.Contract(
+//       document.address,
+//       predMarketArtifact.abi,
+//       signer
+//     );
+
+//     // Determine which participant won
+//     let winnerNumber;
+//     if (winnerName === document.eventA) {
+//       winnerNumber = 1;
+//     } else if (winnerName === document.eventB) {
+//       winnerNumber = 2;
+//     } else {
+//       winnerNumber = 3; // DQ or other scenario
+//     }
+
+//     // Call the declareWinner function
+//     const tx = await contract.declareWinner(winnerNumber);
+//     await tx.wait();
+//     console.log(
+//       `Successfully called declareWinner(${winnerNumber}) for contract ${document.address}`
+//     );
+//   } catch (error) {
+//     console.error("Error calling declareWinner:", error);
+//   }
+// }
+
 async function updateMongoDBWithWinner(setKey, winnerName) {
   try {
     const collection = db.collection("Contracts");
-
-    // Find the document where the tags match the setKey
     const document = await collection.findOne({ setKey });
 
     if (!document) {
@@ -1273,31 +1413,115 @@ async function updateMongoDBWithWinner(setKey, winnerName) {
       return;
     }
 
-    // Create contract instance
     const contract = new ethers.Contract(
       document.address,
       predMarketArtifact.abi,
       signer
     );
 
-    // Determine which participant won
     let winnerNumber;
     if (winnerName === document.eventA) {
       winnerNumber = 1;
     } else if (winnerName === document.eventB) {
       winnerNumber = 2;
     } else {
-      winnerNumber = 3; // DQ or other scenario
+      winnerNumber = 3;
     }
 
-    // Call the declareWinner function
-    const tx = await contract.declareWinner(winnerNumber);
-    await tx.wait();
-    console.log(
-      `Successfully called declareWinner(${winnerNumber}) for contract ${document.address}`
-    );
+    // Try to declare winner with retries
+    let declareWinnerSuccess = false;
+    const maxRetries = 3;
+
+    for (let i = 0; i < maxRetries && !declareWinnerSuccess; i++) {
+      try {
+        const tx = await contract.declareWinner(winnerNumber);
+        await tx.wait();
+        declareWinnerSuccess = true;
+        console.log(
+          `Successfully called declareWinner(${winnerNumber}) for contract ${document.address}`
+        );
+      } catch (error) {
+        console.error(`Attempt ${i + 1} to declare winner failed:`, error);
+        if (i < maxRetries - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+        }
+      }
+    }
+
+    // If declareWinner failed, try changeState
+    if (!declareWinnerSuccess) {
+      console.log("DeclareWinner failed, attempting changeState(2)");
+
+      let changeStateSuccess = false;
+      for (let i = 0; i < maxRetries && !changeStateSuccess; i++) {
+        try {
+          const tx = await contract.changeState(2);
+          await tx.wait();
+          changeStateSuccess = true;
+          console.log(
+            `Successfully called changeState(2) for contract ${document.address}`
+          );
+        } catch (error) {
+          console.error(`Attempt ${i + 1} to change state failed:`, error);
+
+          if (i < maxRetries - 1) {
+            await new Promise((resolve) => setTimeout(resolve, 5000));
+          } else {
+            // Final attempt with higher gas
+            try {
+              const tx = await contract.changeState(2, {
+                gasLimit: 500000,
+                gasPrice: (await signer.getGasPrice()).mul(2),
+              });
+              await tx.wait();
+              changeStateSuccess = true;
+              console.log(
+                `Successfully called changeState(2) with higher gas for contract ${document.address}`
+              );
+            } catch (finalError) {
+              console.error(
+                "Final attempt with higher gas failed:",
+                finalError
+              );
+              // Move to Disagreements instead of sending alert
+              await moveContractToDisagreements(
+                document.address,
+                "Could Not Declare Winner, URGENT"
+              );
+            }
+          }
+        }
+      }
+    }
   } catch (error) {
-    console.error("Error calling declareWinner:", error);
+    console.error("Error in updateMongoDBWithWinner:", error);
+    // Try one final emergency changeState
+    try {
+      const collection = db.collection("Contracts");
+      const document = await collection.findOne({ setKey });
+      const contract = new ethers.Contract(
+        document.address,
+        predMarketArtifact.abi,
+        signer
+      );
+      const tx = await contract.changeState(2, {
+        gasLimit: 500000,
+        gasPrice: (await signer.getGasPrice()).mul(2),
+      });
+      await tx.wait();
+      console.log(
+        `Emergency changeState(2) successful for contract ${document.address}`
+      );
+    } catch (finalError) {
+      console.error("Emergency changeState failed:", finalError);
+      // Move to Disagreements as final fallback
+      if (document) {
+        await moveContractToDisagreements(
+          document.address,
+          "Could Not Declare Winner, URGENT"
+        );
+      }
+    }
   }
 }
 
