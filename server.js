@@ -229,6 +229,10 @@ app.get("/api/rates", async (req, res) => {
 
 // Modified updateAllRates to use proper NodeCache methods
 async function updateAllRates() {
+  if (isFetchingTournaments || isUpdatingFrequentCache) {
+    console.log("fetchAllTournamentDetails is already running. Exiting.");
+    return;
+  }
   const updateKey = "updating_rates";
   if (chainRateCaches.get(updateKey)) return;
 
@@ -638,47 +642,85 @@ app.post(
     const { address, deployerAddress, endsAt } = req.body;
 
     try {
-      // Fetch deployed bytecode from the blockchain
       const deployedBytecode = await provider.getCode(address);
-      console.log("DeployedByteCode Length:", deployedBytecode.length);
-      // Normalize the bytecode for comparison
+      const expectedBytecode = predMarketArtifact.deployedBytecode;
 
-      const expectedDeployedBytecode = predMarketArtifact.deployedBytecode;
-      const normalizedDeployedBytecode = deployedBytecode.replace(
-        /^0x|0+$/,
-        ""
-      );
-      const normalizedExpectedBytecode = expectedDeployedBytecode.replace(
-        /^0x|0+$/,
-        ""
+      console.log("Deployed Bytecode Length:", deployedBytecode.length);
+      console.log("Expected Bytecode Length:", expectedBytecode.length);
+
+      // Extract runtime bytecode (skip constructor data)
+      const RUNTIME_MARKER = "60806040";
+      const runtimeStart = deployedBytecode.indexOf(RUNTIME_MARKER);
+      const deployedRuntime = deployedBytecode.slice(runtimeStart);
+      const expectedRuntime = expectedBytecode.slice(
+        expectedBytecode.indexOf(RUNTIME_MARKER)
       );
 
-      console.log(
-        "ExpectedDeployedBytecode Length:",
-        expectedDeployedBytecode.length
-      );
-      if (normalizedDeployedBytecode !== normalizedExpectedBytecode) {
+      // Remove metadata
+      const metadataLength = 43 * 2;
+      let normalizedDeployed = deployedRuntime
+        .slice(0, -metadataLength)
+        .toLowerCase();
+      let normalizedExpected = expectedRuntime
+        .slice(0, -metadataLength)
+        .toLowerCase();
+
+      // Convert endTime to hex and pad to 32 bytes
+      const endTimeHex = ethers.utils
+        .hexZeroPad(ethers.BigNumber.from(endsAt).toHexString(), 32)
+        .slice(2)
+        .toLowerCase();
+
+      // Create regex patterns for replacement
+      const deployerPattern = deployerAddress.toLowerCase().slice(2);
+      const endTimePattern = endTimeHex;
+
+      // Replace both the deployer address and endTime with zeros
+      const replacementValue = "0".repeat(40); // 20 bytes of zeros
+      normalizedDeployed = normalizedDeployed
+        .replace(new RegExp(deployerPattern, "g"), replacementValue)
+        .replace(new RegExp(endTimePattern, "g"), replacementValue);
+
+      console.log("Normalized lengths:", {
+        deployed: normalizedDeployed.length,
+        expected: normalizedExpected.length,
+      });
+
+      // Compare bytecodes section by section
+      const SECTION_SIZE = 40; // Compare in chunks for better debugging
+      let isMatch = true;
+      let differences = [];
+
+      for (let i = 0; i < normalizedDeployed.length; i += SECTION_SIZE) {
+        const deployedSection = normalizedDeployed.slice(i, i + SECTION_SIZE);
+        const expectedSection = normalizedExpected.slice(i, i + SECTION_SIZE);
+
+        if (deployedSection !== expectedSection) {
+          differences.push({
+            position: i / 2,
+            deployed: deployedSection,
+            expected: expectedSection,
+          });
+          isMatch = false;
+          if (differences.length >= 3) break; // Limit to 3 differences
+        }
+      }
+
+      if (!isMatch) {
+        console.log("Bytecode differences found:", differences);
         return res.status(400).json({
-          error: "Deployed bytecode does not match expected bytecode.",
+          error: "Invalid contract implementation",
+          differences,
         });
       }
 
-      // Verify constructor arguments
-      const contract = new ethers.Contract(address, abi, provider);
-      const onChainEndTime = await contract.endTime();
-      if (onChainEndTime.toString() !== endsAt.toString()) {
-        return res
-          .status(400)
-          .json({ error: "Constructor argument mismatch." });
-      }
-
-      // Save contract details to MongoDB
+      // If verification passes, save to MongoDB
       const collection = db.collection("Contracts");
       await collection.insertOne(req.body);
-      res.status(201).send("Contract added successfully");
+      res.status(201).json({ message: "Contract added successfully" });
     } catch (error) {
       console.error("Error validating or adding contract:", error);
-      res.status(500).send("Server error");
+      res.status(500).json({ error: "Server error" });
     }
   }
 );
@@ -1015,7 +1057,7 @@ async function fetchAllTournamentDetails() {
     }
 
     hasMore = true;
-    while (hasMore && allTournaments.length < 10) {
+    while (hasMore && allTournaments.length < 6) {
       await sleep(100); // Updated sleep from 10 to 100
       try {
         const data = await fetchWithRetry(GET_ALL_TOURNAMENTS_QUERY, {
